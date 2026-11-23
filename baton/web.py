@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import secrets
 import datetime as dt
 import time
@@ -84,7 +85,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(403, "Cross-site request refused.")
     t = strings(settings.lang)
     templates.env.globals.update(t=t, title=settings.title, version=__version__, lang=settings.lang,
-                                 csrf=csrf_token)
+                                 csrf=csrf_token,
+                                 # Changes whenever style.css changes, so browsers never keep an old copy.
+                                 css_v=hashlib.sha256((HERE / "static" / "style.css").read_bytes()).hexdigest()[:10])
     templates.env.filters["md"] = _render_md
     templates.env.filters["dur"] = lambda s: _duration(s, settings.lang)
 

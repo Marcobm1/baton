@@ -56,10 +56,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     scheduler = Scheduler(settings.data_dir, settings.ping_claude_minutes,
                           settings.ping_codex_minutes, settings.ping_hours, settings.ping_model)
     store = TaskStore(settings.data_dir)
+
+    def quota_left(agent: str) -> float | None:
+        """% left in the agent's 5 h window (Claude Code or Codex), if known."""
+        provider = {"claude-code": "claude", "codex": "codex"}.get(agent)
+        for v in quotas.all_windows(settings.data_dir, settings.codex_home):
+            if v["provider"] == provider and v["kind"] == "5h":
+                return v["left"]
+        return None
     runner = Runner(store, LocalRepos(settings.local_root, settings.local_paths),
                     timeout=settings.task_timeout_minutes * 60, local_model=settings.local_model,
                     local_provider=settings.local_provider, git_name=settings.git_name,
-                    git_email=settings.git_email, open_pr=hub.open_draft_pr)
+                    git_email=settings.git_email,
+                    # With auto-merge the PR can't be a draft: GitHub won't merge drafts.
+                    open_pr=lambda *a: hub.open_pr(*a, draft=not settings.auto_merge),
+                    github=hub, auto_merge=settings.auto_merge, quota_left=quota_left)
 
     # Tasks that were running when Baton stopped can't be resumed: mark them.
     for old in store.all():
@@ -180,7 +191,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             *(asyncio.to_thread(catalog, a) for a in agents))
         return page(request, "task_new.html", "tasks", repos=repos, selected=repo,
                     local=local, available=available, oc_models=models, catalogs=dict(zip(agents, choices)),
-                    cloud=settings.cloud_tasks, error=error[:300],
+                    cloud=settings.cloud_tasks, error=error[:300], auto_merge=settings.auto_merge,
                     has_token=bool(settings.github_token))
 
     @app.get("/tasks/{task_id}", response_class=HTMLResponse)

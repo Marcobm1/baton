@@ -293,7 +293,7 @@ def test_every_local_task_from_the_web_ends_in_a_pull_request(tmp_path, monkeypa
     async def fake_load(self, force=False):
         return [proj], []
 
-    def fake_pr(self, repo, branch, base, title, body):
+    def fake_pr(self, repo, branch, base, title, body, draft=True):
         opened.append((repo, branch, base, title))
         return f"https://github.com/{repo}/pull/{len(opened)}"
 
@@ -306,11 +306,12 @@ def test_every_local_task_from_the_web_ends_in_a_pull_request(tmp_path, monkeypa
             return [sys.executable, "-c", script]
 
     monkeypatch.setattr(github.Hub, "load", fake_load)
-    monkeypatch.setattr(github.Hub, "open_draft_pr", fake_pr)
+    monkeypatch.setattr(github.Hub, "open_pr", fake_pr)
     monkeypatch.setattr(web, "Runner", QuickRunner)
     monkeypatch.setattr(web, "opencode_models", lambda: ["opencode/big-pickle"])
     c = TestClient(web.create_app(Settings(github_token="t", owner="x", data_dir=tmp_path / "data",
-                                           codex_home=tmp_path, local_paths=f"x/demo={work}")))
+                                           codex_home=tmp_path, local_paths=f"x/demo={work}",
+                                           auto_merge=False)))
     form_page = c.get("/tasks/new?repo=x/demo").text
     assert 'name="open_pr"' not in form_page            # nothing to untick
     token = re.search(r'name="csrf" value="([^"]+)"', form_page).group(1)

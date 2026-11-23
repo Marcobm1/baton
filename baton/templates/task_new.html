@@ -46,7 +46,7 @@
       <select name="oc_model">{% for m in oc_models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select>
     </label>
     {% endif %}
-    <p class="muted small">{{ t.open_pr_option }}</p>
+    <p class="muted small">{{ t.auto_merge_option if auto_merge else t.open_pr_option }}</p>
 
     {% if cloud %}
     <details class="cloud">

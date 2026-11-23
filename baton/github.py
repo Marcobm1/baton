@@ -198,26 +198,80 @@ class Hub:
             return [c["body"] for c in response.json()
                     if c["user"]["login"] in ("claude[bot]", "github-actions[bot]")]
 
-    def open_draft_pr(self, repo: str, branch: str, base: str, title: str, body: str) -> str:
-        """Open a draft pull request (synchronous: called from the task thread)."""
+    # ------------------------------------------- pull requests (task thread)
+    # These are synchronous: they run in a local task's own thread.
+    def _sync_headers(self) -> dict[str, str]:
         if not self.settings.github_token:
-            raise GitHubError("Opening a pull request needs a GitHub token.")
-        headers = {
+            raise GitHubError("This needs a GitHub token.")
+        return {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
             "User-Agent": "baton-project-hub",
             "Authorization": f"Bearer {self.settings.github_token}",
         }
+
+    def open_pr(self, repo: str, branch: str, base: str, title: str, body: str,
+                draft: bool = True) -> str:
+        """Open a pull request, a draft if asked (and the plan allows it)."""
+        headers = self._sync_headers()
         r = httpx.post(f"{API}/repos/{repo}/pulls", headers=headers, timeout=30,
                        json={"title": title, "head": branch, "base": base, "body": body,
-                             "draft": True})
-        if r.status_code == 422 and "draft" in r.text.lower():
+                             "draft": draft})
+        if draft and r.status_code == 422 and "draft" in r.text.lower():
             # Draft pull requests aren't available on private repos of free plans.
             r = httpx.post(f"{API}/repos/{repo}/pulls", headers=headers, timeout=30,
                            json={"title": title, "head": branch, "base": base, "body": body})
         if r.status_code != 201:
             raise GitHubError(f"GitHub did not open the pull request ({r.status_code}).")
         return r.json()["html_url"]
+
+    def open_draft_pr(self, repo: str, branch: str, base: str, title: str, body: str) -> str:
+        return self.open_pr(repo, branch, base, title, body, draft=True)
+
+    def checks(self, repo: str, sha: str) -> dict[str, list[str]]:
+        """Tests on a commit, by state: {"pending": [...], "passed": [...], "failed": [...]}.
+
+        Reads GitHub Actions check runs and the older commit statuses. Skipped
+        or neutral runs count as neither passed nor failed.
+        """
+        headers = self._sync_headers()
+        out: dict[str, list[str]] = {"pending": [], "passed": [], "failed": []}
+        r = httpx.get(f"{API}/repos/{repo}/commits/{sha}/check-runs", headers=headers,
+                      params={"per_page": 100}, timeout=30)
+        if r.status_code != 200:
+            raise GitHubError(f"Could not read the tests of {sha[:7]} ({r.status_code}).")
+        for run in r.json().get("check_runs", []):
+            name = run.get("name") or "check"
+            if run.get("status") != "completed":
+                out["pending"].append(name)
+            elif run.get("conclusion") == "success":
+                out["passed"].append(name)
+            elif run.get("conclusion") not in ("skipped", "neutral"):
+                out["failed"].append(name)
+        r = httpx.get(f"{API}/repos/{repo}/commits/{sha}/status", headers=headers, timeout=30)
+        if r.status_code == 200:
+            for st in r.json().get("statuses", []):
+                state = {"pending": "pending", "success": "passed"}.get(st.get("state"), "failed")
+                out[state].append(st.get("context") or "status")
+        return out
+
+    def comment(self, repo: str, number: int, body: str) -> None:
+        r = httpx.post(f"{API}/repos/{repo}/issues/{number}/comments", headers=self._sync_headers(),
+                       json={"body": body}, timeout=30)
+        if r.status_code != 201:
+            raise GitHubError(f"GitHub did not save the comment ({r.status_code}).")
+
+    def merge(self, repo: str, number: int, sha: str) -> None:
+        """Merge the pull request only if its head is still `sha` (nobody pushed since)."""
+        r = httpx.put(f"{API}/repos/{repo}/pulls/{number}/merge", headers=self._sync_headers(),
+                      json={"sha": sha, "merge_method": "merge"}, timeout=30)
+        if r.status_code != 200:
+            try:
+                why = r.json().get("message", "")
+            except ValueError:
+                why = ""
+            raise GitHubError(f"GitHub did not merge the pull request ({r.status_code}"
+                              f"{': ' + why[:200] if why else ''}).")
 
     async def load(self, force: bool = False) -> tuple[list[Project], list[str]]:
         """Return (projects, errors). Cached for settings.cache_seconds."""

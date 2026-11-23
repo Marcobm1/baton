@@ -57,6 +57,11 @@ def line(payload: dict) -> str:
 
 
 def main() -> int:
+    # Claude Code reads the line as UTF-8; Windows consoles default to another code page.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     try:
         payload = json.loads(sys.stdin.read() or "{}")
     except json.JSONDecodeError:

@@ -114,7 +114,7 @@ def cmd_delegate(args) -> int:
     if not prompt.strip():
         print("Give the subtask as an argument, or with - read it from stdin.", file=sys.stderr)
         return 2
-    return delegate.run(args.model, prompt, cwd=args.dir, write=args.write, timeout=args.timeout)
+    return delegate.run(args.model, prompt, cwd=args.dir, write=args.write, timeout=args.timeout, web=args.web)
 
 
 def cmd_statusline(args) -> int:
@@ -161,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-C", "--dir", default=".", help="folder it works in (default: here)")
     p.add_argument("--write", action="store_true",
                    help="let it edit files and run commands in that folder (never commit/push)")
+    p.add_argument("--web", action="store_true", help="also let it search and read web pages")
     p.add_argument("--timeout", type=int, default=900, help="seconds (default 900)")
     p.add_argument("--list", action="store_true", help="list the models OpenCode offers")
     p.set_defaults(fn=cmd_delegate)

@@ -123,6 +123,6 @@ def test_opencode_is_launched_without_a_shell(tmp_path, monkeypatch):
     cmd = r._agent_cmd(task, tmp_path)
     assert cmd[0] == str(exe) and "--agent" in cmd and cmd[cmd.index("-m") + 1] == "opencode/big-pickle"
     assert cmd[-1].startswith("You are working on the task") and "A & B | C" in cmd[-1]
-    rules = runner_mod.OPENCODE_CONFIG["agent"]["baton"]["permission"]
-    assert rules["external_directory"] == "deny" and rules["bash"]["git push*"] == "deny"
-    assert list(rules["bash"])[0] == "*"  # last match wins: the general rule must come first
+    rules = runner_mod.OPENCODE_CONFIG["agents"]["baton"]["permissions"]
+    assert rules[0] == {"action": "*", "resource": "*", "effect": "deny"}  # everything else denied
+    assert {"action": "shell", "resource": "git push*", "effect": "deny"} in rules

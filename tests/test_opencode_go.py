@@ -66,10 +66,19 @@ def test_quotas_page_shows_go_month_and_tokens_in_the_body(tmp_path):
 
 def test_delegate_read_only_by_default():
     cfg = delegate.config()
-    helper = cfg["agent"]["baton-helper"]["permission"]
-    assert helper["edit"] == "deny" and helper["bash"] == "deny"
-    assert helper["external_directory"] == "deny"
-    assert "baton" in cfg["agent"]  # the write mode reuses the tasks' agent
+    helper = cfg["agents"]["baton-helper"]["permissions"]
+    assert helper[0] == {"action": "*", "resource": "*", "effect": "deny"}  # deny first
+    allowed = {r["action"] for r in helper if r["effect"] == "allow"}
+    assert allowed == {"read", "glob", "grep"}
+    task = cfg["agents"]["baton"]["permissions"]  # the write mode reuses the tasks' agent
+    assert task[0]["effect"] == "deny"
+    assert {"action": "shell", "resource": "git push*", "effect": "deny"} in task
+    last = max(i for i, r in enumerate(task) if r == {"action": "shell", "resource": "*", "effect": "allow"})
+    assert all(task.index({"action": "shell", "resource": c, "effect": "deny"}) > last
+               for c in ("git commit*", "gh *"))
+    web = {r["action"] for r in delegate.config(web=True)["agents"]["baton-helper"]["permissions"]
+           if r["effect"] == "allow"}
+    assert web == {"read", "glob", "grep", "webfetch", "websearch"}
     cmd = delegate.command("oc.exe", "opencode-go/kimi-k3", "A & B", write=False)
     assert cmd[cmd.index("--agent") + 1] == "baton-helper"
     assert cmd[-1] == "A & B" and "--archived" in cmd

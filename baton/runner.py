@@ -40,30 +40,38 @@ AGENTS = {
     "local": "IA local",
 }
 
-# OpenCode has no OS sandbox, so Baton gives it its own agent with explicit
-# rules. Explicit "deny" rules hold even with --auto, and they must live on the
-# agent: an agent's own permissions override the global ones. Last match wins,
-# so the general "*": "allow" goes first and the forbidden commands after it.
-# (Tested 2026-11-23: denying `edit` alone is not enough, because the model can
-# still write files through `bash`.)
+# OpenCode has no OS sandbox, so Baton gives it its own agents with rules
+# (OpenCode 2.x format: a list of {action, resource, effect}; last match wins).
+# The list starts by denying EVERYTHING and then allows only what is needed,
+# because OpenCode can have more tools than you expect: MCP servers (a GitHub
+# one can push files), Code Mode ("execute"), subagents, scheduled automations.
+# Explicit denies hold even with --auto, which only approves what isn't denied.
+# Tested 2026-11-23: denying `edit` alone is not enough (the model wrote the
+# file with the terminal), and an "allow everything except…" list let a helper
+# keep GitHub and automation tools.
+NO_GIT_CHANGES = ["git commit*", "git push*", "git checkout*", "git switch*", "git reset*",
+                  "git rebase*", "git worktree*", "git branch*", "git remote*", "git tag*",
+                  "gh *", "sudo*"]
+
+
+def _rule(action: str, effect: str, resource: str = "*") -> dict:
+    return {"action": action, "resource": resource, "effect": effect}
+
+
+READ_RULES = [_rule("*", "deny")] + [_rule(a, "allow") for a in ("read", "glob", "grep")]
+
+# Baton's tasks (and `baton delegate --write`): read, edit and run commands in
+# the task's folder; never commit, push, change branch or leave the folder.
+TASK_RULES = (READ_RULES + [_rule("edit", "allow"), _rule("shell", "allow")]
+              + [_rule("shell", "deny", c) for c in NO_GIT_CHANGES])
+
 OPENCODE_CONFIG = {
     "$schema": "https://opencode.ai/config.json",
-    "agent": {
+    "agents": {
         "baton": {
             "mode": "primary",
             "description": "Task sent from Baton, inside its own git worktree",
-            "permission": {
-                "read": "allow",
-                "edit": "allow",
-                "external_directory": "deny",
-                "bash": {
-                    "*": "allow",
-                    "git commit*": "deny", "git push*": "deny", "git checkout*": "deny",
-                    "git switch*": "deny", "git reset*": "deny", "git rebase*": "deny",
-                    "git worktree*": "deny", "git branch*": "deny", "git remote*": "deny",
-                    "sudo*": "deny",
-                },
-            },
+            "permissions": TASK_RULES,
         }
     },
 }

@@ -130,7 +130,9 @@ Rules:
   Baton commits everything in this folder and opens a draft pull request.
 - If the task is unclear, needs secrets, or would need anything destructive or
   outside this folder, stop and explain why instead of doing it.
-- End with a short summary of what you changed and anything left to check.
+- Prefix progress updates with "Progress:". End with two short lines prefixed
+  with "Summary:" and "Checks:". Describe what changed, the checks actually run
+  and their results, and mention anything left unchecked.
 
 Task: {title}
 
@@ -252,12 +254,14 @@ class TaskStore:
         self.logs.mkdir(parents=True, exist_ok=True)
         return self.logs / f"{task_id}.log"
 
-    def log_tail(self, task_id: str, lines: int = 200) -> str:
+    def read_log(self, task_id: str) -> str:
         try:
-            text = self.log_path(task_id).read_text(encoding="utf-8", errors="replace")
+            return self.log_path(task_id).read_text(encoding="utf-8", errors="replace")
         except OSError:
             return ""
-        return "\n".join(text.splitlines()[-lines:])
+
+    def log_tail(self, task_id: str, lines: int = 200) -> str:
+        return "\n".join(self.read_log(task_id).splitlines()[-lines:])
 
 
 def new_id(title: str) -> str:
@@ -294,6 +298,8 @@ class Runner:
                    for t in self.store.all())
 
     def start(self, task: Task) -> None:
+        if task.agent == "local":
+            task.model = self.local_model
         self.store.save(task)
         threading.Thread(target=self._run, args=(task,), daemon=True).start()
 

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ p.status.name }} · {{ title }}{% endblock %}
+{% block main %}
+{% set s = p.status %}
+<p><a href="/#projects">← {{ t.back }}</a></p>
+<article class="detail prio-{{ s.priority }}">
+  <h2>{{ s.name }} <span class="badge prio">{{ t[s.priority] }}</span> <span class="badge">{{ t[s.status] }}</span>
+    {% if s.open_source %}<span class="badge os">{{ t.open_source }}</span>{% endif %}</h2>
+  {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
+  {% if s.next %}<p class="c-next"><span class="label">{{ t.next }}</span> {{ s.next }}</p>{% endif %}
+  <p class="c-meta small">
+    {% if p.stale %}<span class="stale">⚠ {{ t.stale }}</span><br>{% endif %}
+    {{ t.updated }} {{ s.updated or '?' }}{% if s.updated_by %} {{ t.by }} {{ s.updated_by }}{% endif %}
+    · {{ t.repo }}: <a href="{{ p.html_url }}">{{ p.repo }}</a>
+    · <a href="https://github.com/{{ p.repo }}/blob/{{ p.branch }}/{{ p.path }}">{{ p.path }}</a>
+  </p>
+  {% if s.links %}<p class="small">{% for label, url in s.links.items() %}<a href="{{ url }}">{{ label }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+  {% if s.problems %}<p class="warn small">{{ t.problems }}: {{ s.problems|join('; ') }}</p>{% endif %}
+  <div class="md">{{ s.body|md|safe }}</div>
+</article>
+{% endblock %}

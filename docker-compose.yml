@@ -1,0 +1,18 @@
+services:
+  baton:
+    build: .
+    image: baton-hub:local
+    env_file: .env
+    environment:
+      BATON_DATA_DIR: /data
+      CODEX_HOME: /codex
+    ports:
+      # Only reachable from this computer: the page can show private repos.
+      - "127.0.0.1:${BATON_PORT:-8787}:8787"
+    volumes:
+      # Where the Claude Code status line and manual readings are stored.
+      - ${BATON_HOST_DATA_DIR:-./data}:/data
+      # Codex's local session logs, read-only (for the quota panel).
+      # If you don't use Codex, point this at any empty folder.
+      - ${BATON_HOST_CODEX_DIR:-./no-codex}:/codex:ro
+    restart: unless-stopped

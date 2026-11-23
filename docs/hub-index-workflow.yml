@@ -1,0 +1,43 @@
+# Optional: put this file in your hub repository as
+# .github/workflows/baton-index.yml to regenerate INDEX.md every day.
+#
+# It needs a repository secret named BATON_TOKEN: a fine-grained personal
+# access token with Contents = Read-only and Metadata = Read-only on the repos
+# Baton should read (the workflow's own GITHUB_TOKEN can only see this repo).
+# The commit itself uses the workflow's GITHUB_TOKEN (contents: write).
+
+name: baton-index
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Install Baton
+        run: pip install "baton-hub @ git+https://github.com/Marcobm1/baton@main"
+      - name: Build INDEX.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.BATON_TOKEN }}
+          BATON_OWNER: ${{ github.repository_owner }}
+          BATON_LANG: en
+        run: baton index -o INDEX.md
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- INDEX.md; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add INDEX.md
+          git commit -m "Update INDEX.md"
+          git push

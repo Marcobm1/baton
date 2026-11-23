@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "baton-hub"
+version = "0.1.0"
+description = "A shared project hub for you and your AI agents: STATUS.md files from your GitHub repos in one page, plus your Claude/Codex quota windows."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.165.0",
+  "uvicorn==0.54.0",
+  "jinja2==3.1.6",
+  "httpx==0.28.1",
+  "pyyaml==6.0.4",
+  "markdown-it-py==4.3.0",
+  "python-multipart==0.0.34",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+baton = "baton.__main__:main"
+
+[tool.setuptools]
+packages = ["baton"]
+
+[tool.setuptools.package-data]
+baton = ["templates/*.html", "static/*"]

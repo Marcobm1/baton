@@ -25,6 +25,8 @@ links:
 - [ ] Daily INDEX.md workflow in the hub repo (needs `BATON_TOKEN` secret)
 - [x] Automatic Claude/Codex quota checks via the official CLIs (`baton ping`, scheduler)
 - [ ] Screenshots in the README
+- [ ] Remote access without exposing it to the internet (Tailscale Serve)
+- [ ] "New task" button: create a GitHub issue for @claude / @codex
 
 ## Blockers
 - None.
@@ -36,6 +38,7 @@ links:
   by hand; Baton never touches provider credentials.
 
 ## Log
+- 2026-11-23 (claude): runs at Windows logon (scheduled task, pythonw); log file when there is no console.
 - 2026-11-23 (claude): automatic quota checks (claude -p stream-json unifiedWindows; codex exec).
 - 2026-11-23 (claude): tested on Windows (native + Docker); fixed .env files with a BOM; Codex CLI oriented itself correctly from the hub's AGENTS.md + INDEX.md.
 - 2026-11-23 (claude): v0.1.0 created.

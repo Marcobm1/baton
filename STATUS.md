@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Check a live task summary from the web, and cancel a real Claude Code task.
 updated: 2026-11-23
-updated_by: claude-code
+updated_by: opencode
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -42,6 +42,7 @@ links:
 - [x] Show the agent's completion summary on local and cloud task pages (PRs #3 + #4 combined)
 - [ ] Check a live task summary from the web
 - [x] Every local task (Claude Code, Codex, OpenCode, local AI) ends in a pull request; no opt-out checkbox
+- [x] Test: "en" and "es" UI strings have the same keys and no empty text
 
 ## Blockers
 - None.
@@ -60,6 +61,9 @@ links:
   on GitHub (see docs/cancelling-tasks.md).
 
 ## Log
+- 2026-11-23 (opencode): test that every language has exactly the "en" keys and no
+  empty UI text; "es"."ago" is empty on purpose (Spanish puts "hace" before the
+  time), so the test allows that one case explicitly.
 - 2026-11-23 (claude-code): Claude quota: a used-up window ("rejected" in the automatic check) now reads 100 % used instead of keeping an old reading; quota bars turn red when exhausted and orange when fast. PR #5 closed (it read status line values of 1 % or less as fractions).
 - 2026-11-23 (claude-code): removed the "open a pull request" checkbox: every local task now pushes its branch and opens a PR; test for the three agents.
 - 2026-11-23 (claude-code): task summary panel (combined PRs #3 and #4): the agent ends with a marked report (what, how, why, checks, problems, what you need to know); cloud tasks read it from the issue.

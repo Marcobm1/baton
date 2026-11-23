@@ -13,6 +13,10 @@ Flow for one task:
      *draft* pull request for you to review;
   5. the worktree is removed once the branch is safe on GitHub.
 
+A running task can be cancelled from its page: Baton kills the agent and all
+its subprocesses, commits and pushes nothing, and removes the worktree and the
+local branch unless the branch is already on GitHub.
+
 Everything is written to <data dir>/tasks/<id>.log and tasks.json.
 """
 
@@ -24,6 +28,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -149,7 +154,7 @@ class Task:
     agent: str
     where: str                      # "local" | "cloud"
     created_at: float
-    status: str = "queued"          # queued | running | done | no-changes | failed
+    status: str = "queued"          # queued | running | done | no-changes | failed | cancelled
     branch: str = ""
     base: str = ""
     worktree: str = ""
@@ -264,6 +269,37 @@ class TaskStore:
         return "\n".join(self.read_log(task_id).splitlines()[-lines:])
 
 
+class Cancelled(Exception):
+    """Raised inside a task's thread when the owner cancelled it."""
+
+
+def kill_tree(proc: subprocess.Popen) -> None:
+    """Stop a process and every process it started.
+
+    `proc.kill()` only stops the direct child; Claude Code, Codex and OpenCode
+    start their own subprocesses (node, shells, tools) that would keep running.
+    On Windows `taskkill /T` walks the tree of child processes; elsewhere the
+    agent runs in its own process group (start_new_session) and the whole
+    group gets the signal.
+    """
+    if os.name == "nt":
+        taskkill = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "taskkill.exe"
+        try:
+            subprocess.run([str(taskkill), "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
+                           timeout=30, stdin=subprocess.DEVNULL, **_NO_WINDOW)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()  # last resort: at least the direct child
+
+
 def new_id(title: str) -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + _slug(title)
 
@@ -280,6 +316,14 @@ class Runner:
         self.git_name = git_name
         self.git_email = git_email
         self.open_pr = open_pr        # (repo, branch, base, title, body) -> url
+        # Shared between the web thread (cancel) and each task's thread. The
+        # lock makes "is it cancelled?" plus "start the agent" (or "start
+        # committing") a single step, so a cancel can never slip in between.
+        self._lock = threading.Lock()
+        self._threads: dict[str, threading.Thread] = {}
+        self._procs: dict[str, subprocess.Popen] = {}
+        self._cancelled: set[str] = set()
+        self._committing: set[str] = set()
 
     # ---------------------------------------------------------- availability
     def agents_available(self) -> dict[str, str]:
@@ -301,7 +345,72 @@ class Runner:
         if task.agent == "local":
             task.model = self.local_model
         self.store.save(task)
-        threading.Thread(target=self._run, args=(task,), daemon=True).start()
+        thread = threading.Thread(target=self._run, args=(task,), daemon=True)
+        with self._lock:
+            self._threads[task.id] = thread
+        thread.start()
+
+    # ------------------------------------------------------------ cancelling
+    def can_cancel(self, task_id: str) -> bool:
+        with self._lock:
+            thread = self._threads.get(task_id)
+            return bool(thread and thread.is_alive() and task_id not in self._committing
+                        and task_id not in self._cancelled)
+
+    def cancel(self, task_id: str, wait: float = 30) -> bool:
+        """Stop a running local task. False if it isn't running here (or is
+        already committing its result, which only takes a moment)."""
+        with self._lock:
+            thread = self._threads.get(task_id)
+            if not thread or not thread.is_alive() or task_id in self._committing:
+                return False
+            self._cancelled.add(task_id)
+            proc = self._procs.get(task_id)
+        if proc:
+            kill_tree(proc)
+        # The task's own thread cleans up and saves the "cancelled" status
+        # (one writer per task); wait a little so the page shows the result.
+        thread.join(wait)
+        return True
+
+    def _check_cancelled(self, task: Task) -> None:
+        with self._lock:
+            if task.id in self._cancelled:
+                raise Cancelled()
+
+    def _branch_published(self, repo_dir: Path, branch: str) -> bool | None:
+        """True if the branch exists on origin, False if not, None if unknown."""
+        try:
+            r = subprocess.run(["git", "-C", str(repo_dir), "ls-remote", "--exit-code", "--heads",
+                                "origin", f"refs/heads/{branch}"], capture_output=True, text=True,
+                               timeout=60, stdin=subprocess.DEVNULL, **_NO_WINDOW)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode == 0:
+            return True
+        return False if r.returncode == 2 else None  # 2 = "no matching ref"
+
+    def _discard(self, task: Task, repo_dir: Path | None, wt: Path | None) -> str:
+        """After a cancel: drop the worktree and the local branch, unless the
+        branch is on GitHub. Returns what happened, for the task's message."""
+        if not repo_dir or not wt:
+            return "Nothing had been created yet."
+        published = self._branch_published(repo_dir, task.branch)
+        if published is not False:
+            why = "is on GitHub" if published else "could not be checked on GitHub"
+            return f"The branch {task.branch} {why}, so its worktree and branch were kept."
+        # Windows may keep files of the killed processes open for a moment.
+        for _ in range(10):
+            self._git(repo_dir, "worktree", "remove", "--force", str(wt), check=False)
+            if not wt.exists():
+                break
+            time.sleep(0.5)
+        if wt.exists():
+            return f"The worktree could not be removed; delete it by hand: {wt}"
+        self._git(repo_dir, "worktree", "prune", check=False)
+        self._git(repo_dir, "branch", "-D", task.branch, check=False)
+        task.worktree = ""
+        return "Nothing was committed or pushed; the worktree and the local branch were removed."
 
     # --------------------------------------------------------------- running
     def _log(self, task: Task, text: str) -> None:
@@ -350,15 +459,19 @@ class Runner:
             self.store.save(task)
 
         task.status = "running"
+        repo_dir: Path | None = None
+        wt: Path | None = None          # set once the worktree exists
         try:
             repo_dir = self.repos.get(task.repo)
             if not repo_dir:
                 raise RuntimeError("No local clone of this repository (check BATON_LOCAL_ROOT).")
             step(f"Local clone: {repo_dir}")
             self._git(repo_dir, "fetch", "origin", task.base)
-            wt = self.store.dir / "worktrees" / f"{task.repo.split('/')[1]}-{task.id}"
-            wt.parent.mkdir(parents=True, exist_ok=True)
-            self._git(repo_dir, "worktree", "add", "-b", task.branch, str(wt), f"origin/{task.base}")
+            self._check_cancelled(task)
+            path = self.store.dir / "worktrees" / f"{task.repo.split('/')[1]}-{task.id}"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._git(repo_dir, "worktree", "add", "-b", task.branch, str(path), f"origin/{task.base}")
+            wt = path
             task.worktree = str(wt)
             step(f"Worktree on branch {task.branch} (from origin/{task.base})")
 
@@ -370,11 +483,29 @@ class Runner:
             # Claude and Codex read the prompt from stdin; OpenCode gets it as an
             # argument, and its stdin is closed so it never waits for input.
             stdin_text = "" if task.agent == "opencode" else self._prompt(task)
+            # Popen (not run) so that cancel() can reach the process while it works.
+            group = {} if os.name == "nt" else {"start_new_session": True}
             with open(self.store.log_path(task.id), "a", encoding="utf-8") as log:
-                proc = subprocess.run(self._agent_cmd(task, wt), input=stdin_text, stdout=log,
-                                      stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                                      errors="replace", cwd=str(wt), env=env,
-                                      timeout=self.timeout, **_NO_WINDOW)
+                with self._lock:
+                    if task.id in self._cancelled:
+                        raise Cancelled()
+                    proc = subprocess.Popen(self._agent_cmd(task, wt), stdin=subprocess.PIPE,
+                                            stdout=log, stderr=subprocess.STDOUT, text=True,
+                                            encoding="utf-8", errors="replace", cwd=str(wt),
+                                            env=env, **group, **_NO_WINDOW)
+                    self._procs[task.id] = proc
+                try:
+                    proc.communicate(input=stdin_text, timeout=self.timeout)
+                except subprocess.TimeoutExpired:
+                    kill_tree(proc)
+                    raise
+                except OSError:
+                    # The pipe broke: the agent was killed while reading its prompt.
+                    proc.wait()
+                finally:
+                    with self._lock:
+                        self._procs.pop(task.id, None)
+            self._check_cancelled(task)
             step(f"Agent finished (exit code {proc.returncode})")
             if proc.returncode != 0:
                 raise RuntimeError(f"The agent stopped with exit code {proc.returncode}; see the log.")
@@ -386,6 +517,10 @@ class Runner:
                 self._git(repo_dir, "branch", "-D", task.branch, check=False)
                 task.worktree = ""
                 return
+            with self._lock:
+                if task.id in self._cancelled:
+                    raise Cancelled()
+                self._committing.add(task.id)  # from here on, cancel() says no
             self._git(wt, "add", "-A")
             ident = []
             if not self._git(wt, "config", "user.email", check=False):
@@ -408,6 +543,14 @@ class Runner:
             else:
                 task.message = f"Done: the changes are on the local branch {task.branch} in {wt}."
             task.status = "done"
+        except Cancelled:
+            step("Cancelled: the agent and its subprocesses were stopped")
+            task.status = "cancelled"
+            try:
+                task.message = "Cancelled. " + self._discard(task, repo_dir, wt)
+            except Exception as exc:  # the cancel itself already happened
+                task.message = f"Cancelled, but the clean-up failed: {str(exc)[:300]}"
+            self._log(task, f"!! {task.message}")
         except subprocess.TimeoutExpired:
             task.status = "failed"
             task.message = f"The agent took longer than {self.timeout // 60} minutes and was stopped."
@@ -418,3 +561,7 @@ class Runner:
         finally:
             task.finished_at = time.time()
             self.store.save(task)
+            with self._lock:
+                self._cancelled.discard(task.id)
+                self._committing.discard(task.id)
+                self._threads.pop(task.id, None)

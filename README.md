@@ -201,6 +201,16 @@ or push: Baton commits what changed, pushes the branch and opens a pull request
 time per repository; the log and the steps are on the task's page. Tasks use
 your plans' quotas like any other use of those CLIs.
 
+While a local task is running, its page has a **Cancel task** button. Baton
+stops the agent *and every process it started* (on Windows with
+`taskkill /T /F`, elsewhere by killing its process group), commits and pushes
+nothing, removes the worktree and deletes the local branch, and marks the task
+**cancelled** with the time. If the branch is already on GitHub (or Baton
+can't check), the worktree and branch are kept and the page says so. Once Baton
+has started committing the result (a matter of seconds) the task can no longer
+be cancelled. The button uses the same cross-site protection as the task form.
+See [`docs/cancelling-tasks.md`](docs/cancelling-tasks.md) for the details.
+
 On Windows Baton calls `opencode.exe` directly, never npm's `opencode.cmd`
 wrapper, so a task's text never goes through `cmd.exe`.
 

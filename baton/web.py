@@ -109,6 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     templates.env.filters["md"] = _render_md
     templates.env.filters["dur"] = _duration
     templates.env.filters["tok"] = usage.human
+    templates.env.filters["when"] = lambda ts: time.strftime("%Y-%m-%d %H:%M", time.localtime(ts)) if ts else "—"
     usage_cache: dict = {}
 
     def token_usage() -> dict:
@@ -187,7 +188,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Unknown task")
         log = store.read_log(task.id)
         return page(request, "task.html", "tasks", task=task, report=task_report(task, log),
-                    log="\n".join(log.splitlines()[-200:]))
+                    log="\n".join(log.splitlines()[-200:]), can_cancel=runner.can_cancel(task.id))
+
+    @app.post("/tasks/{task_id}/cancel")
+    async def task_cancel(request: Request, task_id: str, csrf: str = Form("")):
+        check_post(request, csrf)
+        if not store.get(task_id):
+            raise HTTPException(404, "Unknown task")
+        # Killing the agent and removing the worktree block for a few seconds:
+        # do it in a thread so the other pages keep answering.
+        if not await asyncio.to_thread(runner.cancel, task_id):
+            raise HTTPException(409, "This task is not running on this computer, or is already finishing.")
+        return RedirectResponse(f"/tasks/{quote(task_id)}", status_code=303)
 
     @app.post("/tasks")
     async def task_create(request: Request, repo: str = Form(...), where: str = Form(...),

@@ -126,3 +126,114 @@ def test_opencode_is_launched_without_a_shell(tmp_path, monkeypatch):
     rules = runner_mod.OPENCODE_CONFIG["agents"]["baton"]["permissions"]
     assert rules[0] == {"action": "*", "resource": "*", "effect": "deny"}  # everything else denied
     assert {"action": "shell", "resource": "git push*", "effect": "deny"} in rules
+
+
+def _sleepy_agent(beat: Path) -> str:
+    """A fake agent that leaves half-done work, starts a child process that
+    writes a heartbeat to `beat` (outside the worktree), and then sleeps."""
+    child = f"import time\nwhile True:\n    open({str(beat)!r}, 'a').write('.')\n    time.sleep(0.05)\n"
+    return ("import subprocess, sys, time\n"
+            "open('HALF.md', 'w').write('half done')\n"
+            f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+            "time.sleep(120)\n")
+
+
+def _wait_for_heartbeat(beat: Path) -> None:
+    for _ in range(300):
+        if beat.exists() and beat.stat().st_size > 2:
+            return
+        time.sleep(0.05)
+    raise AssertionError("the fake agent did not start")
+
+
+def _assert_cancelled_cleanly(store, task_id, work, origin, beat, started):
+    t = store.get(task_id)
+    assert t.status == "cancelled", t.message
+    assert t.finished_at and t.finished_at >= started
+    assert "Nothing was committed or pushed" in t.message and t.worktree == ""
+    # The agent's child process is dead too: its heartbeat has stopped.
+    time.sleep(0.3)
+    size = beat.stat().st_size
+    time.sleep(0.5)
+    assert beat.stat().st_size == size
+    # No worktree, no local branch, nothing on GitHub (origin).
+    assert not (store.dir / "worktrees" / f"demo-{task_id}").exists()
+    local = subprocess.run(["git", "-C", str(work), "branch", "--list", f"baton/{task_id}"],
+                           capture_output=True, text=True, check=True).stdout
+    remote = subprocess.run(["git", "-C", str(origin), "branch", "--list", f"baton/{task_id}"],
+                            capture_output=True, text=True, check=True).stdout
+    assert local.strip() == "" and remote.strip() == ""
+    assert not (work / "HALF.md").exists()
+
+
+def test_cancel_stops_the_agent_and_its_children(tmp_path, monkeypatch):
+    work, origin = make_repo(tmp_path)
+    monkeypatch.setattr(runner_mod, "_remote_repo", lambda url: "x/demo" if url.strip() else "")
+    beat = tmp_path / "beat.txt"
+    opened = []
+    store, r = _fake_agent_runner(tmp_path, work, _sleepy_agent(beat), opened)
+    r.start(Task(id="t4", repo="x/demo", title="Sleep", details="", agent="codex", where="local",
+                 created_at=time.time(), branch="baton/t4", base="main"))
+    _wait_for_heartbeat(beat)
+    assert r.can_cancel("t4") and store.get("t4").status == "running"
+    started = time.time()
+    assert r.cancel("t4")
+    _assert_cancelled_cleanly(store, "t4", work, origin, beat, started)
+    assert opened == []                      # no pull request
+    assert not r.can_cancel("t4") and not r.cancel("t4")
+    assert "Cancelled" in store.log_tail("t4")
+
+
+def test_cancel_from_the_task_page(tmp_path, monkeypatch):
+    import asyncio
+    import re
+    from fastapi.testclient import TestClient
+    from baton import github, web
+    from baton.config import Settings
+    from baton.github import Project
+    from baton.status import parse
+
+    work, origin = make_repo(tmp_path)
+    beat = tmp_path / "beat.txt"
+    st = parse("---\nname: Demo\nstatus: active\nsummary: x\nnext: y\nupdated: 2026-11-23\n---\n")
+    proj = Project("x/demo", "x/demo", "STATUS.md", "main", False, "https://github.com/x/demo", None, st)
+
+    async def fake_load(self, force=False):
+        return [proj], []
+
+    class SleepyRunner(Runner):
+        def agents_available(self):
+            return {a: "" for a in runner_mod.AGENTS}
+
+        def _agent_cmd(self, task, wt):
+            return [sys.executable, "-c", _sleepy_agent(beat)]
+
+    monkeypatch.setattr(github.Hub, "load", fake_load)
+    monkeypatch.setattr(web, "Runner", SleepyRunner)
+    c = TestClient(web.create_app(Settings(github_token="t", owner="x", data_dir=tmp_path / "data",
+                                           codex_home=tmp_path, local_paths=f"x/demo={work}")))
+    token = re.search(r'name="csrf" value="([^"]+)"', c.get("/tasks/new?repo=x/demo").text).group(1)
+    r = c.post("/tasks", data={"repo": "x/demo", "where": "local:codex", "title": "Sleep", "csrf": token},
+               follow_redirects=False)
+    assert r.status_code == 303
+    url = r.headers["location"]
+    task_id = url.rsplit("/", 1)[1]
+    _wait_for_heartbeat(beat)
+    assert f'action="/tasks/{task_id}/cancel"' in c.get(url).text
+
+    # Without the form token (or with a wrong one, or from another site) it is refused.
+    assert c.post(f"{url}/cancel", data={}).status_code == 403
+    assert c.post(f"{url}/cancel", data={"csrf": "bad"}).status_code == 403
+    assert c.post(f"{url}/cancel", data={"csrf": token},
+                  headers={"origin": "https://evil.example"}).status_code == 403
+    assert c.get(url).text.count("/cancel") == 1   # still running: the button is still there
+
+    started = time.time()
+    r = c.post(f"{url}/cancel", data={"csrf": token}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == url
+    store = TaskStore(tmp_path / "data")
+    _assert_cancelled_cleanly(store, task_id, work, origin, beat, started)
+    page = c.get(url).text
+    assert "cancelled" in page and "/cancel" not in page
+    assert c.post(f"{url}/cancel", data={"csrf": token}).status_code == 409
+    assert c.post("/tasks/nope/cancel", data={"csrf": token}).status_code == 404

@@ -11,7 +11,11 @@ they hold even with --auto, which approves only what isn't denied):
     can't edit writes files with the terminal instead), MCP tools, Code Mode,
     subagents. --web also lets it search and read web pages.
   * --write: agent "baton" (the one Baton's tasks use) may edit and run
-    commands inside the folder, never commit, push or change branch.
+    commands, never commit, push or change branch. OpenCode has no OS sandbox:
+    its terminal runs as you and CAN write outside the folder (tested
+    2026-11-23). Use it only with instructions you or your agents wrote, never
+    with outside content (web pages, honeypot data, other people's repos).
+    For the same reason --web can't be combined with --write.
 """
 
 from __future__ import annotations

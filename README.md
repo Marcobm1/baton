@@ -127,7 +127,7 @@ means an agent worked on it and forgot the update.
 ## Quota panel
 
 Subscription plans count usage in a rolling **5-hour window** and a **weekly
-window**. The panel shows, for each window, how much is used, when it resets,
+window** (OpenCode Go adds a **monthly** allowance). The panel shows, for each window, how much is used, when it resets,
 and your pace compared with an even spread (the tick on the bar is how much of
 the window has passed). "Quota to spare" means you will probably reach the
 reset with quota left over.
@@ -172,7 +172,7 @@ where it runs:
 |---|---|---|
 | Claude Code | `claude -p --permission-mode auto` | Auto mode: a classifier reviews each action instead of asking you. |
 | Codex | `codex exec -s workspace-write` | Sandbox: it can only write inside the task's folder. |
-| OpenCode | `opencode run --auto --agent baton -m <model>` | Any model OpenCode lists (free ones, your ChatGPT plan, Ollama…). No OS sandbox: Baton defines its own `baton` agent that denies git commits/pushes/branch changes and paths outside the folder (explicit denies hold even with `--auto`). |
+| OpenCode | `opencode run --auto --agent baton -m <model>` | Any model OpenCode lists (free ones, OpenCode Go, your ChatGPT plan, Ollama…). Baton's own `baton` agent starts by denying everything, then allows reading, editing and the terminal, and denies commits, pushes, branch changes, `gh`, MCP tools, Code Mode and subagents. **No OS sandbox:** its terminal runs as you and can write outside the folder (tested), so only send it tasks you wrote. |
 | Local AI | `codex exec --oss --local-provider ollama -m <model>` | Needs `BATON_LOCAL_MODEL` and Ollama or LM Studio. |
 
 Baton finds the repository's clone under `BATON_LOCAL_ROOT` (by its `origin`
@@ -204,6 +204,31 @@ start tasks through Baton.
 
 Codex in the cloud: OpenAI documents `@codex` mentions in pull request
 comments, not in issues, so Baton doesn't create Codex cloud tasks yet.
+
+## Subtasks for cheaper models: `baton delegate`
+
+Your main agent (Claude Code, Codex) or you can hand a bounded subtask to any
+OpenCode model and get the answer back on the terminal:
+
+```
+baton delegate --list                                  models OpenCode offers
+baton delegate -m opencode-go/<model> "Summarise how auth works in this repo"
+"Draft tests for parse()" | baton delegate -m <model> -        (task from stdin)
+baton delegate -m <model> --web "Find the paper ..."            may read the web
+baton delegate -m <model> --write "Fix the typos in docs/"      may edit
+```
+
+- **Read-only by default** (agent `baton-helper`): it may only read and search
+  the folder. Edits, the terminal, MCP tools, Code Mode and subagents are
+  denied (tested: it can't create a file by any route).
+- `--write` uses the tasks' agent: edits and the terminal, no commits or pushes.
+  The terminal isn't sandboxed (see above): use it only with instructions you
+  or your agents wrote. `--web` and `--write` can't be combined, so text from a
+  web page never reaches a model with a terminal.
+- Passing the task on stdin (`-`) avoids shell quoting problems, especially
+  in Windows PowerShell 5.
+- The main agent stays responsible: it should check what comes back, never
+  send secrets or personal data, and spend cheap models on cheap work.
 
 ## Seeing Baton from your phone without putting it on the internet
 
@@ -245,6 +270,10 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_GIT_NAME` / `BATON_GIT_EMAIL` | Baton | Commit identity when the clone has none. |
 | `BATON_CLOUD_TASKS` | `1` | `0` hides the GitHub Actions option. |
 | `CODEX_HOME` | `~/.codex` | Where Codex keeps its logs. |
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Where Claude Code keeps its logs (tokens spent). |
+| `BATON_OPENCODE_BIN` | found on PATH | Path to `opencode.exe` if it isn't found. |
+| `BATON_OPENCODE_DB` | `~/.local/share/opencode/opencode.db` | OpenCode's database (tokens spent; read-only). |
+| `BATON_OPENCODE_GO_KEY` | — | Optional: your OpenCode Go key, only to show its quota. Type it yourself. |
 
 ## CLI
 
@@ -256,6 +285,7 @@ baton new "Name" [--path STATUS.md]            create a STATUS.md
 baton quotas                                   quota windows as JSON
 baton ping [claude|codex|all]                  refresh quota readings now (spends a little quota)
 baton statusline                               Claude Code status line command
+baton delegate -m MODEL [--write|--web] TASK   give a subtask to an OpenCode model
 ```
 
 JSON endpoints: `GET /api/projects`, `GET /api/quotas`.
@@ -266,6 +296,9 @@ JSON endpoints: `GET /api/projects`, `GET /api/quotas`.
   way, because it can show private repositories.
 - Use a read-only, fine-grained token limited to the repos you need.
 - `STATUS.md` bodies are rendered as Markdown with raw HTML disabled.
+- OpenCode has no OS sandbox. Baton's rules stop commits, pushes and its extra
+  tools, not a terminal command that writes elsewhere. Read-only is the default
+  for `baton delegate`.
 
 ## License
 

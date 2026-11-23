@@ -33,6 +33,8 @@ links:
 - [ ] Codex cloud tasks (only documented from PR comments; test first)
 - [x] OpenCode as a local agent, with any model it lists
 - [x] Tokens spent per day/week, per app and model (Quotas page)
+- [x] OpenCode Go quota (5 h, week, month) with an optional key
+- [x] `baton delegate`: subtasks for OpenCode models, read-only by default
 - [ ] Cancel a running task from its page
 
 ## Blockers
@@ -45,6 +47,7 @@ links:
   by hand; Baton never touches provider credentials.
 
 ## Log
+- 2026-11-23 (claude): OpenCode Go quota; baton delegate; OpenCode rules rewritten deny-first after tests; tokens section fixed.
 - 2026-11-23 (claude): OpenCode agent (own permission rules, exe without shell); tokens spent per app/model.
 - 2026-11-23 (claude): pages split (Projects/Tasks/Quotas); local tasks in worktrees; manual quota form removed.
 - 2026-11-23 (claude): one quota card per provider; next task on project cards; New task form with CSRF protection; Claude task workflow template.

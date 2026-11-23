@@ -110,6 +110,11 @@ def cmd_delegate(args) -> int:
     if not args.model:
         print("Choose a model with -m (see: baton delegate --list)", file=sys.stderr)
         return 2
+    if args.web and args.write:
+        # A web page could carry hidden instructions ("prompt injection"); they
+        # must never reach a model that has a terminal.
+        print("--web and --write can't be used together.", file=sys.stderr)
+        return 2
     prompt = sys.stdin.read() if args.prompt in (None, "-") else args.prompt
     if not prompt.strip():
         print("Give the subtask as an argument, or with - read it from stdin.", file=sys.stderr)

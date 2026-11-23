@@ -63,7 +63,7 @@ def _runner(tmp_path, work, gh, review=None, quota=None):
 
 
 def _start(r, store, agent, tid="t1"):
-    r.start(Task(id=tid, repo="x/demo", title="Add DONE", details="please", agent=agent,
+    r.submit(Task(id=tid, repo="x/demo", title="Add DONE", details="please", agent=agent,
                  where="local", created_at=time.time(), branch=f"baton/{tid}", base="main",
                  model="opencode/x" if agent == "opencode" else ""))
     for _ in range(400):

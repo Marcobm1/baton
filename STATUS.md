@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Review a real OpenCode delegation from the Ranking page.
+next: Queue two real tasks on one repository and check the second starts from the merged result.
 updated: 2026-11-24
-updated_by: codex
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -47,6 +47,8 @@ links:
 - [x] Every local task (Claude Code, Codex, OpenCode, local AI) ends in a pull request; no opt-out checkbox
 - [x] Auto-merge: Claude/Codex PRs merge when tests pass; OpenCode/local AI work and repos without tests get a review (with fixes) by Claude Code or Codex first
 - [ ] Watch the first real auto-merged tasks (one Codex, one OpenCode)
+- [x] Local task queue with priority (high/normal/low), one task per repository, `BATON_MAX_PARALLEL` global limit, change priority or cancel while queued
+- [ ] Queue two real tasks on one repository and check the second starts from the merged result
 - [x] Test: "en" and "es" UI strings have the same keys and no empty text
 
 ## Blockers
@@ -66,8 +68,12 @@ links:
 - 2026-11-23: cancelling kills the agent's whole process tree, commits/pushes
   nothing, and deletes the worktree + local branch only if the branch is not
   on GitHub (see docs/cancelling-tasks.md).
+- 2026-11-24: local tasks wait in a priority queue kept in tasks.json (one per
+  repository, at most BATON_MAX_PARALLEL=3 at once); a task fetches and makes
+  its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude-code): task queue with priority instead of refusing a second task per repository; global limit BATON_MAX_PARALLEL; change priority / cancel while queued; queue survives restarts; en/es texts; docs/task-queue.md; tasks.json reads now take the store lock and the replace retries (Windows "Access denied" race, seen once in 3 runs); 8 new tests, 62 passing 5 runs in a row.
 - 2026-11-24 (codex): added OpenCode Ranking and confirmed both reviews survived a process restart. 52 tests passed; two Windows cancellation tests also failed on the unchanged base.
 - 2026-11-23 (claude-code): auto-merge of local tasks: wait for GitHub tests, review and fix by Claude Code or Codex when needed (OpenCode, local AI, repos without tests), merge the checked commit; BATON_AUTO_MERGE; docs/auto-merge.md; 7 tests.
 - 2026-11-23 (opencode): test that every language has exactly the "en" keys and no

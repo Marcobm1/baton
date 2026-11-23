@@ -47,6 +47,10 @@
     </label>
     {% endif %}
     <p class="muted small">{{ t.auto_merge_option if auto_merge else t.open_pr_option }}</p>
+    <label id="priority-settings">{{ t.priority }}
+      <select name="priority">{% for p in priorities %}<option value="{{ p }}" {% if p == 'normal' %}selected{% endif %}>{{ t['prio_' ~ p] }}</option>{% endfor %}</select>
+    </label>
+    <p class="muted small">{{ t.priority_help|format(max_parallel) }}</p>
 
     {% if cloud %}
     <details class="cloud">

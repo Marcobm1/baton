@@ -9,6 +9,19 @@
     <p><strong>{{ t.last_step }}</strong> · {{ task.steps|last or t.no_step }}</p>
     <p>{{ report.progress|truncate(240) if report.progress else t.no_progress }}</p>
   {% elif task.status == 'queued' %}
+    {% if queue %}
+    <p class="queue-info"><span class="pill prio-{{ task.priority }}">{{ t.priority }} · {{ t['prio_' ~ task.priority] }}</span>
+      <strong>{{ t.queue_pos|format(queue.position|ordinal) }}</strong> · {{ t.waiting_for }}
+      {% if queue.waiting_for %}<a href="/tasks/{{ queue.waiting_for.id }}">{{ queue.waiting_for.title }}</a>{% else %}{{ t.waiting_slot|format(queue.running, queue.max) }}{% endif %}</p>
+    <p class="muted small">{{ t.queued_help }}</p>
+    <form method="post" action="/tasks/{{ task.id }}/priority" class="priority-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>{{ t.priority }}
+        <select name="priority">{% for p in priorities %}<option value="{{ p }}" {% if p == task.priority %}selected{% endif %}>{{ t['prio_' ~ p] }}</option>{% endfor %}</select>
+      </label>
+      <button type="submit">{{ t.change_priority }}</button>
+    </form>
+    {% endif %}
     <p>{{ task.details|truncate(240) if task.details else t.queued_plan }}</p>
     <p>{{ t.requires_local }}{% if task.base %} · {{ t.branch }} <code>{{ task.base }}</code>{% endif %}</p>
   {% elif task.status == 'sent' %}
@@ -38,10 +51,10 @@
   {% if task.status == 'cancelled' %}<p class="small">{{ t.cancelled_at }} {{ task.finished_at|when }}</p>{% endif %}
   {% if can_cancel %}
   <form method="post" action="/tasks/{{ task.id }}/cancel" class="cancel-form"
-        onsubmit="return confirm({{ t.cancel_confirm|tojson|forceescape }})">
+        onsubmit="return confirm({{ (t.cancel_queued_confirm if task.status == 'queued' else t.cancel_confirm)|tojson|forceescape }})">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <button type="submit" class="danger">{{ t.cancel_task }}</button>
-    <span class="muted small">{{ t.cancel_help }}</span>
+    <span class="muted small">{{ t.cancel_queued_help if task.status == 'queued' else t.cancel_help }}</span>
   </form>
   {% endif %}
   <p class="c-meta small">{{ task.repo }} · {{ agents.get(task.agent, task.agent) }}

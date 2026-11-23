@@ -77,6 +77,7 @@ class Settings:
     git_email: str = "baton@localhost"
     cloud_tasks: bool = True
     auto_merge: bool = True          # local tasks: merge the PR when tests pass / review allows
+    max_parallel: int = 3            # local tasks running at once on this computer
     claude_home: Path = Path.home() / ".claude"
     opencode_db: Path = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
     # Optional, typed by you in .env. Used only to read your OpenCode Go usage
@@ -118,6 +119,7 @@ class Settings:
             git_email=os.environ.get("BATON_GIT_EMAIL", "baton@localhost"),
             cloud_tasks=os.environ.get("BATON_CLOUD_TASKS", "1") != "0",
             auto_merge=os.environ.get("BATON_AUTO_MERGE", "1") != "0",
+            max_parallel=max(1, int(os.environ.get("BATON_MAX_PARALLEL", "3") or 3)),
             claude_home=Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"),
             opencode_db=Path(os.environ.get("BATON_OPENCODE_DB")
                              or Path.home() / ".local" / "share" / "opencode" / "opencode.db"),

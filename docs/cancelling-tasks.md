@@ -49,3 +49,8 @@ Decided 2026-11-23.
   it finish.
 - **After a restart** Baton can't reach the processes of a previous run; those
   tasks are already marked `failed` at start-up, so there is no button for them.
+- **Queued tasks** (see docs/task-queue.md) have the same button. They have no
+  process, worktree or branch yet, so cancelling just takes them out of the
+  queue, under the same lock the queue uses to start tasks: a task is either
+  still queued (and is cancelled) or already started (and is cancelled as a
+  running task), never half of each.

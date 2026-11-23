@@ -56,6 +56,13 @@ STRINGS = {
         "cancel_help": "Stops the agent now. Nothing is committed or pushed; the half-done work is thrown away.",
         "cancel_confirm": "Cancel this task? The agent stops and its unfinished changes are deleted.",
         "cancelled_at": "Cancelled at",
+        "priority": "Priority", "prio_high": "high", "prio_normal": "normal", "prio_low": "low",
+        "priority_help": "If the repository already has a task running, this one waits in a queue: one task per repository and at most %s local tasks on this computer. Higher priority starts first, then the oldest; a task that has started is never interrupted.",
+        "queue_pos": "queued, %s", "waiting_for": "Waiting for", "waiting_slot": "a free slot (%s of %s local tasks running)",
+        "queued_help": "It starts when the task it waits for has finished completely (review and merge included), from the latest version of the branch on GitHub.",
+        "change_priority": "Change priority",
+        "cancel_queued_help": "Takes it out of the queue. It never started, so no worktree or branch exists.",
+        "cancel_queued_confirm": "Take this task out of the queue?",
         "where_title": "Where should it run?",
         "where_local_help": "On this computer: the agent works in a separate copy (git worktree) on a new branch, never in your own folder, and uses your plan's quota. Available while this computer is on.",
         "agent_help_claude_code": "Claude Code in auto mode: a classifier reviews each action.",
@@ -193,6 +200,13 @@ STRINGS = {
         "cancel_help": "Para el agente ya. No se hace commit ni push; lo que haya a medias se descarta.",
         "cancel_confirm": "¿Cancelar esta tarea? El agente se para y sus cambios sin terminar se borran.",
         "cancelled_at": "Cancelada el",
+        "priority": "Prioridad", "prio_high": "alta", "prio_normal": "normal", "prio_low": "baja",
+        "priority_help": "Si el repositorio ya tiene una tarea en marcha, esta espera en una cola: una tarea por repositorio y como mucho %s tareas locales en este PC. Empieza antes la de más prioridad y, a igual prioridad, la más antigua; una tarea que ya ha empezado nunca se interrumpe.",
+        "queue_pos": "en cola, %s", "waiting_for": "Esperando a", "waiting_slot": "un hueco libre (%s de %s tareas locales en marcha)",
+        "queued_help": "Empieza cuando la tarea a la que espera termine del todo (revisión y fusión incluidas), desde la última versión de la rama en GitHub.",
+        "change_priority": "Cambiar prioridad",
+        "cancel_queued_help": "La saca de la cola. No llegó a empezar, así que no existe worktree ni rama.",
+        "cancel_queued_confirm": "¿Sacar esta tarea de la cola?",
         "where_title": "¿Dónde se ejecuta?",
         "where_local_help": "En este PC: el agente trabaja en una copia aparte (git worktree) en una rama nueva, nunca en tu carpeta, y gasta de tu plan. Disponible mientras el PC esté encendido.",
         "agent_help_claude_code": "Claude Code en modo auto: un clasificador revisa cada acción.",
@@ -276,6 +290,14 @@ STRINGS = {
         "token_none": "Sin token de GitHub: solo se ven los repositorios públicos.",
     },
 }
+
+
+def ordinal(n: int, lang: str) -> str:
+    """1st, 2nd… in English; 1.ª, 2.ª… in Spanish ("tarea" is feminine)."""
+    if lang == "es":
+        return f"{n}.ª"
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
 
 
 def strings(lang: str) -> dict[str, str]:

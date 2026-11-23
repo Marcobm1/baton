@@ -19,7 +19,7 @@ def test_model_and_effort_reach_local_command(tmp_path, monkeypatch, agent):
     monkeypatch.setattr(Runner, "agents_available", lambda self: {k: "" for k in web.AGENTS})
     monkeypatch.setattr(web, "opencode_models", lambda: [])
     monkeypatch.setattr(web, "catalog", lambda a: {"demo": {"label": "Demo", "efforts": ["high"]}})
-    monkeypatch.setattr(Runner, "start", lambda self, task: self.store.save(task))
+    monkeypatch.setattr(Runner, "submit", lambda self, task: self.store.save(task))
     client = TestClient(web.create_app(Settings(data_dir=tmp_path)))
     page = client.get("/tasks/new").text
     csrf = re.search(r'name="csrf" value="([^"]+)"', page)[1]

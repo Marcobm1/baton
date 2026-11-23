@@ -2,10 +2,10 @@
 name: Baton (hub + quotas)
 status: active
 priority: high
-summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude/Codex quota windows.
+summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Marco sends a test task from the web (cancel button for running tasks).
 updated: 2026-11-23
-updated_by: claude
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -43,10 +43,11 @@ links:
 ## Decisions
 - 2026-11-23: the page reads STATUS.md from GitHub (not local folders), so it
   works the same for every agent and every computer.
-- 2026-11-23: quota data only from local files written by the tools or typed
-  by hand; Baton never touches provider credentials.
+- 2026-11-23: Claude and Codex quota readings come from local sources. OpenCode Go
+  is optional and uses its configured key to query the official usage endpoint.
 
 ## Log
+- 2026-11-23 (codex): verified the live Go quota card and all three API windows on native Windows (8787) and Docker Compose (8788). Docker health check passed; 23 tests passed.
 - 2026-11-23 (claude): OpenCode Go quota; baton delegate; OpenCode rules rewritten deny-first after tests; tokens section fixed.
 - 2026-11-23 (claude): OpenCode agent (own permission rules, exe without shell); tokens spent per app/model.
 - 2026-11-23 (claude): pages split (Projects/Tasks/Quotas); local tasks in worktrees; manual quota form removed.

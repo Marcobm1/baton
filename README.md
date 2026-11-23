@@ -39,7 +39,10 @@ cp .env.example .env      # then edit .env (see below)
 docker compose up -d --build
 ```
 
-Open <http://127.0.0.1:8787>.
+Open <http://127.0.0.1:8787>. If the native service already uses port 8787,
+set `BATON_PORT=8788` in `.env` before starting Compose. The Docker quota
+page will then be at <http://127.0.0.1:8788/quotas>. After a key change,
+run `docker compose up -d` to reload the container environment.
 
 In `.env`, set at least `GITHUB_TOKEN` (a
 [fine-grained token](https://github.com/settings/personal-access-tokens/new)

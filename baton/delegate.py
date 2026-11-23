@@ -25,6 +25,7 @@ import subprocess
 import sys
 
 from .ping import _NO_WINDOW, _clean_env
+from .ranking import cli_ranking
 from .runner import ALWAYS_DENIED, OPENCODE_CONFIG, READ_RULES, _rule, find_opencode, opencode_models
 
 WEB_RULES = [_rule("webfetch", "allow"), _rule("websearch", "allow")]
@@ -49,7 +50,7 @@ def command(exe: str, model: str, prompt: str, write: bool) -> list[str]:
 
 
 def run(model: str, prompt: str, cwd: str, write: bool = False, timeout: int = 900,
-        check_model: bool = True, web: bool = False) -> int:
+        check_model: bool = True, web: bool = False, kind: str = "general") -> int:
     exe = find_opencode()
     if not exe:
         print("OpenCode not found (install it, or set BATON_OPENCODE_BIN).", file=sys.stderr)
@@ -61,6 +62,9 @@ def run(model: str, prompt: str, cwd: str, write: bool = False, timeout: int = 9
                   file=sys.stderr)
             return 2
     env = _clean_env()
+    ranking = cli_ranking()
+    job = ranking.start(model, kind, prompt)
+    print(f"Delegation #{job} (baton rate {job} --help)", file=sys.stderr, flush=True)
     env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config(web))
     try:
         # stdin closed: OpenCode would otherwise wait for more input.
@@ -68,8 +72,21 @@ def run(model: str, prompt: str, cwd: str, write: bool = False, timeout: int = 9
                            stdin=subprocess.DEVNULL, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=timeout, **_NO_WINDOW)
     except subprocess.TimeoutExpired:
-        print(f"Stopped after {timeout} s without an answer.", file=sys.stderr)
+        message = f"Stopped after {timeout} s without an answer."
+        ranking.finish(job, "timeout", message)
+        print(message, file=sys.stderr)
         return 124
+    except OSError as exc:
+        ranking.finish(job, "failed", str(exc))
+        print(exc, file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        ranking.finish(job, "cancelled", "")
+        raise
+    result = p.stdout
+    if p.returncode:
+        result += f"\nExit {p.returncode}\n{p.stderr[-2000:]}"
+    ranking.finish(job, "failed" if p.returncode else "done", result)
     # Windows consoles default to an old code page that can't print emojis.
     for stream in (sys.stdout, sys.stderr):
         try:

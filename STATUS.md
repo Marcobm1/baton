@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Watch the first real auto-merged tasks (one Codex, one OpenCode).
-updated: 2026-11-23
-updated_by: opencode
+next: Review a real OpenCode delegation from the Ranking page.
+updated: 2026-11-24
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,9 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] OpenCode delegation ranking with separate agent and human reviews
+- [ ] Rate a real delegation from the CLI and web
+- [ ] Future phase for native ChatGPT and Claude model rankings
 - [x] STATUS.md format and parser
 - [x] Web page with projects and quota panel
 - [x] Docker + README instructions
@@ -65,6 +68,7 @@ links:
   on GitHub (see docs/cancelling-tasks.md).
 
 ## Log
+- 2026-11-24 (codex): added OpenCode Ranking and confirmed both reviews survived a process restart. 52 tests passed; two Windows cancellation tests also failed on the unchanged base.
 - 2026-11-23 (claude-code): auto-merge of local tasks: wait for GitHub tests, review and fix by Claude Code or Codex when needed (OpenCode, local AI, repos without tests), merge the checked commit; BATON_AUTO_MERGE; docs/auto-merge.md; 7 tests.
 - 2026-11-23 (opencode): test that every language has exactly the "en" keys and no
   empty UI text; "es"."ago" is empty on purpose (Spanish puts "hace" before the

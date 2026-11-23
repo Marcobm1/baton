@@ -47,3 +47,7 @@ task on stdin; `baton delegate --list` shows the models. Read-only is the
 default; use `--write` only with instructions you wrote, never with outside
 content. Check what comes back before using it, and never send secrets or
 personal data.
+
+When delegating, pass a descriptive `--type`. After checking the result,
+record the agent evaluation with `baton rate` and the delegation ID
+(see `docs/ranking.md`).

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block refresh %}{% endblock %}
+{% block title %}{{ t.delegation }} #{{ job.id }} · {{ title }}{% endblock %}
+{% block main %}
+<a href="/ranking">{{ t.ranking }}</a>
+<h1>{{ t.delegation }} #{{ job.id }} · {{ job.model }}</h1>
+<p>{{ job.started|when }} · {{ job.kind }} · {{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</p>
+<h2>{{ t.objective }}</h2>
+<pre class="log">{{ job.prompt }}</pre>
+<h2>{{ t.result }}</h2>
+<pre class="log">{{ job.result or '' }}</pre>
+<h2>{{ t.agent_review }}</h2>
+{% if reviews.agent %}
+<p>{{ agents[reviews.agent.reviewer] }}
+  {% for key in criteria %} · {{ t[key] }} <b>{{ reviews.agent[key] }}</b>{% endfor %}
+</p>
+{% if reviews.agent.comment %}<p>{{ reviews.agent.comment }}</p>{% endif %}
+{% else %}<p class="muted">{{ t.review_pending }}</p>{% endif %}
+<h2>{{ t.human_review }}</h2>
+<p>{{ t.scale }}</p>
+<form class="task-form" method="post" action="/ranking/{{ job.id }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% for key in criteria %}
+  <label>{{ t[key] }}
+    <input type="number" min="1" max="10" required name="{{ key }}" value="{{ reviews.human[key] if reviews.human else '' }}">
+  </label>
+  {% endfor %}
+  <label class="wide">{{ t.comment }}
+    <textarea name="comment" maxlength="500">{{ reviews.human.comment if reviews.human else '' }}</textarea>
+  </label>
+  <button type="submit">{{ t.save }}</button>
+</form>
+{% endblock %}

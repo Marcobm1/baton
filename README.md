@@ -15,7 +15,8 @@ where the previous one left it:
   account and shows them together (next task, progress, out-of-date warnings);
   **Tasks** sends work to an AI agent with one form; **Quotas** shows your
   Claude and Codex 5-hour and weekly windows, so you can see what is left to
-  spend before it resets.
+  spend before it resets. **Ranking** compares the OpenCode models used by
+  `baton delegate` using independent agent and human evaluations.
 
 ```
  repo A ── STATUS.md ─┐
@@ -274,6 +275,12 @@ baton delegate -m <model> --write "Fix the typos in docs/"      may edit
   in Windows PowerShell 5.
 - The main agent stays responsible: it should check what comes back, never
   send secrets or personal data, and spend cheap models on cheap work.
+
+Add `--type test-draft` (or another assignment type) to classify the work.
+After checking the result, Claude Code or Codex uses the delegation ID printed
+on stderr to record its three scores. Open **Ranking** and select the same job
+to add your evaluation later. See [Recording and reading reviews](docs/ranking.md)
+for commands, scoring and storage.
 
 ## Seeing Baton from your phone without putting it on the internet
 

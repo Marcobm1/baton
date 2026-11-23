@@ -2,6 +2,14 @@
 
 STRINGS = {
     "en": {
+        "ranking": "Ranking", "delegations": "Delegations", "delegation": "Delegation",
+        "fulfillment": "Assignment fulfillment", "correctness": "Correctness", "rework": "Rework",
+        "evaluated": "Jobs rated", "human": "Human", "review_pending": "pending",
+        "scale": "Score each criterion from 1 to 10. For rework, 10 means usable as delivered.",
+        "rank_order": "Models are ordered by human score, then agent score. Criterion averages include all submitted reviews.",
+        "no_delegations": "No OpenCode delegations yet. Run baton delegate to record the first one.",
+        "comment": "Comment (optional)", "human_review": "Your evaluation", "agent_review": "Agent evaluation",
+        "st_timeout": "timed out", "unreported": "awaiting result",
         "projects": "Projects",
         "quotas": "Quota windows",
         "active": "Active",
@@ -131,6 +139,14 @@ STRINGS = {
         "token_none": "No GitHub token: only public repositories are visible.",
     },
     "es": {
+        "ranking": "Ranking", "delegations": "Delegaciones", "delegation": "Delegación",
+        "fulfillment": "Cumplimiento", "correctness": "Corrección", "rework": "Retrabajo",
+        "evaluated": "Trabajos evaluados", "human": "Humana", "review_pending": "pendiente",
+        "scale": "Puntúa cada criterio del 1 al 10. En retrabajo, 10 significa que pudiste usar el resultado tal como se entregó.",
+        "rank_order": "Los modelos se ordenan por nota humana y después por nota del agente. Las medias por criterio incluyen todas las valoraciones recibidas.",
+        "no_delegations": "Aún no hay delegaciones de OpenCode. Usa baton delegate para registrar la primera.",
+        "comment": "Comentario (opcional)", "human_review": "Tu evaluación", "agent_review": "Evaluación del agente",
+        "st_timeout": "tiempo agotado", "unreported": "a la espera del resultado",
         "projects": "Proyectos",
         "quotas": "Cuotas",
         "active": "En curso",

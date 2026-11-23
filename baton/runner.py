@@ -118,6 +118,32 @@ def opencode_models() -> list[str]:
     _models_cache = (time.time(), models)
     return models
 
+SUMMARY_REQUEST = (
+    "Finish with a brief report for the owner, in the language required by the project's "
+    "instructions or otherwise in the language of the task. Explain in plain language "
+    "what you accomplished or found, how and why, what you actually verified, and "
+    "what remains pending. Include no secrets. Put BATON_SUMMARY_BEGIN on its own line "
+    "before the report and BATON_SUMMARY_END on its own line after it."
+)
+
+
+def extract_summary(output: str) -> str:
+    # Some CLIs colour their output. Ignore incomplete reports and echoed instructions.
+    output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+    report = None
+    last = ""
+    for line in output.splitlines():
+        if line.strip() == "BATON_SUMMARY_BEGIN":
+            report = []
+        elif line.strip() == "BATON_SUMMARY_END":
+            if report:
+                last = "\n".join(report).strip() or last
+            report = None
+        elif report is not None:
+            report.append(line)
+    return last
+
+
 PROMPT = """You are working on the task below for the repository {repo}.
 Baton created this folder for you: a git worktree of {repo} on the new branch
 `{branch}`, based on `{base}`. You are not in the owner's own working folder.
@@ -130,7 +156,7 @@ Rules:
   Baton commits everything in this folder and opens a draft pull request.
 - If the task is unclear, needs secrets, or would need anything destructive or
   outside this folder, stop and explain why instead of doing it.
-- End with a short summary of what you changed and anything left to check.
+- {summary_request}
 
 Task: {title}
 
@@ -159,6 +185,8 @@ class Task:
     model: str = ""
     steps: list[str] = field(default_factory=list)
     effort: str = ""
+    summary: str = ""
+    issue_number: int | None = None
 
 
 def _slug(text: str) -> str:
@@ -334,7 +362,7 @@ class Runner:
 
     def _prompt(self, task: Task) -> str:
         return PROMPT.format(repo=task.repo, branch=task.branch, base=task.base,
-                             agent=task.agent, title=task.title,
+                             agent=task.agent, title=task.title, summary_request=SUMMARY_REQUEST,
                              details=task.details or "(no more details)")
 
     def _run(self, task: Task) -> None:
@@ -364,11 +392,16 @@ class Runner:
             # Claude and Codex read the prompt from stdin; OpenCode gets it as an
             # argument, and its stdin is closed so it never waits for input.
             stdin_text = "" if task.agent == "opencode" else self._prompt(task)
-            with open(self.store.log_path(task.id), "a", encoding="utf-8") as log:
+            with open(self.store.log_path(task.id), "ab+") as log:
+                start = log.tell()
                 proc = subprocess.run(self._agent_cmd(task, wt), input=stdin_text, stdout=log,
                                       stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                                       errors="replace", cwd=str(wt), env=env,
                                       timeout=self.timeout, **_NO_WINDOW)
+                # Only the end of this agent run can contain its final report.
+                end = log.seek(0, 2)
+                log.seek(max(start, end - 65536))
+                task.summary = extract_summary(log.read().decode("utf-8", errors="replace"))
             step(f"Agent finished (exit code {proc.returncode})")
             if proc.returncode != 0:
                 raise RuntimeError(f"The agent stopped with exit code {proc.returncode}; see the log.")

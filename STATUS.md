@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Marco sends a test task from the web (cancel button for running tasks).
+next: Verify the task summary with a live agent from the web.
 updated: 2026-11-23
 updated_by: codex
 open_source: true
@@ -36,6 +36,8 @@ links:
 - [x] OpenCode Go quota (5 h, week, month) with an optional key
 - [x] `baton delegate`: subtasks for OpenCode models, read-only by default
 - [ ] Cancel a running task from its page
+- [x] Show the agent's completion summary on local and cloud task pages
+- [ ] Check a live task summary from the web
 
 ## Blockers
 - None.
@@ -47,6 +49,7 @@ links:
   is optional and uses its configured key to query the official usage endpoint.
 
 ## Log
+- 2026-11-23 (codex): added persistent task summaries covering the outcome, approach, reasoning, checks and pending work. All 26 tests passed with simulated local and cloud reports.
 - 2026-11-23 (codex): verified private Tailscale Serve routing to native Baton and documented phone access. Replaced inline placeholder icons in quota and token cards with the bundled Anthropic, OpenAI and OpenCode images. Phone-side confirmation remains with the owner.
 - 2026-11-23 (codex): verified 15 Claude Code and 10 Codex models, per-model effort selection, and 25 tests. Refreshed the task form. Checked quota backgrounds in both themes and local Anthropic, OpenAI and OpenCode logos on Windows and Docker.
 - 2026-11-23 (codex): verified the live Go quota card and all three API windows on native Windows (8787) and Docker Compose (8788). Docker health check passed; 23 tests passed.

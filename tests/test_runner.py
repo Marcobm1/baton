@@ -73,7 +73,8 @@ def test_runner_end_to_end_in_a_worktree(tmp_path, monkeypatch):
     work, origin = make_repo(tmp_path)
     monkeypatch.setattr(runner_mod, "_remote_repo", lambda url: "x/demo" if url.strip() else "")
     opened = []
-    script = "import sys; sys.stdin.read(); open('DONE.md','w').write('agent was here\\n'); print('summary: done')"
+    script = ("import sys; sys.stdin.read(); open('DONE.md','w').write('agent was here\\n'); "
+              "print('BATON_SUMMARY_BEGIN\\nAdded DONE.md to record completion.\\nBATON_SUMMARY_END')")
     store, r = _fake_agent_runner(tmp_path, work, script, opened)
     task = Task(id="t1", repo="x/demo", title="Add DONE", details="please", agent="codex", where="local",
                 created_at=time.time(), branch="baton/t1", base="main", open_pr=True)
@@ -86,17 +87,27 @@ def test_runner_end_to_end_in_a_worktree(tmp_path, monkeypatch):
     files = subprocess.run(["git", "-C", str(origin), "show", "--name-only", "--format=%s", "baton/t1"],
                            capture_output=True, text=True, check=True).stdout
     assert "Add DONE" in files and "DONE.md" in files
-    assert "summary: done" in store.log_tail("t1")
+    assert done.summary == "Added DONE.md to record completion."
     assert done.worktree == ""
+
+
+def test_summary_ignores_instructions_and_incomplete_blocks():
+    assert runner_mod.extract_summary(runner_mod.SUMMARY_REQUEST) == ""
+    assert runner_mod.extract_summary("BATON_SUMMARY_BEGIN\nunfinished") == ""
+    assert runner_mod.extract_summary("trace\n\x1b[32mBATON_SUMMARY_BEGIN\x1b[0m\n"
+                                      "one\n\ntwo\nBATON_SUMMARY_END\ntrace") == "one\n\ntwo"
 
 
 def test_runner_no_changes_and_failure(tmp_path, monkeypatch):
     work, _ = make_repo(tmp_path)
     monkeypatch.setattr(runner_mod, "_remote_repo", lambda url: "x/demo" if url.strip() else "")
-    store, r = _fake_agent_runner(tmp_path, work, "import sys; sys.stdin.read()", [])
+    script = "print('BATON_SUMMARY_BEGIN\\nThe setting was already enabled.\\nBATON_SUMMARY_END')"
+    store, r = _fake_agent_runner(tmp_path, work, script, [])
     r.start(Task(id="t2", repo="x/demo", title="Nothing", details="", agent="codex", where="local",
                  created_at=time.time(), branch="baton/t2", base="main"))
-    assert _wait(store, "t2").status == "no-changes"
+    done = _wait(store, "t2")
+    assert done.status == "no-changes"
+    assert done.summary == "The setting was already enabled."
     r._agent_cmd = lambda task, wt: [sys.executable, "-c", "import sys; sys.exit(3)"]
     r.start(Task(id="t3", repo="x/demo", title="Boom", details="", agent="codex", where="local",
                  created_at=time.time(), branch="baton/t3", base="main"))

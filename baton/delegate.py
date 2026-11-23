@@ -21,7 +21,7 @@ import subprocess
 import sys
 
 from .ping import _NO_WINDOW, _clean_env
-from .runner import OPENCODE_CONFIG, READ_RULES, _rule, find_opencode, opencode_models
+from .runner import ALWAYS_DENIED, OPENCODE_CONFIG, READ_RULES, _rule, find_opencode, opencode_models
 
 WEB_RULES = [_rule("webfetch", "allow"), _rule("websearch", "allow")]
 
@@ -31,10 +31,11 @@ def config(web: bool = False) -> dict:
     cfg["agents"]["baton-helper"] = {
         "mode": "primary",
         "description": "Read-only helper for a subtask delegated with baton delegate",
-        "permissions": READ_RULES + (WEB_RULES if web else []),
+        "permissions": READ_RULES + (WEB_RULES if web else []) + ALWAYS_DENIED,
     }
     if web:
-        cfg["agents"]["baton"]["permissions"] = cfg["agents"]["baton"]["permissions"] + WEB_RULES
+        cfg["agents"]["baton"]["permissions"] = (cfg["agents"]["baton"]["permissions"]
+                                                 + WEB_RULES + ALWAYS_DENIED)
     return cfg
 
 

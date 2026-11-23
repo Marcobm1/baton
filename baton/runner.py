@@ -58,12 +58,16 @@ def _rule(action: str, effect: str, resource: str = "*") -> dict:
     return {"action": action, "resource": resource, "effect": effect}
 
 
+# Tested 2026-11-23: OpenCode's own tools (opencode_worktree_remove…) still
+# ran under the deny-all, so they are named again explicitly, at the end.
+ALWAYS_DENIED = [_rule(a, "deny") for a in ("opencode_*", "skill", "subagent", "execute")]
+
 READ_RULES = [_rule("*", "deny")] + [_rule(a, "allow") for a in ("read", "glob", "grep")]
 
 # Baton's tasks (and `baton delegate --write`): read, edit and run commands in
 # the task's folder; never commit, push, change branch or leave the folder.
 TASK_RULES = (READ_RULES + [_rule("edit", "allow"), _rule("shell", "allow")]
-              + [_rule("shell", "deny", c) for c in NO_GIT_CHANGES])
+              + [_rule("shell", "deny", c) for c in NO_GIT_CHANGES] + ALWAYS_DENIED)
 
 OPENCODE_CONFIG = {
     "$schema": "https://opencode.ai/config.json",

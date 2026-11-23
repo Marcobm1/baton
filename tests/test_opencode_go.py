@@ -70,6 +70,9 @@ def test_delegate_read_only_by_default():
     assert helper[0] == {"action": "*", "resource": "*", "effect": "deny"}  # deny first
     allowed = {r["action"] for r in helper if r["effect"] == "allow"}
     assert allowed == {"read", "glob", "grep"}
+    for rules in (helper, cfg["agents"]["baton"]["permissions"]):
+        assert rules[-4:] == [{"action": a, "resource": "*", "effect": "deny"}
+                              for a in ("opencode_*", "skill", "subagent", "execute")]
     task = cfg["agents"]["baton"]["permissions"]  # the write mode reuses the tasks' agent
     assert task[0]["effect"] == "deny"
     assert {"action": "shell", "resource": "git push*", "effect": "deny"} in task

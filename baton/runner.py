@@ -158,6 +158,7 @@ class Task:
     open_pr: bool = True
     model: str = ""
     steps: list[str] = field(default_factory=list)
+    effort: str = ""
 
 
 def _slug(text: str) -> str:
@@ -314,11 +315,21 @@ class Runner:
             return [find_opencode() or "opencode", "run", "--standalone", "--auto", "--agent", "baton",
                     "-m", task.model, "--title", f"Baton {task.id}", self._prompt(task)]
         if task.agent == "claude-code":
-            return [find_claude() or "claude", "-p", "--permission-mode", "auto"]
+            cmd = [find_claude() or "claude", "-p", "--permission-mode", "auto"]
+            if task.model:
+                cmd.extend(["--model", task.model])
+            if task.effort:
+                cmd.extend(["--effort", task.effort])
+            return cmd
         codex = find_codex() or "codex"
         cmd = [codex, "exec", "-s", "workspace-write", "--color", "never", "-C", str(wt)]
         if task.agent == "local":
             cmd[2:2] = ["--oss", "--local-provider", self.local_provider, "-m", self.local_model]
+        elif task.agent == "codex":
+            if task.model:
+                cmd.extend(["-m", task.model])
+            if task.effort:
+                cmd.extend(["-c", f"model_reasoning_effort={json.dumps(task.effort)}"])
         return cmd + ["-"]
 
     def _prompt(self, task: Task) -> str:

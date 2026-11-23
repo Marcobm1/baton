@@ -7,7 +7,7 @@
 {% if error %}<p class="warn small">{{ error }}</p>{% endif %}
 <form method="post" action="/tasks" class="task-form">
   <input type="hidden" name="csrf" value="{{ csrf }}">
-  <label>{{ t.repo }}
+  <label class="wide">{{ t.repo }}
     <select name="repo" required>{% for r in repos %}<option value="{{ r }}" {% if r == selected %}selected{% endif %}>{{ r }}{% if not local[r] %} ({{ t.no_clone }}){% endif %}</option>{% endfor %}</select>
   </label>
   <label class="wide">{{ t.task_name }}
@@ -26,16 +26,26 @@
       {% set why = available[key] %}
       <label class="choice {% if why %}off{% endif %}">
         <input type="radio" name="where" value="local:{{ key }}" {% if why %}disabled{% elif not first.done %}checked{% set first.done = true %}{% endif %}>
-        <span class="c-title">🖥 {{ agents[key] }}</span>
+        <span class="c-title">{{ agents[key] }}</span>
         <span class="small muted">{% if why %}{{ why }}{% else %}{{ t['agent_help_' ~ key|replace('-', '_')] }}{% endif %}</span>
-        {% if key == 'opencode' and not why %}
-        <select name="oc_model" class="model-select" aria-label="{{ t.model }}">
-          {% for m in oc_models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
-        </select>
-        {% endif %}
+
       </label>
       {% endfor %}
     </div>
+    <div class="task-settings" id="task-settings" hidden>
+      <label>{{ t.model }}
+        <select name="model" disabled><option value="">{{ t.cli_default }}</option></select>
+      </label>
+      <label>{{ t.reasoning }}
+        <select name="effort" disabled><option value="">{{ t.cli_default }}</option></select>
+      </label>
+      <p class="small muted" id="catalog-message" hidden>{{ t.no_catalog }}</p>
+    </div>
+    {% if not available["opencode"] %}
+    <label id="oc-settings">{{ t.model }} · OpenCode
+      <select name="oc_model">{% for m in oc_models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select>
+    </label>
+    {% endif %}
     <label class="check small"><input type="checkbox" name="open_pr" value="1" checked> {{ t.open_pr_option }}</label>
 
     {% if cloud %}
@@ -52,4 +62,6 @@
 
   <button type="submit">{{ t.task_send }}</button>
 </form>
+<script type="application/json" id="task-catalogs">{{ catalogs|tojson }}</script>
+<script src="/static/task-form.js" defer></script>
 {% endblock %}

@@ -13,7 +13,7 @@
   <li class="task-row st-{{ x.status }}">
     <span class="pill st">{{ t['st_' ~ x.status] }}</span>
     <a class="task-title" href="/tasks/{{ x.id }}">{{ x.title }}</a>
-    <span class="muted small">{{ x.repo }} · {% if x.where == 'cloud' %}☁ {{ t.where_cloud_short }}{% else %}🖥 {{ agents[x.agent] }}{% if x.model %} · {{ x.model }}{% endif %}{% endif %}</span>
+    <span class="muted small">{{ x.repo }} · {% if x.where == 'cloud' %}☁ {{ t.where_cloud_short }}{% else %}🖥 {{ agents[x.agent] }}{% if x.model %} · {{ x.model }}{% if x.effort %} · {{ x.effort }}{% endif %}{% endif %}{% endif %}</span>
     {% if x.pr_url %}<a class="small" href="{{ x.pr_url }}">PR ↗</a>{% elif x.issue_url %}<a class="small" href="{{ x.issue_url }}">Issue ↗</a>{% endif %}
   </li>
   {% endfor %}

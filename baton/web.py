@@ -21,6 +21,7 @@ from .config import Settings
 from .github import GitHubError, Hub
 from .i18n import strings
 from .ping import Scheduler
+from .task_models import catalog
 from .runner import AGENTS, LocalRepos, Runner, Task, TaskStore, new_id, opencode_models
 
 HERE = Path(__file__).parent
@@ -169,9 +170,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         repos = sorted({p.repo for p in projects})
         local = {r: bool(runner.repos.get(r)) for r in repos}
         available = runner.agents_available()
-        models = await asyncio.to_thread(opencode_models) if not available["opencode"] else []
+        agents = [a for a in ("claude-code", "codex") if not available[a]]
+        models, *choices = await asyncio.gather(
+            asyncio.to_thread(opencode_models) if not available["opencode"] else asyncio.sleep(0, result=[]),
+            *(asyncio.to_thread(catalog, a) for a in agents))
         return page(request, "task_new.html", "tasks", repos=repos, selected=repo,
-                    local=local, available=available, oc_models=models,
+                    local=local, available=available, oc_models=models, catalogs=dict(zip(agents, choices)),
                     cloud=settings.cloud_tasks, error=error[:300],
                     has_token=bool(settings.github_token))
 
@@ -185,7 +189,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/tasks")
     async def task_create(request: Request, repo: str = Form(...), where: str = Form(...),
                           title: str = Form(...), details: str = Form(""),
-                          open_pr: str = Form(""), oc_model: str = Form(""), csrf: str = Form("")):
+                          open_pr: str = Form(""), oc_model: str = Form(""), csrf: str = Form(""),
+                          model: str = Form(""), effort: str = Form("")):
         check_post(request, csrf)
         projects, _ = await hub.load()
         by_repo = {p.repo: p for p in projects}
@@ -226,16 +231,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return back("There is no local clone of this repository on this computer.")
         if runner.busy(repo):
             return back("A task is already running on this repository; wait for it to finish.")
-        model = ""
-        if agent == "opencode":
+        if agent in ("codex", "claude-code") and (model or effort):
+            options = await asyncio.to_thread(catalog, agent)
+            if model not in options or (effort and effort not in options[model]["efforts"]):
+                return back(strings(settings.lang)["invalid_model"])
+        elif agent == "opencode":
             # Only a model OpenCode itself lists is accepted.
             if oc_model not in await asyncio.to_thread(opencode_models):
                 return back("Choose one of the models OpenCode lists.")
-            model = oc_model
+            model, effort = oc_model, ""
+        else:
+            model, effort = "", ""
         task_id = new_id(title)
         task = Task(id=task_id, repo=repo, title=title, details=details, agent=agent,
                     where="local", created_at=time.time(), branch=f"baton/{task_id}",
-                    base=by_repo[repo].branch, open_pr=bool(open_pr), model=model)
+                    base=by_repo[repo].branch, open_pr=bool(open_pr), model=model, effort=effort)
         runner.start(task)
         return RedirectResponse(f"/tasks/{task.id}", status_code=303)
 

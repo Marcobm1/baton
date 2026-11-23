@@ -185,6 +185,12 @@ where it runs:
 | OpenCode | `opencode run --auto --agent baton -m <model>` | Any model OpenCode lists (free ones, OpenCode Go, your ChatGPT plan, Ollama…). Baton's own `baton` agent starts by denying everything, then allows reading, editing and the terminal, and denies commits, pushes, branch changes, `gh`, MCP tools, Code Mode and subagents. **No OS sandbox:** its terminal runs as you and can write outside the folder (tested), so only send it tasks you wrote. |
 | Local AI | `codex exec --oss --local-provider ollama -m <model>` | Needs `BATON_LOCAL_MODEL` and Ollama or LM Studio. |
 
+For a local Claude Code or Codex task, choose a model and then its reasoning
+effort. Both lists come from the installed CLI and are cached for ten minutes.
+Leaving the selection at its default uses the CLI configuration. The task
+history records explicit choices. Docker only offers local agents installed
+inside the container.
+
 Baton finds the repository's clone under `BATON_LOCAL_ROOT` (by its `origin`
 remote; or `BATON_LOCAL_PATHS`), fetches, and creates a **git worktree** (a
 second working folder of the same repository) on a new branch `baton/<id>`, so

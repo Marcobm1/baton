@@ -32,6 +32,7 @@ links:
 - [x] Remote access through Tailscale Serve
 - [ ] Codex cloud tasks (only documented from PR comments; test first)
 - [x] OpenCode as a local agent, with any model it lists
+- [x] Select model and supported reasoning effort for local Claude Code and Codex tasks
 - [x] Tokens spent per day/week, per app and model (Quotas page)
 - [x] OpenCode Go quota (5 h, week, month) with an optional key
 - [x] `baton delegate`: subtasks for OpenCode models, read-only by default
@@ -47,6 +48,7 @@ links:
   is optional and uses its configured key to query the official usage endpoint.
 
 ## Log
+- 2026-11-23 (codex): verified 15 Claude Code and 10 Codex models, per-model effort selection, and 25 tests. Refreshed the task form. Checked quota backgrounds in both themes and local Anthropic, OpenAI and OpenCode logos on Windows and Docker.
 - 2026-11-23 (codex): verified the live Go quota card and all three API windows on native Windows (8787) and Docker Compose (8788). Docker health check passed; 23 tests passed.
 - 2026-11-23 (claude): OpenCode Go quota; baton delegate; OpenCode rules rewritten deny-first after tests; tokens section fixed.
 - 2026-11-23 (claude): OpenCode agent (own permission rules, exe without shell); tokens spent per app/model.

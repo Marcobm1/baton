@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import time
@@ -32,6 +33,39 @@ def test_remote_repo_parsing():
     assert _remote_repo("https://github.com/Marcobm1/Cairn.git") == "marcobm1/cairn"
     assert _remote_repo("git@github.com:Marcobm1/baton.git\n") == "marcobm1/baton"
     assert _remote_repo("https://example.com/x/y") == ""
+
+
+def test_opencode_summary_excludes_tools_and_earlier_replies():
+    events = [
+        {"type": "text", "part": {"id": "1", "text": "Checking the code."}},
+        {"type": "tool_use", "part": {"state": {"output": "tool output"}}},
+        {"type": "step_start"},
+        {"type": "text", "part": {"id": "2", "text": "Tests"}},
+        {"type": "text", "part": {"id": "2", "text": " passed."}},
+        {"type": "text", "part": {"id": "3", "text": "One manual check remains."}},
+    ]
+    lines = ["CLI diagnostic", *map(json.dumps, events)]
+    assert runner_mod._opencode_reply(lines) == "Tests passed.\n\nOne manual check remains."
+
+
+def test_task_summary_page_and_legacy_history(tmp_path):
+    from fastapi.testclient import TestClient
+    from baton.config import Settings
+    from baton.web import create_app
+
+    store = TaskStore(tmp_path)
+    task = Task("test", "x/demo", "Test", "", "codex", "local", 0, status="no-changes")
+    store.save(task)
+    rows = json.loads(store.file.read_text())
+    del rows[0]["summary"]
+    store.file.write_text(json.dumps(rows))
+    client = TestClient(create_app(Settings(data_dir=tmp_path, lang="es")))
+    assert "No se guardó una respuesta final" in client.get("/tasks/test").text
+    task.summary = "Checked **both paths**. <script>alert(1)</script>"
+    store.save(task)
+    html = client.get("/tasks/test").text
+    assert "Resumen" in html and "<strong>both paths</strong>" in html
+    assert "<script>alert(1)</script>" not in html
 
 
 def test_local_repos_prefers_named_folder(tmp_path, monkeypatch):
@@ -87,6 +121,7 @@ def test_runner_end_to_end_in_a_worktree(tmp_path, monkeypatch):
                            capture_output=True, text=True, check=True).stdout
     assert "Add DONE" in files and "DONE.md" in files
     assert "summary: done" in store.log_tail("t1")
+    assert done.summary == "summary: done"
     assert done.worktree == ""
 
 

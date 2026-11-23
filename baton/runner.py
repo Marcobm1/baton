@@ -29,7 +29,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
 
@@ -130,7 +130,8 @@ Rules:
   Baton commits everything in this folder and opens a draft pull request.
 - If the task is unclear, needs secrets, or would need anything destructive or
   outside this folder, stop and explain why instead of doing it.
-- End with a short summary of what you changed and anything left to check.
+- In your final reply, use the owner's language and explain what you did, how
+  and why, what you verified, any problems you encountered and what remains.
 
 Task: {title}
 
@@ -159,6 +160,28 @@ class Task:
     model: str = ""
     steps: list[str] = field(default_factory=list)
     effort: str = ""
+    summary: str = ""
+
+
+def _opencode_reply(lines: Iterable[str]) -> str:
+    """Collect text from the final assistant step in OpenCode's event stream."""
+    parts: dict[str, str] = {}
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue  # stderr diagnostics can share the log
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
+        part = event.get("part")
+        if kind == "step_start" or kind == "tool_use":
+            parts.clear()
+        elif (kind == "text" and isinstance(part, dict)
+              and isinstance(part.get("id"), str) and isinstance(part.get("text"), str)):
+            key = part["id"]
+            parts[key] = parts.get(key, "") + part["text"]
+    return "\n\n".join(parts.values()).strip()
 
 
 def _slug(text: str) -> str:
@@ -312,10 +335,10 @@ class Runner:
     def _agent_cmd(self, task: Task, wt: Path) -> list[str]:
         if task.agent == "opencode":
             # The prompt goes as the message argument (opencode.exe directly, no shell).
-            return [find_opencode() or "opencode", "run", "--standalone", "--auto", "--agent", "baton",
+            return [find_opencode() or "opencode", "run", "--standalone", "--auto", "--agent", "baton", "--format", "json",
                     "-m", task.model, "--title", f"Baton {task.id}", self._prompt(task)]
         if task.agent == "claude-code":
-            cmd = [find_claude() or "claude", "-p", "--permission-mode", "auto"]
+            cmd = [find_claude() or "claude", "-p", "--permission-mode", "auto", "--output-format", "text"]
             if task.model:
                 cmd.extend(["--model", task.model])
             if task.effort:
@@ -364,11 +387,20 @@ class Runner:
             # Claude and Codex read the prompt from stdin; OpenCode gets it as an
             # argument, and its stdin is closed so it never waits for input.
             stdin_text = "" if task.agent == "opencode" else self._prompt(task)
-            with open(self.store.log_path(task.id), "a", encoding="utf-8") as log:
-                proc = subprocess.run(self._agent_cmd(task, wt), input=stdin_text, stdout=log,
-                                      stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+            opencode = task.agent == "opencode"
+            with open(self.store.log_path(task.id), "a+", encoding="utf-8", errors="replace") as log:
+                start = log.tell()
+                proc = subprocess.run(self._agent_cmd(task, wt), input=stdin_text,
+                                      stdout=log if opencode else subprocess.PIPE,
+                                      stderr=log, text=True, encoding="utf-8",
                                       errors="replace", cwd=str(wt), env=env,
                                       timeout=self.timeout, **_NO_WINDOW)
+                if opencode:
+                    log.seek(start)
+                    task.summary = _opencode_reply(log)
+                elif proc.stdout:
+                    log.write(proc.stdout + "\n")
+                    task.summary = proc.stdout.strip()
             step(f"Agent finished (exit code {proc.returncode})")
             if proc.returncode != 0:
                 raise RuntimeError(f"The agent stopped with exit code {proc.returncode}; see the log.")

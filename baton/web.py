@@ -209,7 +209,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(400, "Cloud tasks are turned off")
             body = (f"@claude {details or title}\n\n---\n"
                     "Task created from Baton. Follow this repository's AGENTS.md / CLAUDE.md, "
-                    "open a pull request with the change, and update STATUS.md in it.")
+                    "open a pull request with the change, and update STATUS.md in it. "
+                    "Leave a final reply on this issue in the owner's language explaining what you did, "
+                    "how and why, what you verified, any problems and what remains.")
             try:
                 issue = await hub.create_issue(repo, title, body)
             except GitHubError as exc:

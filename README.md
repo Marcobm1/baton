@@ -198,7 +198,9 @@ the agent never touches the folder you work in. The agent is told to follow the
 repository's `AGENTS.md`/`CLAUDE.md` and update `STATUS.md`, but not to commit
 or push: Baton commits what changed, pushes the branch and opens a pull request
 (a draft where your plan allows it), then removes the worktree. One task at a
-time per repository; the log and the steps are on the task's page. Tasks use
+time per repository. The task page shows the steps and log. Once a local task
+finishes, its Summary panel shows the agent's final reply, including its checks,
+problems and remaining work. Older tasks can have only a log. Tasks use
 your plans' quotas like any other use of those CLIs.
 
 On Windows Baton calls `opencode.exe` directly, never npm's `opencode.cmd`

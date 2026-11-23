@@ -22,6 +22,7 @@ from .github import GitHubError, Hub
 from .i18n import strings
 from .ping import Scheduler
 from .task_models import catalog
+from .task_report import task_report
 from .runner import AGENTS, LocalRepos, Runner, Task, TaskStore, new_id, opencode_models
 
 HERE = Path(__file__).parent
@@ -184,7 +185,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         task = store.get(task_id)
         if not task:
             raise HTTPException(404, "Unknown task")
-        return page(request, "task.html", "tasks", task=task, log=store.log_tail(task.id))
+        log = store.read_log(task.id)
+        return page(request, "task.html", "tasks", task=task, report=task_report(task, log),
+                    log="\n".join(log.splitlines()[-200:]))
 
     @app.post("/tasks")
     async def task_create(request: Request, repo: str = Form(...), where: str = Form(...),

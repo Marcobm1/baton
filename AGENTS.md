@@ -3,6 +3,9 @@
 Baton is a small FastAPI app (`baton/`) plus a CLI. Read `README.md` first.
 
 - Talk to the owner (Marco) in Spanish; code, comments, docs and commits in English.
+- Marco builds this to learn: explain the *why* of each step in the conversation
+  (alternatives, trade-offs, new concepts with an example, what each part of a
+  command does, the cause of any failure), and record important decisions in `docs/`.
 - Run the tests before finishing: `pip install -e ".[dev]" && pytest -q`.
 - Keep dependencies pinned to exact versions in `pyproject.toml`.
 - `baton/statusline.py` and `baton/quotas.py` must stay standard-library only.

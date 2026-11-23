@@ -116,6 +116,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 settings.claude_home, settings.codex_home, settings.opencode_db))
         return usage_cache["data"]
 
+    go_state: dict = {"at": 0.0, "msg": ""}
+
+    def refresh_go() -> str:
+        # OpenCode Go's usage endpoint costs nothing: ask at most every 5 minutes.
+        if settings.opencode_go_key and time.time() - go_state["at"] > 300:
+            ok, msg = quotas.fetch_opencode_go(settings.opencode_go_key, settings.data_dir)
+            go_state.update(at=time.time(), msg="" if ok else msg)
+        return go_state["msg"]
+
     def page(request: Request, name: str, nav: str, **ctx):
         return templates.TemplateResponse(request, name, {"nav": nav, **ctx})
 
@@ -140,7 +149,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # --------------------------------------------------------------- quotas
     @app.get("/quotas", response_class=HTMLResponse)
     async def quotas_page(request: Request):
-        return page(request, "quotas.html", "quotas",
+        go_error = await asyncio.to_thread(refresh_go)
+        return page(request, "quotas.html", "quotas", go_error=go_error,
                     providers=quotas.by_provider(quotas.all_windows(settings.data_dir, settings.codex_home)),
                     sched=scheduler, tokens=await asyncio.to_thread(token_usage),
                     sched_results={k: {"age": time.time() - v[0], "ok": v[1], "msg": v[2]}
@@ -237,6 +247,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/quotas")
     async def api_quotas():
+        await asyncio.to_thread(refresh_go)
         return JSONResponse({"windows": quotas.all_windows(settings.data_dir, settings.codex_home)})
 
     @app.get("/healthz")

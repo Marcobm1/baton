@@ -72,6 +72,9 @@ class Settings:
     cloud_tasks: bool = True
     claude_home: Path = Path.home() / ".claude"
     opencode_db: Path = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
+    # Optional, typed by you in .env. Used only to read your OpenCode Go usage
+    # from opencode.ai; never shown, logged or stored anywhere else.
+    opencode_go_key: str = field(default="", repr=False)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -110,4 +113,5 @@ class Settings:
             claude_home=Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"),
             opencode_db=Path(os.environ.get("BATON_OPENCODE_DB")
                              or Path.home() / ".local" / "share" / "opencode" / "opencode.db"),
+            opencode_go_key=os.environ.get("BATON_OPENCODE_GO_KEY", "").strip(),
         )

@@ -100,6 +100,23 @@ def cmd_ping(args) -> int:
     return rc
 
 
+def cmd_delegate(args) -> int:
+    from . import delegate
+    from .runner import opencode_models
+
+    if args.list:
+        print("\n".join(opencode_models()) or "No models (is OpenCode installed?)")
+        return 0
+    if not args.model:
+        print("Choose a model with -m (see: baton delegate --list)", file=sys.stderr)
+        return 2
+    prompt = sys.stdin.read() if args.prompt in (None, "-") else args.prompt
+    if not prompt.strip():
+        print("Give the subtask as an argument, or with - read it from stdin.", file=sys.stderr)
+        return 2
+    return delegate.run(args.model, prompt, cwd=args.dir, write=args.write, timeout=args.timeout)
+
+
 def cmd_statusline(args) -> int:
     from .statusline import main
 
@@ -137,6 +154,16 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("ping", help="refresh quota readings now by asking the CLIs (spends a little quota)")
     p.add_argument("what", nargs="?", default="claude", choices=["claude", "codex", "all"])
     p.set_defaults(fn=cmd_ping)
+
+    p = sub.add_parser("delegate", help="give a subtask to an OpenCode model and print its answer")
+    p.add_argument("prompt", nargs="?", help="the subtask; '-' or nothing reads it from stdin")
+    p.add_argument("-m", "--model", help="provider/model, e.g. opencode-go/kimi-k3")
+    p.add_argument("-C", "--dir", default=".", help="folder it works in (default: here)")
+    p.add_argument("--write", action="store_true",
+                   help="let it edit files and run commands in that folder (never commit/push)")
+    p.add_argument("--timeout", type=int, default=900, help="seconds (default 900)")
+    p.add_argument("--list", action="store_true", help="list the models OpenCode offers")
+    p.set_defaults(fn=cmd_delegate)
 
     p = sub.add_parser("statusline", help="Claude Code status line command (records quota)")
     p.set_defaults(fn=cmd_statusline)

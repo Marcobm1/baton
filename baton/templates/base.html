@@ -16,6 +16,7 @@
       <a href="/" {% if nav == 'projects' %}aria-current="page"{% endif %}>{{ t.projects }}</a>
       <a href="/tasks" {% if nav == 'tasks' %}aria-current="page"{% endif %}>{{ t.tasks_nav }}</a>
       <a href="/quotas" {% if nav == 'quotas' %}aria-current="page"{% endif %}>{{ t.quotas }}</a>
+      <a href="/ranking" {% if nav == 'ranking' %}aria-current="page"{% endif %}>{{ t.ranking }}</a>
     </nav>
   </header>
   <main>{% block main %}{% endblock %}</main>

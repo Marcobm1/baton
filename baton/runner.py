@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Callable
 
 from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
+from .ranking import Ranking
 
 AGENTS = {
     "claude-code": "Claude Code",
@@ -592,10 +593,11 @@ class Runner:
         log_path = self.store.log_path(task.id)
         start = log_path.stat().st_size if log_path.exists() else 0
         group = {} if os.name == "nt" else {"start_new_session": True}
-        with open(log_path, "a", encoding="utf-8") as log:
+        with (open(log_path, "a", encoding="utf-8") as log,
+              Ranking(self.store.dir).worktree_env(_clean_env(), wt, reviewer) as env):
             proc = subprocess.Popen(self._agent_cmd(rtask, wt), stdin=subprocess.PIPE, stdout=log,
                                     stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                                    errors="replace", cwd=str(wt), env=_clean_env(), **group,
+                                    errors="replace", cwd=str(wt), env=env, **group,
                                     **_NO_WINDOW)
             try:
                 proc.communicate(input=prompt, timeout=self.timeout)
@@ -695,7 +697,8 @@ class Runner:
             group = {} if os.name == "nt" else {"start_new_session": True}
             log_path = self.store.log_path(task.id)
             start = log_path.stat().st_size if log_path.exists() else 0
-            with open(log_path, "a", encoding="utf-8") as log:
+            with (open(log_path, "a", encoding="utf-8") as log,
+                  Ranking(self.store.dir).worktree_env(env, wt, task.agent) as env):
                 with self._lock:
                     if task.id in self._cancelled:
                         raise Cancelled()

@@ -119,7 +119,27 @@ def cmd_delegate(args) -> int:
     if not prompt.strip():
         print("Give the subtask as an argument, or with - read it from stdin.", file=sys.stderr)
         return 2
-    return delegate.run(args.model, prompt, cwd=args.dir, write=args.write, timeout=args.timeout, web=args.web)
+    if not args.kind.strip():
+        print("Give the assignment a type.", file=sys.stderr)
+        return 2
+    return delegate.run(args.model, prompt, cwd=args.dir, write=args.write, timeout=args.timeout,
+                        web=args.web, kind=args.kind.strip())
+
+
+def cmd_rate(args) -> int:
+    from .ranking import cli_ranking
+
+    try:
+        cli_ranking().review(args.job, args.agent, args.fulfillment,
+                             args.correctness, args.rework, args.comment)
+    except KeyError:
+        print(f"Unknown delegation #{args.job}.", file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    print(f"Saved agent review for delegation #{args.job}.")
+    return 0
 
 
 def cmd_statusline(args) -> int:
@@ -169,7 +189,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--web", action="store_true", help="also let it search and read web pages")
     p.add_argument("--timeout", type=int, default=900, help="seconds (default 900)")
     p.add_argument("--list", action="store_true", help="list the models OpenCode offers")
+    p.add_argument("--type", dest="kind", default="general", help="assignment type, e.g. test-draft")
     p.set_defaults(fn=cmd_delegate)
+
+    p = sub.add_parser("rate", help="record an agent review after checking a delegation")
+    p.add_argument("job", type=int, help="delegation ID printed by baton delegate")
+    p.add_argument("--agent", required=True, choices=["claude-code", "codex"])
+    p.add_argument("--fulfillment", type=int, required=True, help="assignment fulfillment (1-10)")
+    p.add_argument("--correctness", type=int, required=True, help="result correctness (1-10)")
+    p.add_argument("--rework", type=int, required=True, help="10 means usable as delivered")
+    p.add_argument("--comment", default="", help="optional explanation, up to 500 characters")
+    p.set_defaults(fn=cmd_rate)
 
     p = sub.add_parser("statusline", help="Claude Code status line command (records quota)")
     p.set_defaults(fn=cmd_statusline)

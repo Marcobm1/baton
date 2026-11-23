@@ -159,3 +159,9 @@ button.danger { background: var(--bad); }
 .tok-table { width: 100%; border-collapse: collapse; margin-top: .3rem; }
 .tok-table th, .tok-table td { text-align: left; padding: .15rem .3rem; border-bottom: 1px solid var(--line); }
 .tok-table td:not(:first-child), .tok-table th:not(:first-child) { text-align: right; }
+
+.ranking-table { overflow-x: auto; }
+@media (max-width: 420px) {
+  nav a { padding: .45rem .45rem; }
+  .top { padding-inline: .4rem; }
+}

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-def _load_dotenv(path: Path) -> None:
+def _load_dotenv(path: Path, only: str | None = None) -> None:
     """Minimal .env loader: KEY=VALUE lines; never overrides real env vars."""
     if not path.is_file():
         return
@@ -24,7 +24,13 @@ def _load_dotenv(path: Path) -> None:
         elif " #" in value:
             value = value.split(" #", 1)[0].rstrip()
         key = key.strip()
-        os.environ.setdefault(key, value)
+        if only is None or key == only:
+            os.environ.setdefault(key, value)
+
+
+def configured_data_dir() -> Path:
+    _load_dotenv(Path(os.environ.get("BATON_ENV_FILE", ".env")), only="BATON_DATA_DIR")
+    return Path(os.environ.get("BATON_DATA_DIR") or Path.home() / ".baton")
 
 
 def _csv(name: str) -> list[str]:

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ t.ranking }} · {{ title }}{% endblock %}
+{% block main %}
+<h1>{{ t.ranking }} · OpenCode</h1>
+{% if models %}
+<p>{{ t.rank_order }}</p>
+<div class="ranking-table">
+  <table class="tok-table">
+    <thead><tr>
+      {% for key in ('model', 'evaluated', 'fulfillment', 'correctness', 'rework', 'human', 'agent') %}
+      <th scope="col">{{ t[key] }}</th>
+      {% endfor %}
+    </tr></thead>
+    <tbody>{% for row in models %}
+      <tr><th scope="row">{{ row.model }}</th><td>{{ row.evaluated }}</td>
+        {% for key in ('fulfillment', 'correctness', 'rework', 'human', 'agent') %}
+        <td>{{ '%.1f'|format(row[key]) if row[key] is not none else '' }}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}</tbody>
+  </table>
+</div>
+<h2>{{ t.delegations }}</h2>
+<ul class="task-list">
+  {% for job in jobs %}
+  <li class="task-row">
+    <a href="/ranking/{{ job.id }}">#{{ job.id }} · {{ job.model }} · {{ job.kind }}</a>
+    <span>{{ job.started|when }}</span>
+    <span>{{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</span>
+    <span class="muted">{{ t.human_review }} · {{ t.st_done if job.human else t.review_pending }}</span>
+    <span class="muted">{{ t.agent_review }} · {{ t.st_done if job.agent else t.review_pending }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}<p>{{ t.no_delegations }}</p>{% endif %}
+{% endblock %}

@@ -22,6 +22,7 @@ from .config import Settings
 from .github import GitHubError, Hub
 from .i18n import strings
 from .ping import Scheduler
+from .ranking import CRITERIA, Ranking
 from .task_models import catalog
 from .task_report import task_report
 from .runner import (AGENTS, SUMMARY_REQUEST, LocalRepos, Runner, Task, TaskStore,
@@ -56,6 +57,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     scheduler = Scheduler(settings.data_dir, settings.ping_claude_minutes,
                           settings.ping_codex_minutes, settings.ping_hours, settings.ping_model)
     store = TaskStore(settings.data_dir)
+    ranking = Ranking(settings.data_dir)
 
     def quota_left(agent: str) -> float | None:
         """% left in the agent's 5 h window (Claude Code or Codex), if known."""
@@ -171,6 +173,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     sched=scheduler, tokens=await asyncio.to_thread(token_usage),
                     sched_results={k: {"age": time.time() - v[0], "ok": v[1], "msg": v[2]}
                                    for k, v in scheduler.results.items()})
+
+    @app.get("/ranking", response_class=HTMLResponse)
+    def ranking_page(request: Request):
+        models, jobs = ranking.overview()
+        return page(request, "ranking.html", "ranking", models=models, jobs=jobs)
+
+    @app.get("/ranking/{job}", response_class=HTMLResponse)
+    def delegation_page(request: Request, job: int):
+        details, reviews = ranking.detail(job)
+        if details is None:
+            raise HTTPException(404, "Unknown delegation")
+        return page(request, "delegation.html", "ranking", job=details, reviews=reviews,
+                    criteria=CRITERIA)
+
+    @app.post("/ranking/{job}")
+    def human_review(request: Request, job: int, csrf: str = Form(""),
+                     fulfillment: int = Form(..., ge=1, le=10),
+                     correctness: int = Form(..., ge=1, le=10), rework: int = Form(..., ge=1, le=10),
+                     comment: str = Form("", max_length=500)):
+        check_post(request, csrf)
+        try:
+            ranking.review(job, "human", fulfillment, correctness, rework, comment)
+        except KeyError:
+            raise HTTPException(404, "Unknown delegation")
+        return RedirectResponse(f"/ranking/{job}", status_code=303)
 
     # ---------------------------------------------------------------- tasks
     @app.get("/tasks", response_class=HTMLResponse)

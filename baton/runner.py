@@ -9,9 +9,12 @@ Flow for one task:
        claude-code  `claude -p --permission-mode auto` (a classifier reviews actions)
        codex        `codex exec -s workspace-write` (sandbox: writes only there)
        local        `codex exec --oss` with a local model (Ollama or LM Studio)
-  4. Baton commits what changed, pushes the branch and opens a
-     *draft* pull request for you to review;
-  5. the worktree is removed once the branch is safe on GitHub.
+  4. Baton commits what changed, pushes the branch and opens a pull request;
+  5. with auto-merge on (the default), Baton waits for the repository's tests
+     on GitHub. Work by OpenCode or local AI, and any work in a repository
+     without tests, is first reviewed by Claude Code or Codex, which fixes what
+     it finds. Then Baton merges the pull request (see docs/auto-merge.md);
+  6. the worktree is removed once the branch is safe on GitHub.
 
 A running task can be cancelled from its page: Baton kills the agent and all
 its subprocesses, commits and pushes nothing, and removes the worktree and the
@@ -32,7 +35,7 @@ import signal
 import subprocess
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
@@ -135,21 +138,70 @@ SUMMARY_REQUEST = (
 )
 
 
-def extract_summary(output: str) -> str:
+def extract_summary(output: str, marker: str = "BATON_SUMMARY") -> str:
     # Some CLIs colour their output. Ignore incomplete reports and echoed instructions.
     output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
     report = None
     last = ""
     for line in output.splitlines():
-        if line.strip() == "BATON_SUMMARY_BEGIN":
+        if line.strip() == f"{marker}_BEGIN":
             report = []
-        elif line.strip() == "BATON_SUMMARY_END":
+        elif line.strip() == f"{marker}_END":
             if report:
                 last = "\n".join(report).strip() or last
             report = None
         elif report is not None:
             report.append(line)
     return last
+
+
+REVIEW_PROMPT = """You are reviewing work that another AI agent ({author}) did for the task
+below in the repository {repo}, before it is merged. This folder is a git
+worktree on the branch `{branch}`; the work is the commits on top of
+`origin/{base}` (see `git log origin/{base}..HEAD` and `git diff origin/{base}...HEAD`).
+
+Rules:
+- First read the repository's AGENTS.md or CLAUDE.md and STATUS.md, and follow them.
+- Check that the change does what the task asked and only that, that it is
+  correct, that tests cover it and pass (run the project's tests if you can),
+  that nothing unsafe was added (secrets, credentials, destructive commands)
+  and that STATUS.md was updated as the rules say.
+- If you find problems you can fix safely, fix them in this folder, keeping
+  the fixes small, and run the tests again.
+- If the work should not be merged and you cannot fix it safely, change
+  nothing and explain why.
+- Do NOT commit, push, switch branches or rewrite history: Baton commits your
+  fixes and merges the pull request only if you allow it.
+- Finish with a review for the owner, in the language required by the
+  project's instructions or otherwise in the language of the task. Its first
+  line must be exactly one of: "Verdict: APPROVE" (ready, nothing changed),
+  "Verdict: FIXED" (you fixed problems: list them) or "Verdict: BLOCK" (do
+  not merge: say why). Then say what you checked and the results. Put
+  BATON_REVIEW_BEGIN on its own line before the review and BATON_REVIEW_END
+  on its own line after it.
+
+Task: {title}
+
+{details}
+"""
+
+
+def review_verdict(report: str) -> str:
+    """"APPROVE", "FIXED" or "BLOCK" from the review's first Verdict line, else ""."""
+    for line in report.splitlines():
+        m = re.match(r"\s*\**\s*verdict\s*:?\s*\**\s*:?\s*([a-z]+)", line, re.I)
+        if m:
+            word = m.group(1).upper()
+            return word if word in ("APPROVE", "FIXED", "BLOCK") else ""
+    return ""
+
+
+def pr_number(url: str) -> int:
+    return int(url.rstrip("/").rsplit("/", 1)[1])
+
+
+class LeftOpen(Exception):
+    """The pull request stays open for the owner; the message says why."""
 
 
 PROMPT = """You are working on the task below for the repository {repo}.
@@ -161,7 +213,7 @@ Rules:
 - Do the task. Keep the change focused on it.
 - Update STATUS.md as the repository's rules say (updated_by: {agent}).
 - Do NOT commit, push, switch branches or rewrite history: when you finish,
-  Baton commits everything in this folder and opens a draft pull request.
+  Baton commits everything in this folder and opens a pull request.
 - If the task is unclear, needs secrets, or would need anything destructive or
   outside this folder, stop and explain why instead of doing it.
 - Prefix progress updates with "Progress:".
@@ -196,6 +248,9 @@ class Task:
     effort: str = ""
     summary: str = ""
     issue_number: int | None = None
+    reviewer: str = ""              # agent that reviewed the work before merging
+    review: str = ""                # its report
+    merged: bool = False
 
 
 def _slug(text: str) -> str:
@@ -337,7 +392,9 @@ def new_id(title: str) -> str:
 class Runner:
     def __init__(self, store: TaskStore, repos: LocalRepos, *, timeout: int, local_model: str,
                  local_provider: str, git_name: str, git_email: str,
-                 open_pr: Callable[[str, str, str, str, str], str]):
+                 open_pr: Callable[[str, str, str, str, str], str], github=None,
+                 auto_merge: bool = False,
+                 quota_left: Callable[[str], float | None] | None = None):
         self.store = store
         self.repos = repos
         self.timeout = timeout
@@ -346,6 +403,14 @@ class Runner:
         self.git_name = git_name
         self.git_email = git_email
         self.open_pr = open_pr        # (repo, branch, base, title, body) -> url
+        # Auto-merge: `github` has checks(repo, sha), comment(repo, n, body)
+        # and merge(repo, n, sha); quota_left(agent) is the % left in its 5 h window.
+        self.github = github
+        self.auto_merge = auto_merge and github is not None
+        self.quota_left = quota_left
+        self.ci_poll = 15             # seconds between looks at the tests
+        self.ci_grace = 120           # no test at all after this long = no tests
+        self.ci_timeout = 30 * 60     # give up waiting after this long
         # Shared between the web thread (cancel) and each task's thread. The
         # lock makes "is it cancelled?" plus "start the agent" (or "start
         # committing") a single step, so a cancel can never slip in between.
@@ -448,15 +513,117 @@ class Runner:
             f.write(text if text.endswith("\n") else text + "\n")
 
     @staticmethod
-    def _read_summary(log_path: Path, start: int) -> str:
+    def _read_summary(log_path: Path, start: int, marker: str = "BATON_SUMMARY") -> str:
         """The agent's final report, from the part of the log this run wrote."""
         try:
             with open(log_path, "rb") as log:
                 end = log.seek(0, 2)
                 log.seek(max(start, end - 65536))
-                return extract_summary(log.read().decode("utf-8", errors="replace"))
+                return extract_summary(log.read().decode("utf-8", errors="replace"), marker)
         except OSError:
             return ""
+
+    # ------------------------------------------------------------ auto-merge
+    def _finish_pr(self, task: Task, wt: Path, ident: list[str], step) -> None:
+        """Tests, review when needed, merge. Raises LeftOpen to stop."""
+        number = pr_number(task.pr_url)
+        sha = self._git(wt, "rev-parse", "HEAD")
+        tests = self._wait_for_tests(task, sha, step)
+        if task.agent in ("opencode", "local") or tests == "none":
+            reviewer = self._pick_reviewer(task)
+            new_sha = self._review(task, wt, reviewer, number, ident, step)
+            if new_sha != sha and tests == "passed":
+                self._wait_for_tests(task, new_sha, step, must_exist=True)
+            sha = new_sha
+        self.github.merge(task.repo, number, sha)
+        task.merged = True
+        step(f"Merged into {task.base}")
+        by = f" after a review by {AGENTS[task.reviewer]}" if task.reviewer else ""
+        task.message = f"Done: merged into {task.base}{by}."
+
+    def _wait_for_tests(self, task: Task, sha: str, step, must_exist: bool = False) -> str:
+        """"passed", or "none" if the repository runs no tests on GitHub."""
+        step(f"Waiting for the repository's tests on GitHub ({sha[:7]})")
+        start = time.monotonic()
+        while True:
+            c = self.github.checks(task.repo, sha)
+            waited = time.monotonic() - start
+            if c["failed"]:
+                raise LeftOpen("the tests failed on GitHub: " + ", ".join(sorted(set(c["failed"]))[:5]))
+            if not c["pending"] and c["passed"]:
+                step("Tests passed on GitHub")
+                return "passed"
+            if not c["pending"] and not c["passed"] and waited >= self.ci_grace:
+                if must_exist:
+                    raise LeftOpen("the tests did not run on GitHub for the review's fixes")
+                step("This repository runs no tests on GitHub")
+                return "none"
+            if waited >= self.ci_timeout:
+                raise LeftOpen(f"the tests were still running after {self.ci_timeout // 60} minutes")
+            time.sleep(self.ci_poll)
+
+    def _pick_reviewer(self, task: Task) -> str:
+        """Claude Code or Codex. For OpenCode/local work, the one with more 5 h
+        quota left; for Claude Code or Codex work, the other one."""
+        available = [a for a, why in self.agents_available().items()
+                     if not why and a in ("claude-code", "codex")]
+        if task.agent in ("claude-code", "codex"):
+            other = "codex" if task.agent == "claude-code" else "claude-code"
+            if other not in available:
+                raise LeftOpen(f"this repository has no tests and {AGENTS[other]} is not "
+                               "available to review the work")
+            return other
+        left = {a: (self.quota_left(a) if self.quota_left else None) for a in available}
+        usable = [a for a in available if left[a] is None or left[a] > 0]
+        if not usable:
+            raise LeftOpen("neither Claude Code nor Codex is available (or has quota left) to review")
+        # Most quota left first; an unknown reading counts as 1 %; ties go to Claude Code.
+        return max(usable, key=lambda a: (1.0 if left[a] is None else left[a], a == "claude-code"))
+
+    def _review(self, task: Task, wt: Path, reviewer: str, number: int, ident: list[str],
+                step) -> str:
+        """Run the reviewer in the task's worktree; returns the commit to merge."""
+        task.reviewer = reviewer
+        step(f"Review by {AGENTS[reviewer]}…")
+        rtask = replace(task, agent=reviewer, model="", effort="")
+        prompt = REVIEW_PROMPT.format(author=AGENTS.get(task.agent, task.agent), repo=task.repo,
+                                      branch=task.branch, base=task.base, title=task.title,
+                                      details=task.details or "(no more details)")
+        log_path = self.store.log_path(task.id)
+        start = log_path.stat().st_size if log_path.exists() else 0
+        group = {} if os.name == "nt" else {"start_new_session": True}
+        with open(log_path, "a", encoding="utf-8") as log:
+            proc = subprocess.Popen(self._agent_cmd(rtask, wt), stdin=subprocess.PIPE, stdout=log,
+                                    stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                                    errors="replace", cwd=str(wt), env=_clean_env(), **group,
+                                    **_NO_WINDOW)
+            try:
+                proc.communicate(input=prompt, timeout=self.timeout)
+            except subprocess.TimeoutExpired:
+                kill_tree(proc)
+                raise LeftOpen(f"the review took longer than {self.timeout // 60} minutes")
+        task.review = self._read_summary(log_path, start, "BATON_REVIEW")
+        verdict = review_verdict(task.review)
+        step(f"Review finished (exit code {proc.returncode}, verdict {verdict or 'none'})")
+        changed = bool(self._git(wt, "status", "--porcelain"))
+        try:
+            self.github.comment(task.repo, number, f"**Review by {AGENTS[reviewer]}** (from Baton)"
+                                f"\n\n{task.review or '(The reviewer gave no report; see the task log.)'}")
+        except Exception as exc:  # the review itself still counts
+            self._log(task, f"!! Could not post the review on the PR: {exc}")
+        if proc.returncode != 0:
+            raise LeftOpen(f"the review stopped with exit code {proc.returncode}")
+        if verdict == "BLOCK":
+            raise LeftOpen(f"{AGENTS[reviewer]} advised not to merge it (see its review)")
+        if not verdict:
+            raise LeftOpen(f"{AGENTS[reviewer]} gave no verdict")
+        if changed:
+            self._git(wt, "add", "-A")
+            self._git(wt, *ident, "commit", "-m", f"Review fixes by {AGENTS[reviewer]}\n\n"
+                      f"Baton review of the task: {task.title}")
+            self._git(wt, "push", "origin", task.branch)
+            step("Review fixes committed and pushed")
+        return self._git(wt, "rev-parse", "HEAD")
 
     def _git(self, cwd: Path, *args: str, check: bool = True) -> str:
         r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True,
@@ -577,14 +744,25 @@ class Runner:
             if task.open_pr:
                 self._git(wt, "push", "-u", "origin", task.branch)
                 step("Branch pushed to GitHub")
+                after = ("Baton merges it when the repository's tests pass, after a review by "
+                         "Claude Code or Codex when one is needed." if self.auto_merge
+                         else "Review it before merging.")
                 pr_body = (f"Task sent from Baton to **{AGENTS.get(task.agent, task.agent)}** "
-                           f"on my computer.\n\n**Task:** {task.title}\n\n{task.details}\n\n"
-                           "Review it before merging.")
+                           f"on my computer.\n\n**Task:** {task.title}\n\n{task.details}\n\n{after}")
                 task.pr_url = self.open_pr(task.repo, task.branch, task.base, task.title, pr_body)
-                step(f"Draft pull request: {task.pr_url}")
+                step(f"Pull request: {task.pr_url}")
+                task.message = "Done: review the pull request."
+                if self.auto_merge:
+                    try:
+                        self._finish_pr(task, wt, ident, step)
+                    except LeftOpen as exc:
+                        task.message = f"Pull request left open for you: {exc}"
+                        step(f"Not merged: {exc}")
+                    except Exception as exc:  # the PR is safe on GitHub either way
+                        task.message = f"Pull request left open for you: {str(exc)[:300]}"
+                        step(f"Not merged: {str(exc)[:300]}")
                 self._git(repo_dir, "worktree", "remove", "--force", str(wt), check=False)
                 task.worktree = ""
-                task.message = "Done: review the draft pull request."
             else:
                 task.message = f"Done: the changes are on the local branch {task.branch} in {wt}."
             task.status = "done"

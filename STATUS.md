@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Check a live task summary from the web, and cancel a real Claude Code task.
+next: Watch the first real auto-merged tasks (one Codex, one OpenCode).
 updated: 2026-11-23
 updated_by: opencode
 open_source: true
@@ -42,6 +42,8 @@ links:
 - [x] Show the agent's completion summary on local and cloud task pages (PRs #3 + #4 combined)
 - [ ] Check a live task summary from the web
 - [x] Every local task (Claude Code, Codex, OpenCode, local AI) ends in a pull request; no opt-out checkbox
+- [x] Auto-merge: Claude/Codex PRs merge when tests pass; OpenCode/local AI work and repos without tests get a review (with fixes) by Claude Code or Codex first
+- [ ] Watch the first real auto-merged tasks (one Codex, one OpenCode)
 - [x] Test: "en" and "es" UI strings have the same keys and no empty text
 
 ## Blockers
@@ -52,6 +54,8 @@ links:
   works the same for every agent and every computer.
 - 2026-11-23: every local task ends in a pull request (owner's request), so
   finished work is always on GitHub and visible from the phone.
+- 2026-11-23: local tasks merge themselves; OpenCode/local AI work and repos
+  without tests are reviewed by Claude Code or Codex first (docs/auto-merge.md).
 - 2026-11-23: Claude and Codex quota readings come from local sources. OpenCode Go
   is optional and uses its configured key to query the official usage endpoint.
 - 2026-11-23: Claude units: the status line sends used_percentage as 0-100 and the
@@ -61,6 +65,7 @@ links:
   on GitHub (see docs/cancelling-tasks.md).
 
 ## Log
+- 2026-11-23 (claude-code): auto-merge of local tasks: wait for GitHub tests, review and fix by Claude Code or Codex when needed (OpenCode, local AI, repos without tests), merge the checked commit; BATON_AUTO_MERGE; docs/auto-merge.md; 7 tests.
 - 2026-11-23 (opencode): test that every language has exactly the "en" keys and no
   empty UI text; "es"."ago" is empty on purpose (Spanish puts "hace" before the
   time), so the test allows that one case explicitly.

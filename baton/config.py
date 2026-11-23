@@ -70,6 +70,7 @@ class Settings:
     git_name: str = "Baton"
     git_email: str = "baton@localhost"
     cloud_tasks: bool = True
+    auto_merge: bool = True          # local tasks: merge the PR when tests pass / review allows
     claude_home: Path = Path.home() / ".claude"
     opencode_db: Path = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
     # Optional, typed by you in .env. Used only to read your OpenCode Go usage
@@ -110,6 +111,7 @@ class Settings:
             git_name=os.environ.get("BATON_GIT_NAME", "Baton"),
             git_email=os.environ.get("BATON_GIT_EMAIL", "baton@localhost"),
             cloud_tasks=os.environ.get("BATON_CLOUD_TASKS", "1") != "0",
+            auto_merge=os.environ.get("BATON_AUTO_MERGE", "1") != "0",
             claude_home=Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"),
             opencode_db=Path(os.environ.get("BATON_OPENCODE_DB")
                              or Path.home() / ".local" / "share" / "opencode" / "opencode.db"),

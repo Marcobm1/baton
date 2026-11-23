@@ -196,8 +196,24 @@ remote; or `BATON_LOCAL_PATHS`), fetches, and creates a **git worktree** (a
 second working folder of the same repository) on a new branch `baton/<id>`, so
 the agent never touches the folder you work in. The agent is told to follow the
 repository's `AGENTS.md`/`CLAUDE.md` and update `STATUS.md`, but not to commit
-or push: Baton commits what changed, pushes the branch and opens a pull request
-(a draft where your plan allows it), then removes the worktree. One task at a
+or push: Baton commits what changed, pushes the branch and opens a pull request,
+then removes the worktree. With **auto-merge** (`BATON_AUTO_MERGE=1`, the
+default) Baton then merges the pull request by itself:
+
+- Claude Code and Codex work is merged once the repository's tests pass on GitHub.
+- OpenCode and local-AI work, and any work in a repository that runs no tests
+  on GitHub, is first **reviewed** by Claude Code or Codex in the same worktree.
+  The reviewer fixes what it finds (Baton commits and pushes the fixes, and the
+  tests run again) and ends with a verdict: `APPROVE`, `FIXED` or `BLOCK`. Its
+  review is posted on the pull request and shown on the task page. OpenCode
+  work goes to whichever of the two has more of its 5-hour quota left; Claude
+  Code work is reviewed by Codex and the other way round.
+- Failing tests, a `BLOCK`, no verdict, no reviewer available or anything
+  unexpected leave the pull request open for you, with the reason on the task
+  page. Baton merges only the exact commit it checked.
+
+With `BATON_AUTO_MERGE=0` the pull request is a draft for you to review (see
+[`docs/auto-merge.md`](docs/auto-merge.md)). One task at a
 time per repository. The task page shows the agent's summary before the steps
 and log. It explains the outcome, approach, reasoning, checks, problems met
 and what you need to know or do next, including for tasks that changed no files. Tasks use
@@ -301,6 +317,7 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_TASK_TIMEOUT_MINUTES` | `60` | Stop a local task after this long. |
 | `BATON_GIT_NAME` / `BATON_GIT_EMAIL` | Baton | Commit identity when the clone has none. |
 | `BATON_CLOUD_TASKS` | `1` | `0` hides the GitHub Actions option. |
+| `BATON_AUTO_MERGE` | `1` | Local tasks: merge the pull request when the tests pass, after a review by Claude Code or Codex when needed. `0` leaves a draft for you. |
 | `CODEX_HOME` | `~/.codex` | Where Codex keeps its logs. |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Where Claude Code keeps its logs (tokens spent). |
 | `BATON_OPENCODE_BIN` | found on PATH | Path to `opencode.exe` if it isn't found. |

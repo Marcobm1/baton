@@ -137,6 +137,7 @@ reset with quota left over.
 | **Codex** (CLI, IDE, app) | Read automatically from Codex's own session logs in `~/.codex/sessions` (the `rate_limits` it records). | Updated whenever you use Codex. |
 | **Claude Code** (terminal) | Set Baton as your status line command (below). Claude Code passes `rate_limits.five_hour` and `rate_limits.seven_day` to it, and Baton saves them to `~/.baton/claude-usage.json`. | Claude Code runs status line commands only in the terminal, not in the VS Code extension. Usage on claude.ai counts against the same limits. |
 | **Automatic checks** | Set `BATON_PING_CLAUDE_MINUTES` (and/or `BATON_PING_CODEX_MINUTES`). Every N minutes Baton runs the official CLI with a one-word prompt (`claude -p --model haiku --output-format stream-json --verbose`, `codex exec -`) and records the plan usage it reports. Also `baton ping [claude\|codex\|all]`. | Needs Baton running natively on the computer where the CLIs are logged in (not in Docker). Each check spends a little quota and opens a 5-hour window if none is open; `BATON_PING_HOURS=8-24` keeps it to your waking hours. Baton removes `ANTHROPIC_API_KEY` from the CLI's environment so the check always uses your plan. |
+| **OpenCode Go** | Its documented usage endpoint, `GET https://opencode.ai/inference/go/v1/usage`, only if you set `BATON_OPENCODE_GO_KEY`. | Free to ask; Baton asks at most every 5 minutes, when the page is open. |
 
 The newest reading of each window wins. Baton never reads or uses your Claude
 or ChatGPT credentials: the CLIs use their own login. (Reading a subscription
@@ -144,6 +145,12 @@ token from a credentials file and calling the provider directly is what some
 tools do; Anthropic's terms do not allow subscription OAuth tokens in other
 tools, so Baton doesn't.) An API key would not help either: API usage is billed
 separately and does not show your subscription's windows.
+
+**The one optional exception is OpenCode Go**, whose usage is only available
+from its own endpoint with your Go key. If you want that card, type the key
+yourself in `.env` as `BATON_OPENCODE_GO_KEY`. Baton sends it only to
+`opencode.ai` in the `Authorization` header; it never shows it, logs it or
+writes it anywhere (it keeps only the percentages and reset dates).
 
 Claude Code status line (`~/.claude/settings.json`):
 

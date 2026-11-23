@@ -20,7 +20,15 @@ def cmd_serve(args) -> int:
 
     from .web import create_app
 
-    uvicorn.run(create_app(_settings()), host=args.host, port=args.port, log_level="info")
+    s = _settings()
+    if sys.stdout is None or sys.stderr is None:
+        # Started without a console (pythonw.exe, a Windows scheduled task):
+        # there is nowhere to print, so the server log goes to a file.
+        s.data_dir.mkdir(parents=True, exist_ok=True)
+        log = open(s.data_dir / "baton.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stdout or log
+        sys.stderr = sys.stderr or log
+    uvicorn.run(create_app(s), host=args.host, port=args.port, log_level="info")
     return 0
 
 

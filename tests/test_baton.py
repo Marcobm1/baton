@@ -138,7 +138,7 @@ def test_next_task_and_grouping():
     assert g["codex"]["plan"] == "plus"
 
 
-def test_task_endpoint_csrf_and_issue(tmp_path):
+def test_task_endpoint_csrf_and_issue(tmp_path, monkeypatch):
     import asyncio, re
     from fastapi.testclient import TestClient
     from baton import github, web
@@ -156,6 +156,11 @@ def test_task_endpoint_csrf_and_issue(tmp_path):
         calls.append((repo, title, body))
         return {"number": 7, "url": "https://github.com/x/demo/issues/7"}
 
+    async def fake_comments(self, repo, issue):
+        assert (repo, issue) == ("x/demo", 7)
+        return ["BATON_SUMMARY_BEGIN\n**Checked** the result.\nBATON_SUMMARY_END"]
+
+    monkeypatch.setattr(github.Hub, "agent_comments", fake_comments)
     orig = (github.Hub.load, github.Hub.create_issue)
     github.Hub.load, github.Hub.create_issue = fake_load, fake_issue
     try:
@@ -174,6 +179,8 @@ def test_task_endpoint_csrf_and_issue(tmp_path):
         assert r.status_code == 303 and r.headers["location"].startswith("/tasks/")
         detail = c.get(r.headers["location"]).text
         assert "https://github.com/x/demo/issues/7" in detail
+        assert "<strong>Checked</strong> the result." in detail
+        assert web.TaskStore(tmp_path).all()[0].summary == "**Checked** the result."
         assert calls and calls[0][2].startswith("@claude do X")
         assert c.post("/tasks", data={**form, "repo": "other/repo", "csrf": token}).status_code == 400
         assert c.post("/tasks", data={**form, "where": "local:rm", "csrf": token}).status_code == 400

@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import time
@@ -32,6 +33,31 @@ def test_remote_repo_parsing():
     assert _remote_repo("https://github.com/Marcobm1/Cairn.git") == "marcobm1/cairn"
     assert _remote_repo("git@github.com:Marcobm1/baton.git\n") == "marcobm1/baton"
     assert _remote_repo("https://example.com/x/y") == ""
+
+
+def test_task_summary_page_and_legacy_history(tmp_path):
+    from fastapi.testclient import TestClient
+    from baton.config import Settings
+    from baton.web import create_app
+
+    store = TaskStore(tmp_path)
+    task = Task("test", "x/demo", "Test", "", "codex", "local", 0, status="no-changes", finished_at=1.0)
+    store.save(task)
+    rows = json.loads(store.file.read_text())
+    del rows[0]["summary"]          # a task saved before summaries existed
+    store.file.write_text(json.dumps(rows))
+    client = TestClient(create_app(Settings(data_dir=tmp_path, lang="es")))
+    assert "No se guardó un resumen" in client.get("/tasks/test").text
+    task.summary = "Checked **both paths**. <script>alert(1)</script>"
+    store.save(task)
+    html = client.get("/tasks/test").text
+    assert "Resumen de la tarea" in html and "<strong>both paths</strong>" in html
+    assert "<script>alert(1)</script>" not in html
+
+
+def test_summary_request_asks_for_problems_and_what_to_know():
+    req = runner_mod.SUMMARY_REQUEST
+    assert "problems" in req and "needs to know" in req and "Checks:" in req
 
 
 def test_local_repos_prefers_named_folder(tmp_path, monkeypatch):
@@ -73,7 +99,8 @@ def test_runner_end_to_end_in_a_worktree(tmp_path, monkeypatch):
     work, origin = make_repo(tmp_path)
     monkeypatch.setattr(runner_mod, "_remote_repo", lambda url: "x/demo" if url.strip() else "")
     opened = []
-    script = "import sys; sys.stdin.read(); open('DONE.md','w').write('agent was here\\n'); print('summary: done')"
+    script = ("import sys; sys.stdin.read(); open('DONE.md','w').write('agent was here\\n'); "
+              "print('BATON_SUMMARY_BEGIN\\nAdded DONE.md to record completion.\\nBATON_SUMMARY_END')")
     store, r = _fake_agent_runner(tmp_path, work, script, opened)
     task = Task(id="t1", repo="x/demo", title="Add DONE", details="please", agent="codex", where="local",
                 created_at=time.time(), branch="baton/t1", base="main", open_pr=True)
@@ -86,17 +113,27 @@ def test_runner_end_to_end_in_a_worktree(tmp_path, monkeypatch):
     files = subprocess.run(["git", "-C", str(origin), "show", "--name-only", "--format=%s", "baton/t1"],
                            capture_output=True, text=True, check=True).stdout
     assert "Add DONE" in files and "DONE.md" in files
-    assert "summary: done" in store.log_tail("t1")
+    assert done.summary == "Added DONE.md to record completion."
     assert done.worktree == ""
+
+
+def test_summary_ignores_instructions_and_incomplete_blocks():
+    assert runner_mod.extract_summary(runner_mod.SUMMARY_REQUEST) == ""
+    assert runner_mod.extract_summary("BATON_SUMMARY_BEGIN\nunfinished") == ""
+    assert runner_mod.extract_summary("trace\n\x1b[32mBATON_SUMMARY_BEGIN\x1b[0m\n"
+                                      "one\n\ntwo\nBATON_SUMMARY_END\ntrace") == "one\n\ntwo"
 
 
 def test_runner_no_changes_and_failure(tmp_path, monkeypatch):
     work, _ = make_repo(tmp_path)
     monkeypatch.setattr(runner_mod, "_remote_repo", lambda url: "x/demo" if url.strip() else "")
-    store, r = _fake_agent_runner(tmp_path, work, "import sys; sys.stdin.read()", [])
+    script = "print('BATON_SUMMARY_BEGIN\\nThe setting was already enabled.\\nBATON_SUMMARY_END')"
+    store, r = _fake_agent_runner(tmp_path, work, script, [])
     r.start(Task(id="t2", repo="x/demo", title="Nothing", details="", agent="codex", where="local",
                  created_at=time.time(), branch="baton/t2", base="main"))
-    assert _wait(store, "t2").status == "no-changes"
+    done = _wait(store, "t2")
+    assert done.status == "no-changes"
+    assert done.summary == "The setting was already enabled."
     r._agent_cmd = lambda task, wt: [sys.executable, "-c", "import sys; sys.exit(3)"]
     r.start(Task(id="t3", repo="x/demo", title="Boom", details="", agent="codex", where="local",
                  created_at=time.time(), branch="baton/t3", base="main"))

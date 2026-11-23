@@ -198,7 +198,9 @@ the agent never touches the folder you work in. The agent is told to follow the
 repository's `AGENTS.md`/`CLAUDE.md` and update `STATUS.md`, but not to commit
 or push: Baton commits what changed, pushes the branch and opens a pull request
 (a draft where your plan allows it), then removes the worktree. One task at a
-time per repository; the log and the steps are on the task's page. Tasks use
+time per repository. The task page shows the agent's summary before the steps
+and log. It explains the outcome, approach, reasoning, checks, problems met
+and what you need to know or do next, including for tasks that changed no files. Tasks use
 your plans' quotas like any other use of those CLIs.
 
 While a local task is running, its page has a **Cancel task** button. Baton
@@ -222,7 +224,8 @@ request. It uses your Claude plan (a token from `claude setup-token`) and
 GitHub Actions minutes. To enable it on a repository, follow the comments at
 the top of [`docs/claude-task-workflow.yml`](docs/claude-task-workflow.yml);
 Baton's token then needs **Issues: Read and write**. Turn the option off with
-`BATON_CLOUD_TASKS=0`.
+`BATON_CLOUD_TASKS=0`. Reopen or refresh the task page after Claude posts its
+report in the issue. Baton saves the report with the task.
 
 The task form is protected against cross-site requests (a per-run secret in
 the form and an Origin check), so another website open in your browser can't

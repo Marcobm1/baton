@@ -189,6 +189,15 @@ class Hub:
         data = r.json()
         return {"number": data["number"], "url": data["html_url"]}
 
+    async def agent_comments(self, repo: str, issue: int) -> list[str]:
+        async with self._client() as client:
+            response = await self._get(client, f"/repos/{repo}/issues/{issue}/comments",
+                                       params={"sort": "created", "direction": "desc", "per_page": 100})
+            if response.status_code != 200:
+                raise GitHubError("Could not read the task's comments.")
+            return [c["body"] for c in response.json()
+                    if c["user"]["login"] in ("claude[bot]", "github-actions[bot]")]
+
     def open_draft_pr(self, repo: str, branch: str, base: str, title: str, body: str) -> str:
         """Open a draft pull request (synchronous: called from the task thread)."""
         if not self.settings.github_token:

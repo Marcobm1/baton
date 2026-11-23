@@ -10,6 +10,8 @@
 #   3. Put this file at .github/workflows/claude.yml
 #
 # Only people with write access to the repository can trigger it.
+# Baton asks Claude to put its final report in the issue so the task page
+# can retrieve it without needing access to workflow logs.
 # Runs use your Claude plan's limits and GitHub Actions minutes
 # (free on public repos; private repos draw on your monthly allowance).
 

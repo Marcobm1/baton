@@ -19,6 +19,15 @@
     <p><strong>{{ t.agent_summary }}</strong> · {{ report.summary|truncate(240) if report.summary else t.no_summary }}</p>
     <p><strong>{{ t.checks }}</strong> · {{ report.checks|truncate(240) if report.checks else t.no_checks }}</p>
   {% endif %}
+  {% if task.status not in ['queued', 'running'] %}
+  <section class="task-summary" aria-labelledby="summary-title">
+    <h3 id="summary-title">{{ t.task_summary }}</h3>
+    {% if task.summary %}<div class="md">{{ task.summary|md|safe }}</div>
+    {% elif report_error %}<p>{{ t.summary_error }}</p>
+    {% elif task.issue_number and not task.finished_at %}<p>{{ t.summary_wait }}</p>
+    {% else %}<p class="muted">{{ t.summary_missing }}</p>{% endif %}
+  </section>
+  {% endif %}
   {% if task.status == 'cancelled' %}<p class="small">{{ t.cancelled_at }} {{ task.finished_at|when }}</p>{% endif %}
   {% if can_cancel %}
   <form method="post" action="/tasks/{{ task.id }}/cancel" class="cancel-form"

@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
+import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,7 +24,8 @@ from .i18n import strings
 from .ping import Scheduler
 from .task_models import catalog
 from .task_report import task_report
-from .runner import AGENTS, LocalRepos, Runner, Task, TaskStore, new_id, opencode_models
+from .runner import (AGENTS, SUMMARY_REQUEST, LocalRepos, Runner, Task, TaskStore,
+                     extract_summary, new_id, opencode_models)
 
 HERE = Path(__file__).parent
 _md = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table")
@@ -186,9 +188,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         task = store.get(task_id)
         if not task:
             raise HTTPException(404, "Unknown task")
+        report_error = False
+        if task.where == "cloud" and task.issue_number and not task.summary:
+            try:
+                comments = await hub.agent_comments(task.repo, task.issue_number)
+                for comment in comments:
+                    task.summary = extract_summary(comment)
+                    if task.summary:
+                        store.save(task)
+                        break
+            except (GitHubError, httpx.RequestError):
+                report_error = True
         log = store.read_log(task.id)
         return page(request, "task.html", "tasks", task=task, report=task_report(task, log),
-                    log="\n".join(log.splitlines()[-200:]), can_cancel=runner.can_cancel(task.id))
+                    log="\n".join(log.splitlines()[-200:]), can_cancel=runner.can_cancel(task.id),
+                    report_error=report_error)
 
     @app.post("/tasks/{task_id}/cancel")
     async def task_cancel(request: Request, task_id: str, csrf: str = Form("")):
@@ -224,14 +238,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(400, "Cloud tasks are turned off")
             body = (f"@claude {details or title}\n\n---\n"
                     "Task created from Baton. Follow this repository's AGENTS.md / CLAUDE.md, "
-                    "open a pull request with the change, and update STATUS.md in it.")
+                    "open a pull request with the change, and update STATUS.md in it. "
+                    f"Post your report in a comment on this issue. {SUMMARY_REQUEST}")
             try:
                 issue = await hub.create_issue(repo, title, body)
             except GitHubError as exc:
                 return back(str(exc))
             task = Task(id=new_id(title), repo=repo, title=title, details=details,
                         agent="claude-code", where="cloud", created_at=time.time(),
-                        status="sent", issue_url=issue["url"],
+                        status="sent", issue_url=issue["url"], issue_number=issue["number"],
                         message="Sent to GitHub Actions.")
             store.save(task)
             return RedirectResponse(f"/tasks/{task.id}", status_code=303)

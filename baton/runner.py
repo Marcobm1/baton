@@ -123,6 +123,35 @@ def opencode_models() -> list[str]:
     _models_cache = (time.time(), models)
     return models
 
+SUMMARY_REQUEST = (
+    "Finish with a report for the owner, in the language required by the project's "
+    "instructions or otherwise in the language of the task. Explain in plain language "
+    "what you accomplished or found, how and why, what you actually verified and the "
+    "results, any problems you ran into, and anything the owner needs to know or do "
+    "next. Start the report with a line beginning \"Summary:\" (one sentence) and add a "
+    "line beginning \"Checks:\" (the checks you ran and their results). Include no "
+    "secrets. Put BATON_SUMMARY_BEGIN on its own line before the report and "
+    "BATON_SUMMARY_END on its own line after it."
+)
+
+
+def extract_summary(output: str) -> str:
+    # Some CLIs colour their output. Ignore incomplete reports and echoed instructions.
+    output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+    report = None
+    last = ""
+    for line in output.splitlines():
+        if line.strip() == "BATON_SUMMARY_BEGIN":
+            report = []
+        elif line.strip() == "BATON_SUMMARY_END":
+            if report:
+                last = "\n".join(report).strip() or last
+            report = None
+        elif report is not None:
+            report.append(line)
+    return last
+
+
 PROMPT = """You are working on the task below for the repository {repo}.
 Baton created this folder for you: a git worktree of {repo} on the new branch
 `{branch}`, based on `{base}`. You are not in the owner's own working folder.
@@ -135,9 +164,8 @@ Rules:
   Baton commits everything in this folder and opens a draft pull request.
 - If the task is unclear, needs secrets, or would need anything destructive or
   outside this folder, stop and explain why instead of doing it.
-- Prefix progress updates with "Progress:". End with two short lines prefixed
-  with "Summary:" and "Checks:". Describe what changed, the checks actually run
-  and their results, and mention anything left unchecked.
+- Prefix progress updates with "Progress:".
+- {summary_request}
 
 Task: {title}
 
@@ -166,6 +194,8 @@ class Task:
     model: str = ""
     steps: list[str] = field(default_factory=list)
     effort: str = ""
+    summary: str = ""
+    issue_number: int | None = None
 
 
 def _slug(text: str) -> str:
@@ -417,6 +447,17 @@ class Runner:
         with open(self.store.log_path(task.id), "a", encoding="utf-8") as f:
             f.write(text if text.endswith("\n") else text + "\n")
 
+    @staticmethod
+    def _read_summary(log_path: Path, start: int) -> str:
+        """The agent's final report, from the part of the log this run wrote."""
+        try:
+            with open(log_path, "rb") as log:
+                end = log.seek(0, 2)
+                log.seek(max(start, end - 65536))
+                return extract_summary(log.read().decode("utf-8", errors="replace"))
+        except OSError:
+            return ""
+
     def _git(self, cwd: Path, *args: str, check: bool = True) -> str:
         r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=300, **_NO_WINDOW)
@@ -449,7 +490,7 @@ class Runner:
 
     def _prompt(self, task: Task) -> str:
         return PROMPT.format(repo=task.repo, branch=task.branch, base=task.base,
-                             agent=task.agent, title=task.title,
+                             agent=task.agent, title=task.title, summary_request=SUMMARY_REQUEST,
                              details=task.details or "(no more details)")
 
     def _run(self, task: Task) -> None:
@@ -485,7 +526,9 @@ class Runner:
             stdin_text = "" if task.agent == "opencode" else self._prompt(task)
             # Popen (not run) so that cancel() can reach the process while it works.
             group = {} if os.name == "nt" else {"start_new_session": True}
-            with open(self.store.log_path(task.id), "a", encoding="utf-8") as log:
+            log_path = self.store.log_path(task.id)
+            start = log_path.stat().st_size if log_path.exists() else 0
+            with open(log_path, "a", encoding="utf-8") as log:
                 with self._lock:
                     if task.id in self._cancelled:
                         raise Cancelled()
@@ -505,6 +548,8 @@ class Runner:
                 finally:
                     with self._lock:
                         self._procs.pop(task.id, None)
+            # Only the end of this agent run can contain its final report.
+            task.summary = self._read_summary(log_path, start)
             self._check_cancelled(task)
             step(f"Agent finished (exit code {proc.returncode})")
             if proc.returncode != 0:

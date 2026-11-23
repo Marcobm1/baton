@@ -29,6 +29,10 @@ from pathlib import Path
 from .statusline import save
 
 
+# On Windows, don't flash a console window for each check when Baton runs hidden.
+_NO_WINDOW = {"creationflags": 0x08000000} if os.name == "nt" else {}
+
+
 def _clean_env() -> dict[str, str]:
     env = dict(os.environ)
     # With ANTHROPIC_API_KEY set, Claude Code bills the API instead of the plan,
@@ -97,7 +101,7 @@ def ping_claude(data_dir: Path, binary: str | None = None, model: str = "haiku",
         with tempfile.TemporaryDirectory() as tmp:
             r = subprocess.run(cmd, input="ok", capture_output=True, text=True,
                                encoding="utf-8", errors="replace", timeout=timeout,
-                               cwd=tmp, env=_clean_env())
+                               cwd=tmp, env=_clean_env(), **_NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"could not run Claude Code: {exc.__class__.__name__}"
     windows = parse_claude_stream(r.stdout)
@@ -116,7 +120,7 @@ def ping_codex(binary: str | None = None, timeout: int = 180) -> tuple[bool, str
         with tempfile.TemporaryDirectory() as tmp:
             r = subprocess.run(cmd, input="Reply with the single word ok.", capture_output=True,
                                text=True, encoding="utf-8", errors="replace",
-                               timeout=timeout, cwd=tmp)
+                               timeout=timeout, cwd=tmp, **_NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"could not run Codex: {exc.__class__.__name__}"
     return (r.returncode == 0), ("ok" if r.returncode == 0 else f"codex exited with {r.returncode}")

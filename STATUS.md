@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude/Codex quota windows.
-next: Marco tries it locally and decides whether to add the daily INDEX.md workflow (needs a read-only token as a secret).
+next: Marco creates a read-only fine-grained token for Docker / the daily INDEX.md workflow, and merges the STATUS.md PRs in Cairn and Mamporro.
 updated: 2026-11-23
 updated_by: claude
 open_source: true
@@ -20,7 +20,8 @@ links:
 - [x] STATUS.md format and parser
 - [x] Web page with projects and quota panel
 - [x] Docker + README instructions
-- [ ] Marco runs it on his PC (native and Docker) and gives feedback
+- [x] Tested on Marco's Windows PC: native (gh login) and Docker (public repos without token)
+- [ ] Marco uses it for a few days and gives feedback
 - [ ] Daily INDEX.md workflow in the hub repo (needs `BATON_TOKEN` secret)
 - [ ] Better Claude reading when using the VS Code extension (status line doesn't run there)
 - [ ] Screenshots in the README
@@ -35,4 +36,5 @@ links:
   by hand; Baton never touches provider credentials.
 
 ## Log
+- 2026-11-23 (claude): tested on Windows (native + Docker); fixed .env files with a BOM; Codex CLI oriented itself correctly from the hub's AGENTS.md + INDEX.md.
 - 2026-11-23 (claude): v0.1.0 created.

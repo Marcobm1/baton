@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ t.quotas }} · {{ title }}{% endblock %}
-{% block refresh %}<meta http-equiv="refresh" content="300"><link rel="stylesheet" href="/static/quotas.css?v={{ css_v }}">{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/quotas.css?v=brand-2">{% endblock %}
 {% block main %}
+{% macro logo(provider) -%}
+  {% set brand = {'claude': 'anthropic', 'claude-code': 'anthropic', 'codex': 'openai', 'opencode': 'opencode'}.get(provider) %}
+  {% if brand %}<img class="q-logo" src="/static/{{ brand }}.svg" width="22" height="22" alt="">{% endif %}
+{%- endmacro %}
 <section class="quotas">
 <h2>{{ t.quotas }}</h2>
 <p class="muted small">{{ t.quotas_help }}</p>
@@ -12,13 +16,7 @@
   <article class="quota">
     <div class="q-head">
       <strong class="q-provider">
-        {% if pv.provider == 'claude' %}
-          <span class="q-logo q-logo-claude" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.5 7.5h8l-6.5 4.5 2.5 7.5-6.5-4.5-6.5 4.5 2.5-7.5-6.5-4.5h8z"/></svg></span>
-        {% elif pv.provider == 'codex' %}
-          <span class="q-logo q-logo-codex" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l-6 7 6 7h2l-6-7 6-7z M17 5h-2l6 7-6 7h2l6-7z"/></svg></span>
-        {% elif pv.provider == 'opencode' %}
-          <span class="q-logo q-logo-opencode" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><text x="12" y="17" text-anchor="middle" font-size="10" font-weight="700" fill="currentColor">OC</text></svg></span>
-        {% endif %}
+        {{ logo(pv.provider) }}
         {{ provider_name }}{% if pv.plan %} <small>{{ pv.plan }}</small>{% endif %}
       </strong>
       <span class="q-kind">{{ t.seen }} {{ pv.age_s|dur }} {{ t.ago }}</span>
@@ -62,7 +60,7 @@
 <div class="tok-grid">
   {% for a in tokens.apps %}
   <article class="quota tok">
-    <div class="q-head"><strong class="q-provider">{{ t['app_' ~ a.app|replace('-', '_')] }}</strong>
+    <div class="q-head"><strong class="q-provider">{{ logo(a.app) }}{{ t['app_' ~ a.app|replace('-', '_')] }}</strong>
       <span class="q-kind">{{ t.last_days|replace('N', tokens.days|string) }}</span></div>
     <div class="tok-nums">
       <div><span class="muted small">{{ t.today }}</span><b>{{ a.today.total|tok }}</b></div>

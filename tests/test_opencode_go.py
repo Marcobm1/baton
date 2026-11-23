@@ -61,6 +61,7 @@ def test_quotas_page_shows_go_month_and_tokens_in_the_body(tmp_path):
     title = html.split("<title>")[1].split("</title>")[0]
     assert "Tokens" not in title
     assert "Tokens gastados" in html.split("</title>")[1]
+    assert 'src="/static/opencode.svg"' in html
     assert "OpenCode" in html and ">Mes<" in html
 
 

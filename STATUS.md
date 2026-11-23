@@ -25,7 +25,6 @@ links:
 - [ ] Daily INDEX.md workflow in the hub repo (needs `BATON_TOKEN` secret)
 - [x] Automatic Claude/Codex quota checks via the official CLIs (`baton ping`, scheduler)
 - [ ] Screenshots in the README
-- [ ] Remote access without exposing it to the internet (Tailscale Serve)
 - [x] "New task" form: GitHub issue for @claude (Claude Code GitHub Action)
 - [x] Separate pages: Projects, Tasks, Quotas
 - [x] Local tasks on this computer (Claude Code, Codex, local AI) in git worktrees, ending in a PR
@@ -48,6 +47,7 @@ links:
   is optional and uses its configured key to query the official usage endpoint.
 
 ## Log
+- 2026-11-23 (codex): verified private Tailscale Serve routing to native Baton and documented phone access. Replaced inline placeholder icons in quota and token cards with the bundled Anthropic, OpenAI and OpenCode images. Phone-side confirmation remains with the owner.
 - 2026-11-23 (codex): verified 15 Claude Code and 10 Codex models, per-model effort selection, and 25 tests. Refreshed the task form. Checked quota backgrounds in both themes and local Anthropic, OpenAI and OpenCode logos on Windows and Docker.
 - 2026-11-23 (codex): verified the live Go quota card and all three API windows on native Windows (8787) and Docker Compose (8788). Docker health check passed; 23 tests passed.
 - 2026-11-23 (claude): OpenCode Go quota; baton delegate; OpenCode rules rewritten deny-first after tests; tokens section fixed.

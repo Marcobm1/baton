@@ -251,8 +251,11 @@ baton delegate -m <model> --write "Fix the typos in docs/"      may edit
 Install [Tailscale](https://tailscale.com) on the computer and the phone with
 the same account and run `tailscale serve --bg 8787` on the computer. The page
 is then available at `https://<computer>.<tailnet>.ts.net`, only to your own
-devices, with HTTPS and no open ports. From there you can also start tasks on
-the computer while you're away from it.
+devices permitted by your tailnet rules. On the PC, run `tailscale serve status`
+to find the exact HTTPS address. On the phone, connect Tailscale and open
+that address in a browser. The PC must be awake with Baton running. The same
+address works over Wi-Fi or mobile data. When native Baton and Docker run
+side by side, Serve on port 8787 opens the native dashboard.
 
 ## Tokens spent
 

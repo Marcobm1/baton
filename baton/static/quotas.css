@@ -1,31 +1,5 @@
-/* Scoped styles for the quotas page. Loaded only by quotas.html. */
-.quotas {
-  background: var(--bg);
-}
-
-.quotas .q-logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.25em;
-  height: 1.25em;
-  margin-right: .35em;
-  vertical-align: -.28em;
-}
-
-.quotas .q-logo svg {
-  width: 100%;
-  height: 100%;
-  fill: currentColor;
-}
-
-/* Provider-specific logo colours. */
-.quotas .q-logo-claude { color: #cc785c; }
-.quotas .q-logo-codex { color: #10a37f; }
-.quotas .q-logo-opencode { color: #2f6bb0; }
-
+.quotas { background: var(--bg); }
+.quotas .q-logo { vertical-align: middle; margin-right: .35em; object-fit: contain; }
 @media (prefers-color-scheme: dark) {
-  .quotas .q-logo-claude { color: #e89b7f; }
-  .quotas .q-logo-codex { color: #19c59f; }
-  .quotas .q-logo-opencode { color: #79a8e0; }
+  .quotas .q-logo { filter: invert(1); }
 }

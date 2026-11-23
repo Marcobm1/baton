@@ -104,7 +104,7 @@ def test_runner_end_to_end_in_a_worktree(tmp_path, monkeypatch):
     store, r = _fake_agent_runner(tmp_path, work, script, opened)
     task = Task(id="t1", repo="x/demo", title="Add DONE", details="please", agent="codex", where="local",
                 created_at=time.time(), branch="baton/t1", base="main", open_pr=True)
-    r.start(task)
+    r.submit(task)
     done = _wait(store, "t1")
     assert done.status == "done", done.message
     assert done.pr_url.endswith("/pull/1") and opened[0][1] == "baton/t1"
@@ -129,13 +129,13 @@ def test_runner_no_changes_and_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(runner_mod, "_remote_repo", lambda url: "x/demo" if url.strip() else "")
     script = "print('BATON_SUMMARY_BEGIN\\nThe setting was already enabled.\\nBATON_SUMMARY_END')"
     store, r = _fake_agent_runner(tmp_path, work, script, [])
-    r.start(Task(id="t2", repo="x/demo", title="Nothing", details="", agent="codex", where="local",
+    r.submit(Task(id="t2", repo="x/demo", title="Nothing", details="", agent="codex", where="local",
                  created_at=time.time(), branch="baton/t2", base="main"))
     done = _wait(store, "t2")
     assert done.status == "no-changes"
     assert done.summary == "The setting was already enabled."
     r._agent_cmd = lambda task, wt: [sys.executable, "-c", "import sys; sys.exit(3)"]
-    r.start(Task(id="t3", repo="x/demo", title="Boom", details="", agent="codex", where="local",
+    r.submit(Task(id="t3", repo="x/demo", title="Boom", details="", agent="codex", where="local",
                  created_at=time.time(), branch="baton/t3", base="main"))
     failed = _wait(store, "t3")
     assert failed.status == "failed" and "exit code 3" in failed.message
@@ -209,7 +209,7 @@ def test_cancel_stops_the_agent_and_its_children(tmp_path, monkeypatch):
     beat = tmp_path / "beat.txt"
     opened = []
     store, r = _fake_agent_runner(tmp_path, work, _sleepy_agent(beat), opened)
-    r.start(Task(id="t4", repo="x/demo", title="Sleep", details="", agent="codex", where="local",
+    r.submit(Task(id="t4", repo="x/demo", title="Sleep", details="", agent="codex", where="local",
                  created_at=time.time(), branch="baton/t4", base="main"))
     _wait_for_heartbeat(beat)
     assert r.can_cancel("t4") and store.get("t4").status == "running"

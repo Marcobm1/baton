@@ -20,12 +20,12 @@ from markdown_it import MarkdownIt
 from . import __version__, quotas, usage
 from .config import Settings
 from .github import GitHubError, Hub
-from .i18n import strings
+from .i18n import ordinal, strings
 from .ping import Scheduler
 from .ranking import CRITERIA, Ranking
 from .task_models import catalog
 from .task_report import task_report
-from .runner import (AGENTS, SUMMARY_REQUEST, LocalRepos, Runner, Task, TaskStore,
+from .runner import (AGENTS, PRIORITIES, SUMMARY_REQUEST, LocalRepos, Runner, Task, TaskStore,
                      extract_summary, new_id, opencode_models)
 
 HERE = Path(__file__).parent
@@ -72,13 +72,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     git_email=settings.git_email,
                     # With auto-merge the PR can't be a draft: GitHub won't merge drafts.
                     open_pr=lambda *a: hub.open_pr(*a, draft=not settings.auto_merge),
-                    github=hub, auto_merge=settings.auto_merge, quota_left=quota_left)
+                    github=hub, auto_merge=settings.auto_merge, quota_left=quota_left,
+                    max_parallel=settings.max_parallel)
 
-    # Tasks that were running when Baton stopped can't be resumed: mark them.
-    for old in store.all():
-        if old.status in ("queued", "running"):
-            old.status, old.message = "failed", "Baton stopped while this task was running."
-            store.save(old)
+    # Tasks that were running when Baton stopped can't be resumed: mark them
+    # failed. Queued tasks keep their place and start when the server is up.
+    runner.recover()
 
     async def _loop():
         # Check once a minute whether a quota check is due; checks run in a
@@ -92,6 +91,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @contextlib.asynccontextmanager
     async def lifespan(_app):
+        await asyncio.to_thread(runner.dispatch)   # the queue left by the last run
         loop_task = asyncio.create_task(_loop()) if scheduler.enabled else None
         yield
         if loop_task:
@@ -123,6 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         css_v=hashlib.sha256((HERE / "static" / "style.css").read_bytes()).hexdigest()[:10])
     templates.env.filters["md"] = _render_md
     templates.env.filters["dur"] = _duration
+    templates.env.filters["ordinal"] = lambda n: ordinal(n, settings.lang)
     templates.env.filters["tok"] = usage.human
     templates.env.filters["when"] = lambda ts: time.strftime("%Y-%m-%d %H:%M", time.localtime(ts)) if ts else "—"
     usage_cache: dict = {}
@@ -203,7 +204,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/tasks", response_class=HTMLResponse)
     async def tasks_page(request: Request):
         tasks = store.all()
-        return page(request, "tasks.html", "tasks", tasks=tasks,
+        return page(request, "tasks.html", "tasks", tasks=tasks, queue=runner.queue_info(),
                     any_running=any(x.status in ("queued", "running") for x in tasks))
 
     @app.get("/tasks/new", response_class=HTMLResponse)
@@ -219,7 +220,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return page(request, "task_new.html", "tasks", repos=repos, selected=repo,
                     local=local, available=available, oc_models=models, catalogs=dict(zip(agents, choices)),
                     cloud=settings.cloud_tasks, error=error[:300], auto_merge=settings.auto_merge,
-                    has_token=bool(settings.github_token))
+                    has_token=bool(settings.github_token), priorities=PRIORITIES,
+                    max_parallel=settings.max_parallel)
 
     @app.get("/tasks/{task_id}", response_class=HTMLResponse)
     async def task_detail(request: Request, task_id: str):
@@ -240,7 +242,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         log = store.read_log(task.id)
         return page(request, "task.html", "tasks", task=task, report=task_report(task, log),
                     log="\n".join(log.splitlines()[-200:]), can_cancel=runner.can_cancel(task.id),
-                    report_error=report_error)
+                    report_error=report_error, queue=runner.queue_info().get(task.id),
+                    priorities=PRIORITIES)
+
+    @app.post("/tasks/{task_id}/priority")
+    async def task_priority(request: Request, task_id: str, csrf: str = Form(""),
+                            priority: str = Form("")):
+        check_post(request, csrf)
+        if not store.get(task_id):
+            raise HTTPException(404, "Unknown task")
+        if priority not in PRIORITIES:
+            raise HTTPException(400, "Unknown priority")
+        if not runner.set_priority(task_id, priority):
+            raise HTTPException(409, "Only a queued task can change its priority.")
+        return RedirectResponse(f"/tasks/{quote(task_id)}", status_code=303)
 
     @app.post("/tasks/{task_id}/cancel")
     async def task_cancel(request: Request, task_id: str, csrf: str = Form("")):
@@ -250,15 +265,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Killing the agent and removing the worktree block for a few seconds:
         # do it in a thread so the other pages keep answering.
         if not await asyncio.to_thread(runner.cancel, task_id):
-            raise HTTPException(409, "This task is not running on this computer, or is already finishing.")
+            raise HTTPException(409, "This task is not queued or running on this computer, or is already finishing.")
         return RedirectResponse(f"/tasks/{quote(task_id)}", status_code=303)
 
     @app.post("/tasks")
     async def task_create(request: Request, repo: str = Form(...), where: str = Form(...),
                           title: str = Form(...), details: str = Form(""),
                           oc_model: str = Form(""), csrf: str = Form(""),
-                          model: str = Form(""), effort: str = Form("")):
+                          model: str = Form(""), effort: str = Form(""),
+                          priority: str = Form("normal")):
         check_post(request, csrf)
+        if priority not in PRIORITIES:
+            raise HTTPException(400, "Unknown priority")
         projects, _ = await hub.load()
         by_repo = {p.repo: p for p in projects}
         if repo not in by_repo:
@@ -297,8 +315,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return back(reason)
         if not runner.repos.get(repo):
             return back("There is no local clone of this repository on this computer.")
-        if runner.busy(repo):
-            return back("A task is already running on this repository; wait for it to finish.")
         if agent in ("codex", "claude-code") and (model or effort):
             options = await asyncio.to_thread(catalog, agent)
             if model not in options or (effort and effort not in options[model]["efforts"]):
@@ -313,8 +329,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         task_id = new_id(title)
         task = Task(id=task_id, repo=repo, title=title, details=details, agent=agent,
                     where="local", created_at=time.time(), branch=f"baton/{task_id}",
-                    base=by_repo[repo].branch, model=model, effort=effort)  # always ends in a PR
-        runner.start(task)
+                    base=by_repo[repo].branch, model=model, effort=effort,  # always ends in a PR
+                    priority=priority)
+        # Queued; it starts now if its repository and a slot are free.
+        runner.submit(task)
         return RedirectResponse(f"/tasks/{task.id}", status_code=303)
 
     # ------------------------------------------------------------------ api

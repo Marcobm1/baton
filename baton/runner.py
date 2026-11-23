@@ -16,9 +16,17 @@ Flow for one task:
      it finds. Then Baton merges the pull request (see docs/auto-merge.md);
   6. the worktree is removed once the branch is safe on GitHub.
 
+Tasks wait in a queue: one task at a time per repository and at most
+`max_parallel` local tasks on this computer. The next one (highest priority,
+then oldest) starts when a task has finished completely, review and merge
+included; steps 2-6 happen only then, so its worktree starts from the
+`origin/<base>` that already contains the previous task's merge (see
+docs/task-queue.md).
+
 A running task can be cancelled from its page: Baton kills the agent and all
 its subprocesses, commits and pushes nothing, and removes the worktree and the
-local branch unless the branch is already on GitHub.
+local branch unless the branch is already on GitHub. A queued task is simply
+taken out of the queue (nothing had been created yet).
 
 Everything is written to <data dir>/tasks/<id>.log and tasks.json.
 """
@@ -252,6 +260,18 @@ class Task:
     reviewer: str = ""              # agent that reviewed the work before merging
     review: str = ""                # its report
     merged: bool = False
+    priority: str = "normal"        # high | normal | low: order in the queue
+    started_at: float | None = None  # when it left the queue
+
+
+# Queue order: higher priority first, then the oldest. The id breaks the
+# (very unlikely) tie of two tasks created at the same instant.
+PRIORITIES = ("high", "normal", "low")
+
+
+def queue_key(task: Task) -> tuple:
+    rank = PRIORITIES.index(task.priority) if task.priority in PRIORITIES else 1
+    return (rank, task.created_at, task.id)
 
 
 def _slug(text: str) -> str:
@@ -317,6 +337,12 @@ class TaskStore:
         self.lock = threading.Lock()
 
     def all(self) -> list[Task]:
+        # Reads take the lock too: on Windows, replacing tasks.json fails
+        # ("Access denied") while another thread has it open for reading.
+        with self.lock:
+            return self._load()
+
+    def _load(self) -> list[Task]:
         try:
             rows = json.loads(self.file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -334,12 +360,19 @@ class TaskStore:
 
     def save(self, task: Task) -> None:
         with self.lock:
-            tasks = {t.id: t for t in self.all()}
+            tasks = {t.id: t for t in self._load()}
             tasks[task.id] = task
             self.dir.mkdir(parents=True, exist_ok=True)
             tmp = self.file.with_suffix(".tmp")
             tmp.write_text(json.dumps([asdict(t) for t in tasks.values()], indent=1), encoding="utf-8")
-            tmp.replace(self.file)
+            for attempt in range(20):
+                try:
+                    tmp.replace(self.file)
+                    break
+                except PermissionError:  # another program (antivirus, indexer) has it open
+                    if attempt == 19:
+                        raise
+                    time.sleep(0.05)
 
     def log_path(self, task_id: str) -> Path:
         self.logs.mkdir(parents=True, exist_ok=True)
@@ -395,8 +428,10 @@ class Runner:
                  local_provider: str, git_name: str, git_email: str,
                  open_pr: Callable[[str, str, str, str, str], str], github=None,
                  auto_merge: bool = False,
-                 quota_left: Callable[[str], float | None] | None = None):
+                 quota_left: Callable[[str], float | None] | None = None,
+                 max_parallel: int = 3):
         self.store = store
+        self.max_parallel = max(1, max_parallel)   # local tasks at once on this computer
         self.repos = repos
         self.timeout = timeout
         self.local_model = local_model
@@ -416,7 +451,11 @@ class Runner:
         # lock makes "is it cancelled?" plus "start the agent" (or "start
         # committing") a single step, so a cancel can never slip in between.
         self._lock = threading.Lock()
+        # The same lock also guards the queue: while a task is "queued" the
+        # queue is its only writer (start, priority change, cancel), always
+        # under this lock; once "running", its own thread is.
         self._threads: dict[str, threading.Thread] = {}
+        self._active: dict[str, Task] = {}          # running tasks by id
         self._procs: dict[str, subprocess.Popen] = {}
         self._cancelled: set[str] = set()
         self._committing: set[str] = set()
@@ -433,29 +472,110 @@ class Runner:
                         else "set BATON_LOCAL_MODEL (and install Ollama or LM Studio)")
         return out
 
-    def busy(self, repo: str) -> bool:
-        return any(t.repo == repo and t.where == "local" and t.status in ("queued", "running")
-                   for t in self.store.all())
+    # ----------------------------------------------------------------- queue
+    def queued(self) -> list[Task]:
+        """Local tasks waiting to start, in the order they will start."""
+        return sorted((t for t in self.store.all() if t.where == "local" and t.status == "queued"),
+                      key=queue_key)
 
-    def start(self, task: Task) -> None:
+    def submit(self, task: Task) -> None:
+        """Put a local task in the queue; it starts as soon as its repository
+        and one of the `max_parallel` slots are free (maybe right now)."""
         if task.agent == "local":
             task.model = self.local_model
-        self.store.save(task)
-        thread = threading.Thread(target=self._run, args=(task,), daemon=True)
+        task.status = "queued"
         with self._lock:
-            self._threads[task.id] = thread
-        thread.start()
+            self.store.save(task)
+        self.dispatch()
+
+    def dispatch(self) -> None:
+        """Start queued tasks while there are free slots. Called when a task
+        is submitted, when one finishes and when Baton starts."""
+        with self._lock:
+            busy = {t.repo for t in self._active.values()}
+            for task in self.queued():
+                if len(self._active) >= self.max_parallel:
+                    break
+                if task.repo in busy:       # one task at a time per repository
+                    continue
+                task.status, task.started_at = "running", time.time()
+                self.store.save(task)
+                thread = threading.Thread(target=self._run, args=(task,), daemon=True)
+                self._threads[task.id] = thread
+                self._active[task.id] = task
+                busy.add(task.repo)
+                thread.start()
+
+    def set_priority(self, task_id: str, priority: str) -> bool:
+        """Change the priority of a queued task. False if it isn't queued."""
+        if priority not in PRIORITIES:
+            raise ValueError(f"Unknown priority: {priority}")
+        with self._lock:
+            task = self.store.get(task_id)
+            if not task or task.where != "local" or task.status != "queued":
+                return False
+            task.priority = priority
+            self.store.save(task)
+            return True
+
+    def recover(self) -> None:
+        """After a restart: tasks that were running can't be resumed (their
+        processes belonged to the previous run), so they are marked failed.
+        Queued tasks keep their place; dispatch() starts them."""
+        with self._lock:
+            for old in self.store.all():
+                if old.status == "running":
+                    old.status, old.message = "failed", "Baton stopped while this task was running."
+                    old.finished_at = old.finished_at or time.time()
+                    self.store.save(old)
+
+    def queue_info(self) -> dict[str, dict]:
+        """For each queued task: its place in its repository's queue (1 = next)
+        and what it waits for: the queued task just ahead of it, else the task
+        running in that repository, else (None) a free slot on this computer."""
+        tasks = self.store.all()
+        running = {t.repo: t for t in tasks if t.where == "local" and t.status == "running"}
+        slots = sum(1 for t in tasks if t.where == "local" and t.status == "running")
+        info: dict[str, dict] = {}
+        ahead: dict[str, Task] = {}
+        count: dict[str, int] = {}
+        for task in self.queued():
+            count[task.repo] = count.get(task.repo, 0) + 1
+            info[task.id] = {"position": count[task.repo],
+                             "waiting_for": ahead.get(task.repo) or running.get(task.repo),
+                             "running": slots, "max": self.max_parallel}
+            ahead[task.repo] = task
+        return info
 
     # ------------------------------------------------------------ cancelling
     def can_cancel(self, task_id: str) -> bool:
         with self._lock:
             thread = self._threads.get(task_id)
-            return bool(thread and thread.is_alive() and task_id not in self._committing
+            if not thread:
+                task = self.store.get(task_id)
+                return bool(task and task.where == "local" and task.status == "queued")
+            return bool(thread.is_alive() and task_id not in self._committing
                         and task_id not in self._cancelled)
 
+    def _cancel_queued(self, task_id: str) -> bool:
+        """Take a queued task out of the queue. Nothing exists yet for it (no
+        worktree, no branch), so there is nothing to clean up."""
+        with self._lock:
+            task = self.store.get(task_id)
+            if not task or task.where != "local" or task.status != "queued":
+                return False
+            task.status, task.finished_at = "cancelled", time.time()
+            task.message = "Cancelled while queued: it never started, so no worktree or branch was created."
+            self.store.save(task)
+        self._log(task, f"!! {task.message}")
+        return True
+
     def cancel(self, task_id: str, wait: float = 30) -> bool:
-        """Stop a running local task. False if it isn't running here (or is
-        already committing its result, which only takes a moment)."""
+        """Cancel a queued or running local task. False if it isn't queued or
+        running here (or is already committing its result, which only takes
+        a moment)."""
+        if self._cancel_queued(task_id):
+            return True
         with self._lock:
             thread = self._threads.get(task_id)
             if not thread or not thread.is_alive() or task_id in self._committing:
@@ -668,7 +788,8 @@ class Runner:
             self._log(task, f"== {msg}")
             self.store.save(task)
 
-        task.status = "running"
+        task.status = "running"         # dispatch() already saved it so
+        task.started_at = task.started_at or time.time()
         repo_dir: Path | None = None
         wt: Path | None = None          # set once the worktree exists
         try:
@@ -791,3 +912,10 @@ class Runner:
                 self._cancelled.discard(task.id)
                 self._committing.discard(task.id)
                 self._threads.pop(task.id, None)
+                self._active.pop(task.id, None)
+            # Only now (tests, review and merge all done) is the repository
+            # free: the next queued task fetches the merged result.
+            try:
+                self.dispatch()
+            except Exception as exc:  # a broken queue must not hide this task's result
+                self._log(task, f"!! Could not start the next queued task: {exc}")

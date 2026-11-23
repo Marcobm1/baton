@@ -14,6 +14,7 @@
     <span class="pill st">{{ t['st_' ~ x.status] }}</span>
     <a class="task-title" href="/tasks/{{ x.id }}">{{ x.title }}</a>
     <span class="muted small">{{ x.repo }} · {% if x.where == 'cloud' %}☁ {{ t.where_cloud_short }}{% else %}🖥 {{ agents[x.agent] }}{% if x.model %} · {{ x.model }}{% if x.effort %} · {{ x.effort }}{% endif %}{% endif %}{% endif %}</span>
+    {% if x.id in queue %}{% set q = queue[x.id] %}<span class="small queue-info"><span class="pill prio-{{ x.priority }}">{{ t.priority }} · {{ t['prio_' ~ x.priority] }}</span> {{ t.queue_pos|format(q.position|ordinal) }} · {{ t.waiting_for }} {% if q.waiting_for %}<a href="/tasks/{{ q.waiting_for.id }}">{{ q.waiting_for.title }}</a>{% else %}{{ t.waiting_slot|format(q.running, q.max) }}{% endif %}</span>{% endif %}
     {% if x.pr_url %}<a class="small" href="{{ x.pr_url }}">PR ↗</a>{% elif x.issue_url %}<a class="small" href="{{ x.issue_url }}">Issue ↗</a>{% endif %}
   </li>
   {% endfor %}

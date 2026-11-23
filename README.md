@@ -214,11 +214,27 @@ default) Baton then merges the pull request by itself:
   page. Baton merges only the exact commit it checked.
 
 With `BATON_AUTO_MERGE=0` the pull request is a draft for you to review (see
-[`docs/auto-merge.md`](docs/auto-merge.md)). One task at a
-time per repository. The task page shows the agent's summary before the steps
+[`docs/auto-merge.md`](docs/auto-merge.md)). The task page shows the agent's summary before the steps
 and log. It explains the outcome, approach, reasoning, checks, problems met
 and what you need to know or do next, including for tasks that changed no files. Tasks use
 your plans' quotas like any other use of those CLIs.
+
+**Queue and priority.** Local tasks run one at a time per repository, and at
+most `BATON_MAX_PARALLEL` (3 by default) on the whole computer. A task created
+while its repository is busy (or all slots are taken) is saved as **queued**
+and starts by itself when the one before it has finished *completely*, review
+and merge included. Each task chooses a priority when it is created: *high*,
+*normal* (the default) or *low*. The queue starts the highest priority first
+and, between equal priorities, the oldest; a task that has started is never
+interrupted. Fetching and creating the worktree happen when a task **starts**,
+not when it is created, so it begins from the `origin/<base>` that already
+contains what the previous task merged. While a task is queued, the task list
+and its page show its priority, its place in its repository's queue
+("queued, 2nd") and the task it is waiting for; its page can change the
+priority or cancel it (nothing was created yet, so it is just taken out of the
+queue). Both forms use the same cross-site protection as the task form. If
+Baton restarts, queued tasks keep their place and order; tasks that were
+running are marked failed. See [`docs/task-queue.md`](docs/task-queue.md).
 
 While a local task is running, its page has a **Cancel task** button. Baton
 stops the agent *and every process it started* (on Windows with
@@ -325,6 +341,7 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_GIT_NAME` / `BATON_GIT_EMAIL` | Baton | Commit identity when the clone has none. |
 | `BATON_CLOUD_TASKS` | `1` | `0` hides the GitHub Actions option. |
 | `BATON_AUTO_MERGE` | `1` | Local tasks: merge the pull request when the tests pass, after a review by Claude Code or Codex when needed. `0` leaves a draft for you. |
+| `BATON_MAX_PARALLEL` | `3` | Local tasks running at the same time on this computer (always one per repository); the rest wait in the queue. |
 | `CODEX_HOME` | `~/.codex` | Where Codex keeps its logs. |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Where Claude Code keeps its logs (tokens spent). |
 | `BATON_OPENCODE_BIN` | found on PATH | Path to `opencode.exe` if it isn't found. |

@@ -4,7 +4,8 @@ Sources, all local and passive (Baton never reads or sends your credentials):
   * Codex: the rate-limit snapshots Codex itself writes in its session logs
     (~/.codex/sessions/**/*.jsonl, "token_count" events).
   * Claude Code: the official status line JSON (rate_limits.five_hour /
-    seven_day), saved to data/claude-usage.json by `baton statusline`.
+    seven_day), saved by `baton statusline`, or the same numbers from a
+    scheduled `claude -p` ping (see ping.py); both go to claude-usage.json.
   * Manual: values you type in the page (e.g. copied from claude.ai's
     Settings > Usage), saved to data/manual-usage.json.
 The newest reading of each window wins.
@@ -145,7 +146,7 @@ def claude_statusline_windows(data_dir: Path) -> list[Window]:
             out.append(Window(
                 "claude", kind, float(w["used_percentage"]),
                 float(w["resets_at"]) if w.get("resets_at") else None,
-                float(snap.get("seen_at") or f.stat().st_mtime), "statusline",
+                float(snap.get("seen_at") or f.stat().st_mtime), str(snap.get("source") or "statusline"),
             ))
     return out
 

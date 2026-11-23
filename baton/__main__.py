@@ -76,6 +76,22 @@ def cmd_quotas(args) -> int:
     return 0
 
 
+def cmd_ping(args) -> int:
+    from .ping import ping_claude, ping_codex
+
+    s = _settings()
+    rc = 0
+    if args.what in ("claude", "all"):
+        ok, msg = ping_claude(s.data_dir, model=s.ping_model)
+        print(f"claude: {msg}")
+        rc |= 0 if ok else 1
+    if args.what in ("codex", "all"):
+        ok, msg = ping_codex()
+        print(f"codex: {msg}")
+        rc |= 0 if ok else 1
+    return rc
+
+
 def cmd_statusline(args) -> int:
     from .statusline import main
 
@@ -109,6 +125,10 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("quotas", help="print the current quota windows as JSON")
     p.set_defaults(fn=cmd_quotas)
+
+    p = sub.add_parser("ping", help="refresh quota readings now by asking the CLIs (spends a little quota)")
+    p.add_argument("what", nargs="?", default="claude", choices=["claude", "codex", "all"])
+    p.set_defaults(fn=cmd_ping)
 
     p = sub.add_parser("statusline", help="Claude Code status line command (records quota)")
     p.set_defaults(fn=cmd_statusline)

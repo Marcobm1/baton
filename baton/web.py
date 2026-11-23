@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import datetime as dt
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -15,6 +18,7 @@ from . import __version__, quotas
 from .config import Settings
 from .github import Hub
 from .i18n import strings
+from .ping import Scheduler
 
 HERE = Path(__file__).parent
 _md = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table")
@@ -42,7 +46,28 @@ def _duration(seconds: float | None, lang: str) -> str:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     hub = Hub(settings)
-    app = FastAPI(title="Baton", version=__version__, docs_url=None, redoc_url=None)
+    scheduler = Scheduler(settings.data_dir, settings.ping_claude_minutes,
+                          settings.ping_codex_minutes, settings.ping_hours, settings.ping_model)
+
+    async def _loop():
+        # Check once a minute whether a ping is due; pings run in a thread so
+        # the page keeps answering while a CLI is working.
+        while True:
+            try:
+                await asyncio.to_thread(scheduler.tick)
+            except Exception:  # never let the loop die
+                pass
+            await asyncio.sleep(60)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app):
+        task = asyncio.create_task(_loop()) if scheduler.enabled else None
+        yield
+        if task:
+            task.cancel()
+
+    app = FastAPI(title="Baton", version=__version__, docs_url=None, redoc_url=None,
+                  lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     t = strings(settings.lang)
@@ -61,6 +86,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "errors": errors,
             "quotas": quotas.all_windows(settings.data_dir, settings.codex_home),
             "no_token": not settings.github_token,
+            "sched": scheduler,
+            "sched_results": {k: {"age": time.time() - v[0], "ok": v[1], "msg": v[2]}
+                              for k, v in scheduler.results.items()},
             "now": dt.datetime.now().strftime("%H:%M"),
         })
 

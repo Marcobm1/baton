@@ -105,3 +105,22 @@ def test_dotenv_with_bom_and_comments(tmp_path, monkeypatch):
     assert os.environ["BATON_TEST_A"] == "es"
     assert os.environ["BATON_TEST_B"] == "x"
     assert os.environ["BATON_TEST_C"] == ""
+
+
+def test_parse_claude_stream_and_hours(tmp_path):
+    from baton import ping
+
+    line = ('{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1795467600,'
+            '"rateLimitType":"five_hour","unifiedWindows":{"five_hour":{"utilization":0.31,'
+            '"resetsAt":1795467600,"status":"allowed"},"seven_day":{"utilization":0.08,'
+            '"resetsAt":1795993200,"status":"allowed"}}}}')
+    out = ping.parse_claude_stream('{"type":"system"}\n' + line + '\n{"type":"result"}')
+    assert round(out["five_hour"]["used_percentage"]) == 31
+    assert out["seven_day"]["resets_at"] == 1795993200
+    assert ping.parse_claude_stream('{"type":"result"}') is None
+    assert ping.in_hours("8-24", 9) and not ping.in_hours("8-24", 3)
+    assert ping.in_hours("22-6", 23) and ping.in_hours("22-6", 2) and not ping.in_hours("22-6", 12)
+    assert ping.in_hours("", 3)
+    from baton import statusline, quotas
+    statusline.save({"rate_limits": out}, tmp_path, source="ping")
+    assert {w.source for w in quotas.claude_statusline_windows(tmp_path)} == {"ping"}

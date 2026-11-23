@@ -27,7 +27,7 @@ def data_dir() -> Path:
     return Path(os.environ.get("BATON_DATA_DIR") or Path.home() / ".baton")
 
 
-def save(payload: dict, target: Path) -> None:
+def save(payload: dict, target: Path, source: str = "statusline") -> None:
     rl = payload.get("rate_limits")
     if not isinstance(rl, dict):
         return
@@ -36,7 +36,7 @@ def save(payload: dict, target: Path) -> None:
         return
     target.mkdir(parents=True, exist_ok=True)
     tmp = target / "claude-usage.json.tmp"
-    tmp.write_text(json.dumps({"seen_at": time.time(), "rate_limits": keep}), encoding="utf-8")
+    tmp.write_text(json.dumps({"seen_at": time.time(), "source": source, "rate_limits": keep}), encoding="utf-8")
     tmp.replace(target / "claude-usage.json")
 
 

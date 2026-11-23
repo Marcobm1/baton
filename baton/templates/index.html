@@ -28,6 +28,16 @@
   <p class="muted">{{ t.no_quotas }}</p>
   {% endif %}
 
+  <p class="muted small">{{ t.auto }}:
+    {% if sched.enabled %}
+      {% if sched.claude_minutes %}Claude {{ t.every }} {{ sched.claude_minutes }} {{ t.minutes }}{% endif %}
+      {% if sched.claude_minutes and sched.codex_minutes %} · {% endif %}
+      {% if sched.codex_minutes %}Codex {{ t.every }} {{ sched.codex_minutes }} {{ t.minutes }}{% endif %}
+      {% if sched.hours %} ({{ sched.hours }} h){% endif %}
+      {% for name, r in sched_results.items() %} · {{ name|capitalize }}: {{ t.last_check }} {{ r.age|dur }} {{ t.ago }} {% if r.ok %}✓{% else %}<span class="stale" title="{{ r.msg }}">✗ {{ r.msg }}</span>{% endif %}{% endfor %}
+    {% else %}{{ t.auto_off }}{% endif %}
+  </p>
+
   <details class="manual">
     <summary>{{ t.manual_title }}</summary>
     <p class="muted small">{{ t.manual_help }}</p>

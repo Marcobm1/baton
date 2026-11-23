@@ -90,3 +90,18 @@ def test_statusline_and_manual(tmp_path: Path):
 def test_statusline_line():
     assert statusline.line({"model": {"display_name": "Opus"},
                             "rate_limits": {"five_hour": {"used_percentage": 12.4}}}) == "Opus · 5h 12%"
+
+
+def test_dotenv_with_bom_and_comments(tmp_path, monkeypatch):
+    import os
+
+    from baton import config
+
+    f = tmp_path / ".env"
+    f.write_bytes("﻿BATON_TEST_A=es\nBATON_TEST_B=x  # note\nBATON_TEST_C=\n".encode("utf-8"))
+    for k in ("BATON_TEST_A", "BATON_TEST_B", "BATON_TEST_C"):
+        monkeypatch.delenv(k, raising=False)
+    config._load_dotenv(f)
+    assert os.environ["BATON_TEST_A"] == "es"
+    assert os.environ["BATON_TEST_B"] == "x"
+    assert os.environ["BATON_TEST_C"] == ""

@@ -161,6 +161,32 @@ standard-library only, so you can also copy `baton/statusline.py` anywhere and
 run `python /path/to/statusline.py`.) It prints a short line such as
 `Opus · 5h 34% · 7d 12% · ctx 22%`.
 
+## Sending tasks to agents
+
+The page has a **New task** form. It opens a GitHub issue that starts with
+`@claude`; the [Claude Code GitHub Action](https://github.com/anthropics/claude-code-action)
+picks it up in GitHub's cloud, works on a branch and opens a pull request. Your
+computer doesn't need to be on, and the run uses your Claude plan (with a token
+from `claude setup-token`) plus GitHub Actions minutes.
+
+To enable it on a repository, follow the comments at the top of
+[`docs/claude-task-workflow.yml`](docs/claude-task-workflow.yml). Baton's token
+then also needs **Issues: Read and write** on those repositories.
+
+The form is protected against cross-site requests (a per-run secret in the form
+and an Origin check), so another website open in your browser can't create
+tasks through Baton.
+
+Codex: OpenAI documents `@codex` mentions in pull request comments (Codex cloud),
+not in issues, so Baton doesn't offer Codex tasks yet.
+
+## Seeing Baton from your phone without putting it on the internet
+
+Install [Tailscale](https://tailscale.com) on the computer and the phone with
+the same account and run `tailscale serve --bg 8787` on the computer. The page
+is then available at `https://<computer>.<tailnet>.ts.net`, only to your own
+devices, with HTTPS and no open ports.
+
 ## Configuration
 
 All settings are environment variables (or a `.env` file); see

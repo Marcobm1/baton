@@ -1,0 +1,24 @@
+<section id="tasks" class="tasks">
+  <details {% if created or error %}open{% endif %}>
+    <summary>{{ t.task_title }}</summary>
+    <p class="muted small">{{ t.task_help }}</p>
+    {% if created %}<p class="ok-msg">{{ t.task_created }} <a href="{{ created }}">{{ created }}</a></p>{% endif %}
+    {% if error %}<p class="warn small">{{ error }}</p>{% endif %}
+    <form method="post" action="/tasks" class="task-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>{{ t.repo }}
+        <select name="repo" required>{% for r in repos %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select>
+      </label>
+      <label>{{ t.agent }}
+        <select name="agent"><option value="claude">Claude</option><option value="codex" disabled>Codex ({{ t.soon }})</option></select>
+      </label>
+      <label class="wide">{{ t.task_name }}
+        <input name="title" required maxlength="200">
+      </label>
+      <label class="wide">{{ t.task_details }}
+        <textarea name="details" rows="4" maxlength="5000"></textarea>
+      </label>
+      <button type="submit">{{ t.task_send }}</button>
+    </form>
+  </details>
+</section>

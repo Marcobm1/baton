@@ -38,6 +38,7 @@ REQUIRED = ("name", "status", "updated")
 
 _FRONT_MATTER = re.compile(r"\A﻿?---\s*\r?\n(.*?)\r?\n---\s*(?:\r?\n|\Z)", re.S)
 _BOX = re.compile(r"^\s*[-*+]\s+\[( |x|X)\]\s", re.M)
+_OPEN_BOX = re.compile(r"^\s*[-*+]\s+\[ \]\s+(.+)$", re.M)
 
 
 @dataclass
@@ -56,6 +57,18 @@ class Status:
     tasks_done: int = 0
     tasks_total: int = 0
     problems: list[str] = field(default_factory=list)
+
+    @property
+    def next_task(self) -> str:
+        """The first unticked task in the body, or the 'next' field."""
+        m = _OPEN_BOX.search(self.body)
+        text = m.group(1) if m else self.next
+        text = re.sub(r"[`*_]", "", text).strip()
+        return text
+
+    @property
+    def tasks_left(self) -> int:
+        return self.tasks_total - self.tasks_done
 
     @property
     def progress(self) -> int | None:
@@ -78,6 +91,8 @@ class Status:
             "tasks_done": self.tasks_done,
             "tasks_total": self.tasks_total,
             "progress": self.progress,
+            "next_task": self.next_task,
+            "tasks_left": self.tasks_left,
             "problems": self.problems,
         }
 

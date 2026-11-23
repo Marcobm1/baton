@@ -3,24 +3,28 @@
 
 <section id="quotas">
   <h2>{{ t.quotas }}</h2>
-  {% if quotas %}
+  {% if providers %}
   <div class="quota-grid">
-    {% for q in quotas %}
-    <article class="quota v-{{ q.verdict }}">
+    {% for pv in providers %}
+    <article class="quota">
       <div class="q-head">
-        <strong class="q-provider">{{ q.provider|capitalize }}{% if q.plan %} <small>{{ q.plan }}</small>{% endif %}</strong>
-        <span class="q-kind">{{ t['window_' ~ q.kind] }}</span>
+        <strong class="q-provider">{{ pv.provider|capitalize }}{% if pv.plan %} <small>{{ pv.plan }}</small>{% endif %}</strong>
+        <span class="q-kind">{{ t.seen }} {{ pv.age_s|dur }} {{ t.ago }}</span>
       </div>
-      <div class="bar" title="{{ q.used }}% {{ t.used }}">
-        <span class="fill" style="width: {{ q.used }}%"></span>
-        {% if q.elapsed_pct is not none %}<span class="tick" style="left: {{ q.elapsed_pct }}%"></span>{% endif %}
+      {% for kind in ['5h', 'week'] %}{% set q = pv.windows.get(kind) %}{% if q %}
+      <div class="q-row v-{{ q.verdict }}" title="{{ t['v_' ~ q.verdict] }}">
+        <div class="q-line">
+          <span class="q-label">{{ t['short_' ~ kind] }}</span>
+          <span><b>{{ q.left|round|int }}%</b> {{ t.left }} · {{ t.resets_in }} {{ q.resets_in_s|dur }}</span>
+        </div>
+        <div class="bar">
+          <span class="fill" style="width: {{ q.used }}%"></span>
+          {% if q.elapsed_pct is not none %}<span class="tick" style="left: {{ q.elapsed_pct }}%"></span>{% endif %}
+        </div>
+        <p class="verdict small">{{ t['v_' ~ q.verdict] }}</p>
       </div>
-      <div class="q-nums">
-        <span><b>{{ q.left|round|int }}%</b> {{ t.left }}</span>
-        <span>{{ t.resets_in }} {{ q.resets_in_s|dur }}</span>
-      </div>
-      <p class="verdict">{{ t['v_' ~ q.verdict] }}</p>
-      <p class="muted small">{{ t.seen }} {{ q.age_s|dur }} {{ t.ago }} · {{ t['source_' ~ q.source] }}</p>
+      {% endif %}{% endfor %}
+      <p class="muted small">{{ t['source_' ~ pv.source] }}</p>
     </article>
     {% endfor %}
   </div>
@@ -42,6 +46,7 @@
     <summary>{{ t.manual_title }}</summary>
     <p class="muted small">{{ t.manual_help }}</p>
     <form method="post" action="/quotas/manual" id="manual-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
       <label>{{ t.provider }}
         <input name="provider" list="providers" value="claude" required maxlength="30">
         <datalist id="providers"><option value="claude"><option value="codex"><option value="chatgpt"><option value="gemini"></datalist>
@@ -67,6 +72,8 @@
   </details>
 </section>
 
+{% include "_task_form.html" %}
+
 <section id="projects">
   <h2>{{ t.projects }} <small class="muted">({{ count }})</small></h2>
   {% if no_token %}<p class="warn">{{ t.token_none }}</p>{% endif %}
@@ -86,10 +93,10 @@
         <span class="badge prio">{{ t[s.priority] }}</span>
       </div>
       {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
-      {% if s.next %}<p class="c-next"><span class="label">{{ t.next }}</span> {{ s.next }}</p>{% endif %}
+      {% if s.next_task %}<p class="c-next" title="{{ s.next }}"><span class="label">{{ t.next_task }}</span> {{ s.next_task|truncate(90, True, '…') }}</p>{% endif %}
       {% if s.progress is not none %}
       <div class="bar thin" title="{{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}"><span class="fill" style="width: {{ s.progress }}%"></span></div>
-      <p class="muted small">{{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}</p>
+      <p class="muted small">{{ s.tasks_left }} {{ t.pending }} · {{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}</p>
       {% endif %}
       <p class="c-meta small">
         {% if p.stale %}<span class="stale" title="{{ t.stale }}">⚠</span>{% endif %}

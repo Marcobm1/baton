@@ -178,6 +178,17 @@ class Hub:
             )
         return projects
 
+    async def create_issue(self, repo: str, title: str, body: str) -> dict[str, Any]:
+        """Open an issue (needs a token with Issues: write on that repo)."""
+        if not self.settings.github_token:
+            raise GitHubError("Creating tasks needs a GitHub token with Issues: write.")
+        async with self._client() as client:
+            r = await client.post(f"/repos/{repo}/issues", json={"title": title, "body": body})
+        if r.status_code != 201:
+            raise GitHubError(f"GitHub did not create the issue ({r.status_code}).")
+        data = r.json()
+        return {"number": data["number"], "url": data["html_url"]}
+
     async def load(self, force: bool = False) -> tuple[list[Project], list[str]]:
         """Return (projects, errors). Cached for settings.cache_seconds."""
         async with self._lock:

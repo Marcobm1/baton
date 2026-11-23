@@ -124,3 +124,55 @@ def test_parse_claude_stream_and_hours(tmp_path):
     from baton import statusline, quotas
     statusline.save({"rate_limits": out}, tmp_path, source="ping")
     assert {w.source for w in quotas.claude_statusline_windows(tmp_path)} == {"ping"}
+
+
+def test_next_task_and_grouping():
+    s = parse(GOOD)
+    assert s.next_task == "two" and s.tasks_left == 2
+    no_boxes = parse("---\nname: X\nstatus: active\nupdated: 2026-11-23\nnext: Do `this`\n---\nbody")
+    assert no_boxes.next_task == "Do this"
+    views = [
+        {"provider": "claude", "kind": "5h", "age_s": 10, "source": "ping", "plan": ""},
+        {"provider": "claude", "kind": "week", "age_s": 5, "source": "manual", "plan": ""},
+        {"provider": "codex", "kind": "5h", "age_s": 1, "source": "codex-logs", "plan": "plus"},
+    ]
+    g = {p["provider"]: p for p in quotas.by_provider(views)}
+    assert set(g["claude"]["windows"]) == {"5h", "week"} and g["claude"]["source"] == "manual"
+    assert g["codex"]["plan"] == "plus"
+
+
+def test_task_endpoint_csrf_and_issue(tmp_path):
+    import asyncio, re
+    from fastapi.testclient import TestClient
+    from baton import github, web
+    from baton.config import Settings
+    from baton.github import Project
+
+    st = parse(GOOD)
+    proj = Project("x/demo", "x/demo", "STATUS.md", "main", True, "https://github.com/x/demo", None, st)
+    calls = []
+
+    async def fake_load(self, force=False):
+        return [proj], []
+
+    async def fake_issue(self, repo, title, body):
+        calls.append((repo, title, body))
+        return {"number": 7, "url": "https://github.com/x/demo/issues/7"}
+
+    orig = (github.Hub.load, github.Hub.create_issue)
+    github.Hub.load, github.Hub.create_issue = fake_load, fake_issue
+    try:
+        c = TestClient(web.create_app(Settings(github_token="t", owner="x", data_dir=tmp_path, codex_home=tmp_path)))
+        page = c.get("/").text
+        token = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
+        assert c.post("/tasks", data={"repo": "x/demo", "title": "T", "csrf": "bad"}).status_code == 403
+        r = c.post("/tasks", data={"repo": "x/demo", "title": "T", "csrf": token},
+                   headers={"origin": "https://evil.example"}, follow_redirects=False)
+        assert r.status_code == 403
+        r = c.post("/tasks", data={"repo": "x/demo", "title": "Fix it", "details": "do X", "csrf": token},
+                   follow_redirects=False)
+        assert r.status_code == 303 and "issues%2F7" not in r.headers["location"] and "issues/7" in r.headers["location"]
+        assert calls and calls[0][2].startswith("@claude do X")
+        assert c.post("/tasks", data={"repo": "other/repo", "title": "T", "csrf": token}).status_code == 400
+    finally:
+        github.Hub.load, github.Hub.create_issue = orig

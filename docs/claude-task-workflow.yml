@@ -1,0 +1,51 @@
+# Lets you hand tasks to Claude from GitHub: an issue or comment that mentions
+# @claude starts Claude Code in GitHub's cloud (your computer can be off).
+# Based on anthropics/claude-code-action's examples/claude.yml.
+#
+# Setup, once per repository:
+#   1. Install the Claude GitHub App on the repo: https://github.com/apps/claude
+#   2. Run `claude setup-token` on your computer (uses your Claude Pro/Max plan)
+#      and save the token as a repository secret named CLAUDE_CODE_OAUTH_TOKEN
+#      (`gh secret set CLAUDE_CODE_OAUTH_TOKEN -R owner/repo`, then paste it).
+#   3. Put this file at .github/workflows/claude.yml
+#
+# Only people with write access to the repository can trigger it.
+# Runs use your Claude plan's limits and GitHub Actions minutes
+# (free on public repos; private repos draw on your monthly allowance).
+
+name: claude
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

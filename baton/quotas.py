@@ -207,3 +207,16 @@ def all_windows(data_dir: Path, codex_home: Path) -> list[dict[str, Any]]:
     views = [w.view(now) for w in best.values()]
     views.sort(key=lambda v: (order.get(v["provider"], 9), v["provider"], v["kind"] != "5h"))
     return views
+
+
+def by_provider(views: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group window views into one entry per provider (for one card each)."""
+    out: dict[str, dict[str, Any]] = {}
+    for v in views:
+        p = out.setdefault(v["provider"], {"provider": v["provider"], "plan": "", "windows": {},
+                                           "age_s": v["age_s"], "source": v["source"]})
+        p["windows"][v["kind"]] = v
+        p["plan"] = p["plan"] or v.get("plan", "")
+        if v["age_s"] < p["age_s"]:
+            p["age_s"], p["source"] = v["age_s"], v["source"]
+    return list(out.values())

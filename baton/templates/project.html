@@ -18,4 +18,5 @@
   {% if s.problems %}<p class="warn small">{{ t.problems }}: {{ s.problems|join('; ') }}</p>{% endif %}
   <div class="md">{{ s.body|md|safe }}</div>
 </article>
+{% include "_task_form.html" %}
 {% endblock %}

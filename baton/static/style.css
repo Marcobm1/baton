@@ -98,6 +98,21 @@ footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 1.5
 .task-form input, .task-form select, .task-form textarea { font: inherit; padding: .35rem .45rem; border: 1px solid var(--line);
   border-radius: 5px; background: var(--bg); color: var(--ink); }
 .task-form button { justify-self: start; }
+.task-form { max-width: 58rem; padding: clamp(1rem, 3vw, 2rem); gap: 1rem;
+  border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.task-form input:not([type=radio]):not([type=checkbox]), .task-form select, .task-form textarea {
+  padding: .62rem .75rem; border-radius: 8px; width: 100%; min-width: 0; }
+.task-form .where { min-width: 0; }
+.task-form .choices { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+.task-form .choice { display: grid; grid-template-columns: auto 1fr; gap: .25rem .6rem;
+  padding: .8rem; transition: border-color .15s, background-color .15s; }
+.task-form .choice:has(input:checked) { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); box-shadow: none; }
+.task-form :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.task-settings { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,12rem),1fr)); gap: .75rem; }
+.task-settings p { grid-column: 1 / -1; margin: 0; }
+.task-settings, #oc-settings { margin: .9rem 0; }
+.task-form [hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .task-form .choice { transition: none; } }
 .ok-msg { color: var(--ok); }
 
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }

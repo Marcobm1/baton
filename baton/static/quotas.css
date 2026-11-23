@@ -1,0 +1,5 @@
+.quotas { background: var(--bg); }
+.quotas .q-logo { vertical-align: middle; margin-right: .35em; object-fit: contain; }
+@media (prefers-color-scheme: dark) {
+  .quotas .q-logo { filter: invert(1); }
+}

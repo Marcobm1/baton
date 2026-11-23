@@ -45,30 +45,42 @@ AGENTS = {
     "local": "IA local",
 }
 
-# OpenCode has no OS sandbox, so Baton gives it its own agent with explicit
-# rules. Explicit "deny" rules hold even with --auto, and they must live on the
-# agent: an agent's own permissions override the global ones. Last match wins,
-# so the general "*": "allow" goes first and the forbidden commands after it.
-# (Tested 2026-11-23: denying `edit` alone is not enough, because the model can
-# still write files through `bash`.)
+# OpenCode has no OS sandbox, so Baton gives it its own agents with rules
+# (OpenCode 2.x format: a list of {action, resource, effect}; last match wins).
+# The list starts by denying EVERYTHING and then allows only what is needed,
+# because OpenCode can have more tools than you expect: MCP servers (a GitHub
+# one can push files), Code Mode ("execute"), subagents, scheduled automations.
+# Explicit denies hold even with --auto, which only approves what isn't denied.
+# Tested 2026-11-23: denying `edit` alone is not enough (the model wrote the
+# file with the terminal), and an "allow everything except…" list let a helper
+# keep GitHub and automation tools.
+NO_GIT_CHANGES = ["git commit*", "git push*", "git checkout*", "git switch*", "git reset*",
+                  "git rebase*", "git worktree*", "git branch*", "git remote*", "git tag*",
+                  "gh *", "sudo*"]
+
+
+def _rule(action: str, effect: str, resource: str = "*") -> dict:
+    return {"action": action, "resource": resource, "effect": effect}
+
+
+# Tested 2026-11-23: OpenCode's own tools (opencode_worktree_remove…) still
+# ran under the deny-all, so they are named again explicitly, at the end.
+ALWAYS_DENIED = [_rule(a, "deny") for a in ("opencode_*", "skill", "subagent", "execute")]
+
+READ_RULES = [_rule("*", "deny")] + [_rule(a, "allow") for a in ("read", "glob", "grep")]
+
+# Baton's tasks (and `baton delegate --write`): read, edit and run commands in
+# the task's folder; never commit, push, change branch or leave the folder.
+TASK_RULES = (READ_RULES + [_rule("edit", "allow"), _rule("shell", "allow")]
+              + [_rule("shell", "deny", c) for c in NO_GIT_CHANGES] + ALWAYS_DENIED)
+
 OPENCODE_CONFIG = {
     "$schema": "https://opencode.ai/config.json",
-    "agent": {
+    "agents": {
         "baton": {
             "mode": "primary",
             "description": "Task sent from Baton, inside its own git worktree",
-            "permission": {
-                "read": "allow",
-                "edit": "allow",
-                "external_directory": "deny",
-                "bash": {
-                    "*": "allow",
-                    "git commit*": "deny", "git push*": "deny", "git checkout*": "deny",
-                    "git switch*": "deny", "git reset*": "deny", "git rebase*": "deny",
-                    "git worktree*": "deny", "git branch*": "deny", "git remote*": "deny",
-                    "sudo*": "deny",
-                },
-            },
+            "permissions": TASK_RULES,
         }
     },
 }
@@ -123,7 +135,9 @@ Rules:
   Baton commits everything in this folder and opens a draft pull request.
 - If the task is unclear, needs secrets, or would need anything destructive or
   outside this folder, stop and explain why instead of doing it.
-- End with a short summary of what you changed and anything left to check.
+- Prefix progress updates with "Progress:". End with two short lines prefixed
+  with "Summary:" and "Checks:". Describe what changed, the checks actually run
+  and their results, and mention anything left unchecked.
 
 Task: {title}
 
@@ -151,6 +165,7 @@ class Task:
     open_pr: bool = True
     model: str = ""
     steps: list[str] = field(default_factory=list)
+    effort: str = ""
 
 
 def _slug(text: str) -> str:
@@ -244,12 +259,14 @@ class TaskStore:
         self.logs.mkdir(parents=True, exist_ok=True)
         return self.logs / f"{task_id}.log"
 
-    def log_tail(self, task_id: str, lines: int = 200) -> str:
+    def read_log(self, task_id: str) -> str:
         try:
-            text = self.log_path(task_id).read_text(encoding="utf-8", errors="replace")
+            return self.log_path(task_id).read_text(encoding="utf-8", errors="replace")
         except OSError:
             return ""
-        return "\n".join(text.splitlines()[-lines:])
+
+    def log_tail(self, task_id: str, lines: int = 200) -> str:
+        return "\n".join(self.read_log(task_id).splitlines()[-lines:])
 
 
 class Cancelled(Exception):
@@ -325,6 +342,8 @@ class Runner:
                    for t in self.store.all())
 
     def start(self, task: Task) -> None:
+        if task.agent == "local":
+            task.model = self.local_model
         self.store.save(task)
         thread = threading.Thread(target=self._run, args=(task,), daemon=True)
         with self._lock:
@@ -411,11 +430,21 @@ class Runner:
             return [find_opencode() or "opencode", "run", "--standalone", "--auto", "--agent", "baton",
                     "-m", task.model, "--title", f"Baton {task.id}", self._prompt(task)]
         if task.agent == "claude-code":
-            return [find_claude() or "claude", "-p", "--permission-mode", "auto"]
+            cmd = [find_claude() or "claude", "-p", "--permission-mode", "auto"]
+            if task.model:
+                cmd.extend(["--model", task.model])
+            if task.effort:
+                cmd.extend(["--effort", task.effort])
+            return cmd
         codex = find_codex() or "codex"
         cmd = [codex, "exec", "-s", "workspace-write", "--color", "never", "-C", str(wt)]
         if task.agent == "local":
             cmd[2:2] = ["--oss", "--local-provider", self.local_provider, "-m", self.local_model]
+        elif task.agent == "codex":
+            if task.model:
+                cmd.extend(["-m", task.model])
+            if task.effort:
+                cmd.extend(["-c", f"model_reasoning_effort={json.dumps(task.effort)}"])
         return cmd + ["-"]
 
     def _prompt(self, task: Task) -> str:

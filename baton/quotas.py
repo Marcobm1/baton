@@ -6,6 +6,9 @@ Sources, all local and passive (Baton never reads or sends your credentials):
   * Claude Code: the official status line JSON (rate_limits.five_hour /
     seven_day), saved by `baton statusline`, or the same numbers from a
     scheduled `claude -p` ping (see ping.py); both go to claude-usage.json.
+  * OpenCode Go: its documented usage endpoint, only if you put your Go key
+    in BATON_OPENCODE_GO_KEY (the one exception to the rule above; optional).
+    The answer (percentages and dates, never the key) goes to opencode-go.json.
 The newest reading of each window wins.
 """
 
@@ -19,12 +22,15 @@ from typing import Any
 
 FIVE_HOURS = 300
 WEEK = 7 * 24 * 60
+MONTH = 30 * 24 * 60  # OpenCode Go's monthly allowance: a paid period, about 30 days
+MINUTES = {"5h": FIVE_HOURS, "week": WEEK, "month": MONTH}
+GO_USAGE_URL = "https://opencode.ai/inference/go/v1/usage"
 
 
 @dataclass
 class Window:
     provider: str          # "claude", "codex", ...
-    kind: str              # "5h" | "week"
+    kind: str              # "5h" | "week" | "month"
     used: float            # percent 0-100 at the time it was seen
     resets_at: float | None  # unix seconds
     seen_at: float         # unix seconds of the reading
@@ -33,7 +39,7 @@ class Window:
 
     @property
     def minutes(self) -> int:
-        return FIVE_HOURS if self.kind == "5h" else WEEK
+        return MINUTES[self.kind]
 
     def view(self, now: float | None = None) -> dict[str, Any]:
         now = now or time.time()
@@ -149,19 +155,83 @@ def claude_statusline_windows(data_dir: Path) -> list[Window]:
     return out
 
 
+# --------------------------------------------------------------- OpenCode Go
+
+GO_METERS = (("rolling", "5h"), ("weekly", "week"), ("monthly", "month"))
+
+
+def fetch_opencode_go(key: str, data_dir: Path, client=None) -> tuple[bool, str]:
+    """Ask opencode.ai how much of your Go allowance is used; save the answer.
+
+    Only percentages, statuses and reset dates are kept (opencode-go.json);
+    the key is sent in the Authorization header and nowhere else.
+    """
+    import httpx
+
+    own = client is None
+    client = client or httpx.Client(timeout=20)
+    try:
+        r = client.get(GO_USAGE_URL, headers={"Authorization": f"Bearer {key}"})
+    except httpx.HTTPError as e:
+        return False, f"no answer ({type(e).__name__})"
+    finally:
+        if own:
+            client.close()
+    if r.status_code == 401:
+        return False, "key not valid (401)"
+    if r.status_code == 403:
+        return False, "this key has no OpenCode Go subscription (403)"
+    if r.status_code != 200:
+        return False, f"HTTP {r.status_code}"
+    try:
+        usage = r.json()["usage"]
+        meters = {name: {"percent": float(usage[name]["percent"]),
+                         "status": str(usage[name].get("status", "")),
+                         "resetsAt": str(usage[name].get("resetsAt") or "")}
+                  for name, _ in GO_METERS if name in usage}
+    except (ValueError, KeyError, TypeError):
+        return False, "unexpected answer"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "opencode-go.json").write_text(
+        json.dumps({"seen_at": time.time(), "usage": meters}), encoding="utf-8")
+    return True, "ok"
+
+
+def opencode_go_windows(data_dir: Path) -> list[Window]:
+    f = data_dir / "opencode-go.json"
+    try:
+        snap = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    out = []
+    for name, kind in GO_METERS:
+        m = (snap.get("usage") or {}).get(name)
+        if not isinstance(m, dict):
+            continue
+        try:
+            resets = _iso_to_ts(m["resetsAt"]) if m.get("resetsAt") else None
+        except ValueError:
+            resets = None
+        used = 100.0 if m.get("status") == "rate-limited" else float(m.get("percent") or 0)
+        out.append(Window("opencode", kind, used, resets, float(snap.get("seen_at") or 0),
+                          "opencode-go", "Go"))
+    return out
+
+
 # ---------------------------------------------------------------- combined
 
 def all_windows(data_dir: Path, codex_home: Path) -> list[dict[str, Any]]:
-    readings = codex_windows(codex_home) + claude_statusline_windows(data_dir)
+    readings = (codex_windows(codex_home) + claude_statusline_windows(data_dir)
+                + opencode_go_windows(data_dir))
     best: dict[tuple[str, str], Window] = {}
     for w in readings:
         k = (w.provider, w.kind)
         if k not in best or best[k].seen_at < w.seen_at:
             best[k] = w
     now = time.time()
-    order = {"claude": 0, "codex": 1}
+    order = {"claude": 0, "codex": 1, "opencode": 2}
     views = [w.view(now) for w in best.values()]
-    views.sort(key=lambda v: (order.get(v["provider"], 9), v["provider"], v["kind"] != "5h"))
+    views.sort(key=lambda v: (order.get(v["provider"], 9), v["provider"], list(MINUTES).index(v["kind"])))
     return views
 
 

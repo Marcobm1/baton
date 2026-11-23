@@ -41,6 +41,7 @@ links:
 - [ ] Try cancelling a real agent task on Windows (check Task Manager afterwards)
 - [x] Show the agent's completion summary on local and cloud task pages (PRs #3 + #4 combined)
 - [ ] Check a live task summary from the web
+- [x] Every local task (Claude Code, Codex, OpenCode, local AI) ends in a pull request; no opt-out checkbox
 
 ## Blockers
 - None.
@@ -48,6 +49,8 @@ links:
 ## Decisions
 - 2026-11-23: the page reads STATUS.md from GitHub (not local folders), so it
   works the same for every agent and every computer.
+- 2026-11-23: every local task ends in a pull request (owner's request), so
+  finished work is always on GitHub and visible from the phone.
 - 2026-11-23: Claude and Codex quota readings come from local sources. OpenCode Go
   is optional and uses its configured key to query the official usage endpoint.
 - 2026-11-23: cancelling kills the agent's whole process tree, commits/pushes
@@ -55,6 +58,7 @@ links:
   on GitHub (see docs/cancelling-tasks.md).
 
 ## Log
+- 2026-11-23 (claude-code): removed the "open a pull request" checkbox: every local task now pushes its branch and opens a PR; test for the three agents.
 - 2026-11-23 (claude-code): task summary panel (combined PRs #3 and #4): the agent ends with a marked report (what, how, why, checks, problems, what you need to know); cloud tasks read it from the issue.
 - 2026-11-23 (claude-code): Cancel task button (kills the process tree, no commit/push, removes worktree and branch); status cancelled/cancelada; tests.
 - 2026-11-23 (codex): added collapsible task details using existing records and CLI logs. Tested legacy reports and simulated Claude access, quota and unrelated failures.

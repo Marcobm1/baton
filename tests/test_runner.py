@@ -274,3 +274,53 @@ def test_cancel_from_the_task_page(tmp_path, monkeypatch):
     assert "cancelled" in page and "/cancel" not in page
     assert c.post(f"{url}/cancel", data={"csrf": token}).status_code == 409
     assert c.post("/tasks/nope/cancel", data={"csrf": token}).status_code == 404
+
+
+def test_every_local_task_from_the_web_ends_in_a_pull_request(tmp_path, monkeypatch):
+    """Claude Code, Codex and OpenCode tasks all open a PR; there is no opt-out."""
+    import re
+    from fastapi.testclient import TestClient
+    from baton import github, web
+    from baton.config import Settings
+    from baton.github import Project
+    from baton.status import parse
+
+    work, origin = make_repo(tmp_path)
+    st = parse("---\nname: Demo\nstatus: active\nsummary: x\nnext: y\nupdated: 2026-11-23\n---\n")
+    proj = Project("x/demo", "x/demo", "STATUS.md", "main", False, "https://github.com/x/demo", None, st)
+    opened = []
+
+    async def fake_load(self, force=False):
+        return [proj], []
+
+    def fake_pr(self, repo, branch, base, title, body):
+        opened.append((repo, branch, base, title))
+        return f"https://github.com/{repo}/pull/{len(opened)}"
+
+    class QuickRunner(Runner):
+        def agents_available(self):
+            return {a: "" for a in runner_mod.AGENTS}
+
+        def _agent_cmd(self, task, wt):
+            script = f"open('{task.agent}.md', 'w').write('done')"
+            return [sys.executable, "-c", script]
+
+    monkeypatch.setattr(github.Hub, "load", fake_load)
+    monkeypatch.setattr(github.Hub, "open_draft_pr", fake_pr)
+    monkeypatch.setattr(web, "Runner", QuickRunner)
+    monkeypatch.setattr(web, "opencode_models", lambda: ["opencode/big-pickle"])
+    c = TestClient(web.create_app(Settings(github_token="t", owner="x", data_dir=tmp_path / "data",
+                                           codex_home=tmp_path, local_paths=f"x/demo={work}")))
+    form_page = c.get("/tasks/new?repo=x/demo").text
+    assert 'name="open_pr"' not in form_page            # nothing to untick
+    token = re.search(r'name="csrf" value="([^"]+)"', form_page).group(1)
+    store = TaskStore(tmp_path / "data")
+    for agent in ("claude-code", "codex", "opencode"):
+        r = c.post("/tasks", data={"repo": "x/demo", "where": f"local:{agent}", "title": f"Task {agent}",
+                                   "oc_model": "opencode/big-pickle", "csrf": token},
+                   follow_redirects=False)
+        assert r.status_code == 303, r.text
+        done = _wait(store, r.headers["location"].rsplit("/", 1)[1])
+        assert done.status == "done", done.message
+        assert done.open_pr and done.pr_url.startswith("https://github.com/x/demo/pull/")
+    assert [o[3] for o in opened] == ["Task claude-code", "Task codex", "Task opencode"]

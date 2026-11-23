@@ -9,7 +9,7 @@ Flow for one task:
        claude-code  `claude -p --permission-mode auto` (a classifier reviews actions)
        codex        `codex exec -s workspace-write` (sandbox: writes only there)
        local        `codex exec --oss` with a local model (Ollama or LM Studio)
-  4. Baton commits what changed, and (if asked) pushes the branch and opens a
+  4. Baton commits what changed, pushes the branch and opens a
      *draft* pull request for you to review;
   5. the worktree is removed once the branch is safe on GitHub.
 
@@ -190,7 +190,7 @@ class Task:
     issue_url: str = ""
     message: str = ""
     finished_at: float | None = None
-    open_pr: bool = True
+    open_pr: bool = True            # always True for new tasks; False only in old records
     model: str = ""
     steps: list[str] = field(default_factory=list)
     effort: str = ""

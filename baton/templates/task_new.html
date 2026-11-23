@@ -46,7 +46,7 @@
       <select name="oc_model">{% for m in oc_models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select>
     </label>
     {% endif %}
-    <label class="check small"><input type="checkbox" name="open_pr" value="1" checked> {{ t.open_pr_option }}</label>
+    <p class="muted small">{{ t.open_pr_option }}</p>
 
     {% if cloud %}
     <details class="cloud">

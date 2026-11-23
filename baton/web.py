@@ -218,7 +218,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/tasks")
     async def task_create(request: Request, repo: str = Form(...), where: str = Form(...),
                           title: str = Form(...), details: str = Form(""),
-                          open_pr: str = Form(""), oc_model: str = Form(""), csrf: str = Form(""),
+                          oc_model: str = Form(""), csrf: str = Form(""),
                           model: str = Form(""), effort: str = Form("")):
         check_post(request, csrf)
         projects, _ = await hub.load()
@@ -275,7 +275,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         task_id = new_id(title)
         task = Task(id=task_id, repo=repo, title=title, details=details, agent=agent,
                     where="local", created_at=time.time(), branch=f"baton/{task_id}",
-                    base=by_repo[repo].branch, open_pr=bool(open_pr), model=model, effort=effort)
+                    base=by_repo[repo].branch, model=model, effort=effort)  # always ends in a PR
         runner.start(task)
         return RedirectResponse(f"/tasks/{task.id}", status_code=303)
 

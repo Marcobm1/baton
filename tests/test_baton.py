@@ -76,17 +76,36 @@ def test_expired_window_shows_reset():
 
 def test_statusline_snapshot(tmp_path: Path):
     now = time.time()
-    statusline.save({"rate_limits": {"five_hour": {"used_percentage": 30, "resets_at": now + 600},
-                                     "seven_day": {"used_percentage": 10, "resets_at": now + 5 * 86400}}}, tmp_path)
+    # Claude Code sends used_percentage as a 0-1 fraction (1.0 = exhausted).
+    statusline.save({"rate_limits": {"five_hour": {"used_percentage": 1.0, "resets_at": now + 600},
+                                     "seven_day": {"used_percentage": 0.34, "resets_at": now + 5 * 86400}}}, tmp_path)
     got = {w.kind: w.used for w in quotas.claude_statusline_windows(tmp_path)}
-    assert got == {"5h": 30, "week": 10}
+    assert got == {"5h": 100, "week": 34}
     views = {(v["provider"], v["kind"]): v for v in quotas.all_windows(tmp_path, tmp_path / "nocodex")}
     assert views[("claude", "5h")]["source"] == "statusline"
+    assert views[("claude", "5h")]["left"] == 0 and views[("claude", "5h")]["verdict"] == "exhausted"
+
+
+def test_claude_reading_percent_points_and_iso_reset(tmp_path: Path):
+    # A reading saved by an older Baton (percent points) must not double-convert,
+    # and the reset time may arrive as ISO text instead of unix seconds.
+    from datetime import datetime
+
+    now = time.time()
+    snap = {"seen_at": now, "source": "ping",
+            "rate_limits": {"five_hour": {"used_percentage": 31, "resets_at": "2026-11-23T12:00:00+00:00"}}}
+    (tmp_path / "claude-usage.json").write_text(json.dumps(snap), encoding="utf-8")
+    (w,) = quotas.claude_statusline_windows(tmp_path)
+    assert w.used == 31
+    assert w.resets_at == datetime.fromisoformat("2026-11-23T12:00:00+00:00").timestamp()
 
 
 def test_statusline_line():
+    # Claude Code sends fractions; the printed line shows percent either way.
     assert statusline.line({"model": {"display_name": "Opus"},
-                            "rate_limits": {"five_hour": {"used_percentage": 12.4}}}) == "Opus · 5h 12%"
+                             "rate_limits": {"five_hour": {"used_percentage": 0.124}},
+                             "context_window": {"used_percentage": 0.22}}) == "Opus · 5h 12% · ctx 22%"
+    assert statusline.line({"rate_limits": {"five_hour": {"used_percentage": 12.4}}}) == "5h 12%"
 
 
 def test_dotenv_with_bom_and_comments(tmp_path, monkeypatch):
@@ -112,7 +131,7 @@ def test_parse_claude_stream_and_hours(tmp_path):
             '"resetsAt":1795467600,"status":"allowed"},"seven_day":{"utilization":0.08,'
             '"resetsAt":1795993200,"status":"allowed"}}}}')
     out = ping.parse_claude_stream('{"type":"system"}\n' + line + '\n{"type":"result"}')
-    assert round(out["five_hour"]["used_percentage"]) == 31
+    assert out["five_hour"]["used_percentage"] == 0.31  # raw fraction, as the status line sends it
     assert out["seven_day"]["resets_at"] == 1795993200
     assert ping.parse_claude_stream('{"type":"result"}') is None
     assert ping.in_hours("8-24", 9) and not ping.in_hours("8-24", 3)
@@ -120,7 +139,9 @@ def test_parse_claude_stream_and_hours(tmp_path):
     assert ping.in_hours("", 3)
     from baton import statusline, quotas
     statusline.save({"rate_limits": out}, tmp_path, source="ping")
-    assert {w.source for w in quotas.claude_statusline_windows(tmp_path)} == {"ping"}
+    ws = quotas.claude_statusline_windows(tmp_path)
+    assert {w.source for w in ws} == {"ping"}
+    assert {w.kind: w.used for w in ws} == {"5h": 31, "week": 8}
 
 
 def test_next_task_and_grouping():

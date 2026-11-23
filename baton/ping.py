@@ -67,7 +67,11 @@ def find_codex() -> str | None:
 
 
 def parse_claude_stream(text: str) -> dict | None:
-    """Return {'five_hour': {...}, 'seven_day': {...}} in status line format."""
+    """Return {'five_hour': {...}, 'seven_day': {...}} in status line format.
+
+    The utilization numbers are kept as Claude Code sends them (fractions
+    0-1): claude-usage.json stores raw values and quotas.py converts them.
+    """
     for line in text.splitlines():
         if '"rate_limit_event"' not in line:
             continue
@@ -82,7 +86,7 @@ def parse_claude_stream(text: str) -> dict | None:
             if isinstance(w, dict) and w.get("utilization") is not None:
                 util = float(w["utilization"])
                 out[key] = {
-                    "used_percentage": util * 100 if util <= 1 else util,
+                    "used_percentage": util,
                     "resets_at": w.get("resetsAt"),
                 }
         if out:

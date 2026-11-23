@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Marco sends a test task from the web (cancel button for running tasks).
 updated: 2026-11-23
-updated_by: codex
+updated_by: opencode
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -43,10 +43,15 @@ links:
 ## Decisions
 - 2026-11-23: the page reads STATUS.md from GitHub (not local folders), so it
   works the same for every agent and every computer.
+- 2026-11-23: Claude Code's usage values are fractions 0-1 (its field is named
+  used_percentage but carries a fraction). claude-usage.json stores them raw;
+  every reader converts them once, and values over 1 stay percent points so
+  old readings keep working.
 - 2026-11-23: Claude and Codex quota readings come from local sources. OpenCode Go
   is optional and uses its configured key to query the official usage endpoint.
 
 ## Log
+- 2026-11-23 (opencode): Claude's card showed ~99% left with the plan exhausted: Claude Code sends usage as a 0-1 fraction and Baton read it as percent points. Now converted once when reading (statusline, ping and card agree); Claude reset times accept ISO text too.
 - 2026-11-23 (codex): verified private Tailscale Serve routing to native Baton and documented phone access. Replaced inline placeholder icons in quota and token cards with the bundled Anthropic, OpenAI and OpenCode images. Phone-side confirmation remains with the owner.
 - 2026-11-23 (codex): verified 15 Claude Code and 10 Codex models, per-model effort selection, and 25 tests. Refreshed the task form. Checked quota backgrounds in both themes and local Anthropic, OpenAI and OpenCode logos on Windows and Docker.
 - 2026-11-23 (codex): verified the live Go quota card and all three API windows on native Windows (8787) and Docker Compose (8788). Docker health check passed; 23 tests passed.

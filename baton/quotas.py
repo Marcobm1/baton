@@ -5,7 +5,9 @@ Sources, all local and passive (Baton never reads or sends your credentials):
     (~/.codex/sessions/**/*.jsonl, "token_count" events).
   * Claude Code: the official status line JSON (rate_limits.five_hour /
     seven_day), saved by `baton statusline`, or the same numbers from a
-    scheduled `claude -p` ping (see ping.py); both go to claude-usage.json.
+    scheduled `claude -p` ping (see ping.py); both go to claude-usage.json
+    as Claude Code sends them (a 0-1 fraction, 1.0 = exhausted) and are
+    converted to percent here.
   * OpenCode Go: its documented usage endpoint, only if you put your Go key
     in BATON_OPENCODE_GO_KEY (the one exception to the rule above; optional).
     The answer (percentages and dates, never the key) goes to opencode-go.json.
@@ -19,6 +21,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from .statusline import as_percent
 
 FIVE_HOURS = 300
 WEEK = 7 * 24 * 60
@@ -136,6 +140,19 @@ def codex_windows(codex_home: Path, max_files: int = 40) -> list[Window]:
 
 # ------------------------------------------------- Claude Code status line
 
+def _resets_ts(value: Any) -> float | None:
+    """Claude Code may send the reset time as unix seconds or as ISO text."""
+    if not value:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        try:
+            return _iso_to_ts(str(value))
+        except ValueError:
+            return None
+
+
 def claude_statusline_windows(data_dir: Path) -> list[Window]:
     f = data_dir / "claude-usage.json"
     try:
@@ -148,8 +165,8 @@ def claude_statusline_windows(data_dir: Path) -> list[Window]:
         w = rl.get(key)
         if isinstance(w, dict) and w.get("used_percentage") is not None:
             out.append(Window(
-                "claude", kind, float(w["used_percentage"]),
-                float(w["resets_at"]) if w.get("resets_at") else None,
+                "claude", kind, as_percent(w["used_percentage"]),
+                _resets_ts(w.get("resets_at")),
                 float(snap.get("seen_at") or f.stat().st_mtime), str(snap.get("source") or "statusline"),
             ))
     return out

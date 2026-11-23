@@ -2,8 +2,10 @@
 
 Claude Code runs the status line command on every render and passes a JSON
 document on stdin; for Pro/Max plans it includes rate_limits.five_hour and
-rate_limits.seven_day (used_percentage, resets_at). This script saves those
-two windows to <data dir>/claude-usage.json and prints a short status line.
+rate_limits.seven_day. Their used_percentage is a fraction between 0 and 1
+(1.0 = plan exhausted), not percent points; this script saves what Claude
+Code sent to <data dir>/claude-usage.json (readers convert it, see
+quotas.py) and prints a short status line in percent.
 
 Standard library only, so it can run with any Python 3.9+:
 
@@ -27,7 +29,19 @@ def data_dir() -> Path:
     return Path(os.environ.get("BATON_DATA_DIR") or Path.home() / ".baton")
 
 
+def as_percent(value) -> float:
+    """Claude Code reports usage as a fraction 0-1 (1.0 = limit reached).
+
+    The field is named used_percentage but carries that fraction. Values
+    above 1 are kept as percent points, so readings saved by older Baton
+    versions still work.
+    """
+    v = float(value)
+    return v * 100 if v <= 1 else v
+
+
 def save(payload: dict, target: Path, source: str = "statusline") -> None:
+    """Store the rate limits exactly as Claude Code sent them."""
     rl = payload.get("rate_limits")
     if not isinstance(rl, dict):
         return
@@ -49,10 +63,10 @@ def line(payload: dict) -> str:
     for key, label in (("five_hour", "5h"), ("seven_day", "7d")):
         w = rl.get(key) or {}
         if w.get("used_percentage") is not None:
-            parts.append(f"{label} {round(float(w['used_percentage']))}%")
+            parts.append(f"{label} {round(as_percent(w['used_percentage']))}%")
     ctx = (payload.get("context_window") or {}).get("used_percentage")
     if ctx is not None:
-        parts.append(f"ctx {round(float(ctx))}%")
+        parts.append(f"ctx {round(as_percent(ctx))}%")
     return " · ".join(parts) or "Claude"
 
 

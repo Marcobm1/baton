@@ -65,6 +65,12 @@ def run(model: str, prompt: str, cwd: str, write: bool = False, timeout: int = 9
     except subprocess.TimeoutExpired:
         print(f"Stopped after {timeout} s without an answer.", file=sys.stderr)
         return 124
+    # Windows consoles default to an old code page that can't print emojis.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     sys.stdout.write(p.stdout)
     if p.returncode:
         sys.stderr.write(p.stderr[-2000:])

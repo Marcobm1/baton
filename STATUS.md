@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude/Codex quota windows.
-next: Marco sends a test task from the web (cancel button for running tasks).
+next: Marco cancels a real Claude Code task from its page and checks no node/claude process is left.
 updated: 2026-11-23
-updated_by: claude
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -33,7 +33,8 @@ links:
 - [ ] Codex cloud tasks (only documented from PR comments; test first)
 - [x] OpenCode as a local agent, with any model it lists
 - [x] Tokens spent per day/week, per app and model (Quotas page)
-- [ ] Cancel a running task from its page
+- [x] Cancel a running task from its page
+- [ ] Try cancelling a real agent task on Windows (check Task Manager afterwards)
 
 ## Blockers
 - None.
@@ -43,8 +44,12 @@ links:
   works the same for every agent and every computer.
 - 2026-11-23: quota data only from local files written by the tools or typed
   by hand; Baton never touches provider credentials.
+- 2026-11-23: cancelling kills the agent's whole process tree, commits/pushes
+  nothing, and deletes the worktree + local branch only if the branch is not
+  on GitHub (see docs/cancelling-tasks.md).
 
 ## Log
+- 2026-11-23 (claude-code): Cancel task button (kills the process tree, no commit/push, removes worktree and branch); status cancelled/cancelada; tests.
 - 2026-11-23 (claude): OpenCode agent (own permission rules, exe without shell); tokens spent per app/model.
 - 2026-11-23 (claude): pages split (Projects/Tasks/Quotas); local tasks in worktrees; manual quota form removed.
 - 2026-11-23 (claude): one quota card per provider; next task on project cards; New task form with CSRF protection; Claude task workflow template.

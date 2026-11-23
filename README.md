@@ -11,10 +11,11 @@ where the previous one left it:
   stands, the next step);
 - an **`AGENTS.md`** block tells every agent to read `STATUS.md` before working
   and to update it at the end of each session;
-- **Baton's page** finds every `STATUS.md` in your GitHub account and shows
-  them together, flags the ones that look out of date, and adds a
-  **quota panel** with your Claude Code and Codex 5-hour and weekly windows,
-  so you can see what is left to spend before it resets.
+- **Baton's pages**: **Projects** finds every `STATUS.md` in your GitHub
+  account and shows them together (next task, progress, out-of-date warnings);
+  **Tasks** sends work to an AI agent with one form; **Quotas** shows your
+  Claude and Codex 5-hour and weekly windows, so you can see what is left to
+  spend before it resets.
 
 ```
  repo A ── STATUS.md ─┐
@@ -136,7 +137,6 @@ reset with quota left over.
 | **Codex** (CLI, IDE, app) | Read automatically from Codex's own session logs in `~/.codex/sessions` (the `rate_limits` it records). | Updated whenever you use Codex. |
 | **Claude Code** (terminal) | Set Baton as your status line command (below). Claude Code passes `rate_limits.five_hour` and `rate_limits.seven_day` to it, and Baton saves them to `~/.baton/claude-usage.json`. | Claude Code runs status line commands only in the terminal, not in the VS Code extension. Usage on claude.ai counts against the same limits. |
 | **Automatic checks** | Set `BATON_PING_CLAUDE_MINUTES` (and/or `BATON_PING_CODEX_MINUTES`). Every N minutes Baton runs the official CLI with a one-word prompt (`claude -p --model haiku --output-format stream-json --verbose`, `codex exec -`) and records the plan usage it reports. Also `baton ping [claude\|codex\|all]`. | Needs Baton running natively on the computer where the CLIs are logged in (not in Docker). Each check spends a little quota and opens a 5-hour window if none is open; `BATON_PING_HOURS=8-24` keeps it to your waking hours. Baton removes `ANTHROPIC_API_KEY` from the CLI's environment so the check always uses your plan. |
-| **Anything else** | Type the % used and the reset time in *Add a reading by hand* (for example from claude.ai → Settings → Usage). | Saved to `~/.baton/manual-usage.json`. |
 
 The newest reading of each window wins. Baton never reads or uses your Claude
 or ChatGPT credentials: the CLIs use their own login. (Reading a subscription
@@ -163,29 +163,51 @@ run `python /path/to/statusline.py`.) It prints a short line such as
 
 ## Sending tasks to agents
 
-The page has a **New task** form. It opens a GitHub issue that starts with
-`@claude`; the [Claude Code GitHub Action](https://github.com/anthropics/claude-code-action)
-picks it up in GitHub's cloud, works on a branch and opens a pull request. Your
-computer doesn't need to be on, and the run uses your Claude plan (with a token
-from `claude setup-token`) plus GitHub Actions minutes.
+Every project card has a **New task** button. You write the task and choose
+where it runs:
 
-To enable it on a repository, follow the comments at the top of
-[`docs/claude-task-workflow.yml`](docs/claude-task-workflow.yml). Baton's token
-then also needs **Issues: Read and write** on those repositories.
+**On this computer** (while it's on; Baton itself runs here):
 
-The form is protected against cross-site requests (a per-run secret in the form
-and an Origin check), so another website open in your browser can't create
-tasks through Baton.
+| Agent | How it runs | Limits |
+|---|---|---|
+| Claude Code | `claude -p --permission-mode auto` | Auto mode: a classifier reviews each action instead of asking you. |
+| Codex | `codex exec -s workspace-write` | Sandbox: it can only write inside the task's folder. |
+| Local AI | `codex exec --oss --local-provider ollama -m <model>` | Needs `BATON_LOCAL_MODEL` and Ollama or LM Studio. |
 
-Codex: OpenAI documents `@codex` mentions in pull request comments (Codex cloud),
-not in issues, so Baton doesn't offer Codex tasks yet.
+Baton finds the repository's clone under `BATON_LOCAL_ROOT` (by its `origin`
+remote; or `BATON_LOCAL_PATHS`), fetches, and creates a **git worktree** (a
+second working folder of the same repository) on a new branch `baton/<id>`, so
+the agent never touches the folder you work in. The agent is told to follow the
+repository's `AGENTS.md`/`CLAUDE.md` and update `STATUS.md`, but not to commit
+or push: Baton commits what changed, pushes the branch and opens a pull request
+(a draft where your plan allows it), then removes the worktree. One task at a
+time per repository; the log and the steps are on the task's page. Tasks use
+your plans' quotas like any other use of those CLIs.
+
+**In the cloud (GitHub Actions)**, an option tucked under the local choices:
+Baton opens an issue that starts with `@claude`, and the
+[Claude Code GitHub Action](https://github.com/anthropics/claude-code-action)
+works on it on GitHub's machines (your computer can be off) and opens a pull
+request. It uses your Claude plan (a token from `claude setup-token`) and
+GitHub Actions minutes. To enable it on a repository, follow the comments at
+the top of [`docs/claude-task-workflow.yml`](docs/claude-task-workflow.yml);
+Baton's token then needs **Issues: Read and write**. Turn the option off with
+`BATON_CLOUD_TASKS=0`.
+
+The task form is protected against cross-site requests (a per-run secret in
+the form and an Origin check), so another website open in your browser can't
+start tasks through Baton.
+
+Codex in the cloud: OpenAI documents `@codex` mentions in pull request
+comments, not in issues, so Baton doesn't create Codex cloud tasks yet.
 
 ## Seeing Baton from your phone without putting it on the internet
 
 Install [Tailscale](https://tailscale.com) on the computer and the phone with
 the same account and run `tailscale serve --bg 8787` on the computer. The page
 is then available at `https://<computer>.<tailnet>.ts.net`, only to your own
-devices, with HTTPS and no open ports.
+devices, with HTTPS and no open ports. From there you can also start tasks on
+the computer while you're away from it.
 
 ## Configuration
 
@@ -201,7 +223,13 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_LANG` | `en` | `en` or `es`. |
 | `BATON_CACHE_SECONDS` | `300` | Reuse GitHub answers for this long. |
 | `BATON_STALE_DAYS` | `1` | Threshold for the ⚠ warning. |
-| `BATON_DATA_DIR` | `~/.baton` | Quota readings (status line, manual). |
+| `BATON_DATA_DIR` | `~/.baton` | Quota readings, tasks, logs and task worktrees. |
+| `BATON_LOCAL_ROOT` | — | Folder that contains your clones (for local tasks). |
+| `BATON_LOCAL_PATHS` | — | `owner/repo=path;...` when a clone isn't found automatically. |
+| `BATON_LOCAL_MODEL` | — | Model for the Local AI agent (e.g. an Ollama model name). |
+| `BATON_TASK_TIMEOUT_MINUTES` | `60` | Stop a local task after this long. |
+| `BATON_GIT_NAME` / `BATON_GIT_EMAIL` | Baton | Commit identity when the clone has none. |
+| `BATON_CLOUD_TASKS` | `1` | `0` hides the GitHub Actions option. |
 | `CODEX_HOME` | `~/.codex` | Where Codex keeps its logs. |
 
 ## CLI

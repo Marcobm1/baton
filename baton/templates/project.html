@@ -2,7 +2,10 @@
 {% block title %}{{ p.status.name }} · {{ title }}{% endblock %}
 {% block main %}
 {% set s = p.status %}
-<p><a href="/#projects">← {{ t.back }}</a></p>
+<div class="page-head">
+  <p><a href="/">← {{ t.back }}</a></p>
+  <a class="btn small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
+</div>
 <article class="detail prio-{{ s.priority }}">
   <h2>{{ s.name }} <span class="badge prio">{{ t[s.priority] }}</span> <span class="badge">{{ t[s.status] }}</span>
     {% if s.open_source %}<span class="badge os">{{ t.open_source }}</span>{% endif %}</h2>
@@ -18,5 +21,4 @@
   {% if s.problems %}<p class="warn small">{{ t.problems }}: {{ s.problems|join('; ') }}</p>{% endif %}
   <div class="md">{{ s.body|md|safe }}</div>
 </article>
-{% include "_task_form.html" %}
 {% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ t.tasks_nav }} · {{ title }}{% endblock %}
+{% block refresh %}{% if any_running %}<meta http-equiv="refresh" content="10">{% else %}<meta http-equiv="refresh" content="300">{% endif %}{% endblock %}
+{% block main %}
+<div class="page-head">
+  <h2>{{ t.tasks_nav }}</h2>
+  <a class="btn" href="/tasks/new">＋ {{ t.task_button }}</a>
+</div>
+<p class="muted small">{{ t.tasks_help }}</p>
+{% if not tasks %}<p class="muted">{{ t.no_tasks }}</p>{% endif %}
+<ul class="task-list">
+  {% for x in tasks %}
+  <li class="task-row st-{{ x.status }}">
+    <span class="pill st">{{ t['st_' ~ x.status] }}</span>
+    <a class="task-title" href="/tasks/{{ x.id }}">{{ x.title }}</a>
+    <span class="muted small">{{ x.repo }} · {% if x.where == 'cloud' %}☁ {{ t.where_cloud_short }}{% else %}🖥 {{ agents[x.agent] }}{% endif %}</span>
+    {% if x.pr_url %}<a class="small" href="{{ x.pr_url }}">PR ↗</a>{% elif x.issue_url %}<a class="small" href="{{ x.issue_url }}">Issue ↗</a>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

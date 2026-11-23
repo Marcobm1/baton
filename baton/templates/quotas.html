@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ t.quotas }} · {{ title }}{% endblock %}
+{% block main %}
+<h2>{{ t.quotas }}</h2>
+<p class="muted small">{{ t.quotas_help }}</p>
+{% if providers %}
+<div class="quota-grid">
+  {% for pv in providers %}
+  <article class="quota">
+    <div class="q-head">
+      <strong class="q-provider">{{ pv.provider|capitalize }}{% if pv.plan %} <small>{{ pv.plan }}</small>{% endif %}</strong>
+      <span class="q-kind">{{ t.seen }} {{ pv.age_s|dur }} {{ t.ago }}</span>
+    </div>
+    {% for kind in ['5h', 'week'] %}{% set q = pv.windows.get(kind) %}{% if q %}
+    <div class="q-row v-{{ q.verdict }}" title="{{ t['v_' ~ q.verdict] }}">
+      <div class="q-line">
+        <span class="q-label">{{ t['short_' ~ kind] }}</span>
+        <span><b>{{ q.left|round|int }}%</b> {{ t.left }} · {{ t.resets_in }} {{ q.resets_in_s|dur }}</span>
+      </div>
+      <div class="bar">
+        <span class="fill" style="width: {{ q.used }}%"></span>
+        {% if q.elapsed_pct is not none %}<span class="tick" style="left: {{ q.elapsed_pct }}%"></span>{% endif %}
+      </div>
+      <p class="verdict small">{{ t['v_' ~ q.verdict] }}</p>
+    </div>
+    {% endif %}{% endfor %}
+    <p class="muted small">{{ t['source_' ~ pv.source] }}</p>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">{{ t.no_quotas }}</p>
+{% endif %}
+
+<p class="muted small">{{ t.auto }}:
+  {% if sched.enabled %}
+    {% if sched.claude_minutes %}Claude {{ t.every }} {{ sched.claude_minutes }} {{ t.minutes }}{% endif %}
+    {% if sched.claude_minutes and sched.codex_minutes %} · {% endif %}
+    {% if sched.codex_minutes %}Codex {{ t.every }} {{ sched.codex_minutes }} {{ t.minutes }}{% endif %}
+    {% if sched.hours %} ({{ sched.hours }} h){% endif %}
+    {% for name, r in sched_results.items() %} · {{ name|capitalize }}: {{ t.last_check }} {{ r.age|dur }} {{ t.ago }} {% if r.ok %}✓{% else %}<span class="stale" title="{{ r.msg }}">✗ {{ r.msg }}</span>{% endif %}{% endfor %}
+  {% else %}{{ t.auto_off }}{% endif %}
+</p>
+{% endblock %}

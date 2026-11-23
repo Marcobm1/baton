@@ -74,16 +74,13 @@ def test_expired_window_shows_reset():
     assert v["verdict"] == "reset" and v["used"] == 0
 
 
-def test_statusline_and_manual(tmp_path: Path):
+def test_statusline_snapshot(tmp_path: Path):
     now = time.time()
     statusline.save({"rate_limits": {"five_hour": {"used_percentage": 30, "resets_at": now + 600},
                                      "seven_day": {"used_percentage": 10, "resets_at": now + 5 * 86400}}}, tmp_path)
     got = {w.kind: w.used for w in quotas.claude_statusline_windows(tmp_path)}
     assert got == {"5h": 30, "week": 10}
-    time.sleep(0.01)
-    quotas.add_manual(tmp_path, "Claude", "week", 55, now + 86400)
     views = {(v["provider"], v["kind"]): v for v in quotas.all_windows(tmp_path, tmp_path / "nocodex")}
-    assert views[("claude", "week")]["used"] == 55  # newest reading wins
     assert views[("claude", "5h")]["source"] == "statusline"
 
 
@@ -163,16 +160,23 @@ def test_task_endpoint_csrf_and_issue(tmp_path):
     github.Hub.load, github.Hub.create_issue = fake_load, fake_issue
     try:
         c = TestClient(web.create_app(Settings(github_token="t", owner="x", data_dir=tmp_path, codex_home=tmp_path)))
-        page = c.get("/").text
+        page = c.get("/tasks/new?repo=x/demo").text
         token = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
-        assert c.post("/tasks", data={"repo": "x/demo", "title": "T", "csrf": "bad"}).status_code == 403
-        r = c.post("/tasks", data={"repo": "x/demo", "title": "T", "csrf": token},
+        form = {"repo": "x/demo", "where": "cloud", "title": "T"}
+        assert c.post("/tasks", data={**form, "csrf": "bad"}).status_code == 403
+        r = c.post("/tasks", data={**form, "csrf": token},
                    headers={"origin": "https://evil.example"}, follow_redirects=False)
         assert r.status_code == 403
-        r = c.post("/tasks", data={"repo": "x/demo", "title": "Fix it", "details": "do X", "csrf": token},
+        # Behind Tailscale Serve the browser's Origin matches X-Forwarded-Host.
+        r = c.post("/tasks", data={**form, "title": "Fix it", "details": "do X", "csrf": token},
+                   headers={"origin": "https://pc.tail.ts.net", "x-forwarded-host": "pc.tail.ts.net"},
                    follow_redirects=False)
-        assert r.status_code == 303 and "issues%2F7" not in r.headers["location"] and "issues/7" in r.headers["location"]
+        assert r.status_code == 303 and r.headers["location"].startswith("/tasks/")
+        detail = c.get(r.headers["location"]).text
+        assert "https://github.com/x/demo/issues/7" in detail
         assert calls and calls[0][2].startswith("@claude do X")
-        assert c.post("/tasks", data={"repo": "other/repo", "title": "T", "csrf": token}).status_code == 400
+        assert c.post("/tasks", data={**form, "repo": "other/repo", "csrf": token}).status_code == 400
+        assert c.post("/tasks", data={**form, "where": "local:rm", "csrf": token}).status_code == 400
+        assert c.get("/quotas").status_code == 200 and c.get("/tasks").status_code == 200
     finally:
         github.Hub.load, github.Hub.create_issue = orig

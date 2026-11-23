@@ -189,6 +189,27 @@ class Hub:
         data = r.json()
         return {"number": data["number"], "url": data["html_url"]}
 
+    def open_draft_pr(self, repo: str, branch: str, base: str, title: str, body: str) -> str:
+        """Open a draft pull request (synchronous: called from the task thread)."""
+        if not self.settings.github_token:
+            raise GitHubError("Opening a pull request needs a GitHub token.")
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "baton-project-hub",
+            "Authorization": f"Bearer {self.settings.github_token}",
+        }
+        r = httpx.post(f"{API}/repos/{repo}/pulls", headers=headers, timeout=30,
+                       json={"title": title, "head": branch, "base": base, "body": body,
+                             "draft": True})
+        if r.status_code == 422 and "draft" in r.text.lower():
+            # Draft pull requests aren't available on private repos of free plans.
+            r = httpx.post(f"{API}/repos/{repo}/pulls", headers=headers, timeout=30,
+                           json={"title": title, "head": branch, "base": base, "body": body})
+        if r.status_code != 201:
+            raise GitHubError(f"GitHub did not open the pull request ({r.status_code}).")
+        return r.json()["html_url"]
+
     async def load(self, force: bool = False) -> tuple[list[Project], list[str]]:
         """Return (projects, errors). Cached for settings.cache_seconds."""
         async with self._lock:

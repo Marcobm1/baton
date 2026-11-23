@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block main %}
+
+<section id="projects">
+  <div class="page-head">
+    <h2>{{ t.projects }} <small class="muted">({{ count }})</small></h2>
+    <a class="btn ghost" href="/?refresh=1">{{ t.refresh }}</a>
+  </div>
+  {% if no_token %}<p class="warn">{{ t.token_none }}</p>{% endif %}
+  {% if errors %}
+  <div class="warn"><strong>{{ t.errors }}:</strong><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  {% if not count %}<p class="muted">{{ t.no_projects }}</p>{% endif %}
+
+  {% for key, items in groups.items() if items %}
+  <h3 class="group">{{ t[key] }}</h3>
+  <div class="cards">
+    {% for p in items %}
+    {% set s = p.status %}
+    <article class="card prio-{{ s.priority }}">
+      <div class="c-head">
+        <a class="c-name" href="/p/{{ p.id }}">{{ s.name }}</a>
+        <span class="badge prio">{{ t[s.priority] }}</span>
+      </div>
+      {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
+      {% if s.next_task %}<p class="c-next" title="{{ s.next }}"><span class="label">{{ t.next_task }}</span> {{ s.next_task|truncate(90, True, '…') }}</p>{% endif %}
+      {% if s.progress is not none %}
+      <div class="bar thin" title="{{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}"><span class="fill" style="width: {{ s.progress }}%"></span></div>
+      <p class="muted small">{{ s.tasks_left }} {{ t.pending }} · {{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}</p>
+      {% endif %}
+      <p class="c-meta small">
+        {% if p.stale %}<span class="stale" title="{{ t.stale }}">⚠</span>{% endif %}
+        {{ t.updated }} {{ s.updated or '?' }}{% if s.updated_by %} {{ t.by }} {{ s.updated_by }}{% endif %}
+        · <a href="{{ p.html_url }}">{{ p.repo }}{% if p.path != 'STATUS.md' %}/{{ p.path.rsplit('/', 1)[0] }}{% endif %}</a>
+        · {{ t.private if p.private else t.public }}
+        {% if s.open_source %}· <span class="badge os">{{ t.open_source }}</span>{% endif %}
+      </p>
+      {% if s.problems %}<p class="warn small">{{ t.problems }}: {{ s.problems|join('; ') }}</p>{% endif %}
+      <div class="c-actions">
+        {% if p.repo in running %}<a class="pill running" href="/tasks">{{ t.task_running }}</a>{% endif %}
+        <a class="btn small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

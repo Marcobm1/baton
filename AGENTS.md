@@ -10,9 +10,12 @@ Baton is a small FastAPI app (`baton/`) plus a CLI. Read `README.md` first.
 - Keep dependencies pinned to exact versions in `pyproject.toml`.
 - `baton/statusline.py` and `baton/quotas.py` must stay standard-library only.
 - Baton must never read, store or send AI-provider credentials (Claude, OpenAI).
-  Quota data comes only from files the tools write themselves or from manual input.
+  Quota data comes only from what the official CLIs report themselves.
+- Local tasks must keep running agents only inside their own git worktree, with
+  the CLIs' limited permission modes (Claude `auto`, Codex `workspace-write`).
 - GitHub Actions: `permissions: {}` at the top, minimal per-job permissions,
-  only GitHub-made `actions/*`, pinned to a full commit SHA with the version in a comment.
+  only GitHub-made `actions/*` (plus `anthropics/claude-code-action` in
+  `claude.yml`), pinned to a full commit SHA with the version in a comment.
 - No secrets in the repository; `.env` is ignored.
 
 ## Project status (Baton)

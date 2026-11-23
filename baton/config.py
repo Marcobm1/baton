@@ -62,6 +62,14 @@ class Settings:
     ping_codex_minutes: int = 0
     ping_hours: str = ""
     ping_model: str = "haiku"
+    local_root: str = ""
+    local_paths: str = ""
+    task_timeout_minutes: int = 60
+    local_model: str = ""
+    local_provider: str = "ollama"
+    git_name: str = "Baton"
+    git_email: str = "baton@localhost"
+    cloud_tasks: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -89,4 +97,12 @@ class Settings:
             ping_codex_minutes=int(os.environ.get("BATON_PING_CODEX_MINUTES", "0") or 0),
             ping_hours=os.environ.get("BATON_PING_HOURS", ""),
             ping_model=os.environ.get("BATON_PING_MODEL", "haiku"),
+            local_root=os.environ.get("BATON_LOCAL_ROOT", ""),
+            local_paths=os.environ.get("BATON_LOCAL_PATHS", ""),
+            task_timeout_minutes=int(os.environ.get("BATON_TASK_TIMEOUT_MINUTES", "60") or 60),
+            local_model=os.environ.get("BATON_LOCAL_MODEL", ""),
+            local_provider=os.environ.get("BATON_LOCAL_PROVIDER", "ollama"),
+            git_name=os.environ.get("BATON_GIT_NAME", "Baton"),
+            git_email=os.environ.get("BATON_GIT_EMAIL", "baton@localhost"),
+            cloud_tasks=os.environ.get("BATON_CLOUD_TASKS", "1") != "0",
         )

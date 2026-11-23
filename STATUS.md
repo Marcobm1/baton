@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude/Codex quota windows.
-next: Marco creates a read-only fine-grained token for Docker / the daily INDEX.md workflow, and merges the STATUS.md PRs in Cairn and Mamporro.
+next: Marco creates the CLAUDE_CODE_OAUTH_TOKEN secret and merges the Cairn and Mamporro PRs; then try a cloud task.
 updated: 2026-11-23
 updated_by: claude
 open_source: true
@@ -27,7 +27,11 @@ links:
 - [ ] Screenshots in the README
 - [ ] Remote access without exposing it to the internet (Tailscale Serve)
 - [x] "New task" form: GitHub issue for @claude (Claude Code GitHub Action)
-- [ ] Codex tasks (only documented from PR comments; test first)
+- [x] Separate pages: Projects, Tasks, Quotas
+- [x] Local tasks on this computer (Claude Code, Codex, local AI) in git worktrees, ending in a PR
+- [x] Remote access through Tailscale Serve
+- [ ] Codex cloud tasks (only documented from PR comments; test first)
+- [ ] OpenCode or other agents as extra local options
 
 ## Blockers
 - None.
@@ -39,6 +43,7 @@ links:
   by hand; Baton never touches provider credentials.
 
 ## Log
+- 2026-11-23 (claude): pages split (Projects/Tasks/Quotas); local tasks in worktrees; manual quota form removed.
 - 2026-11-23 (claude): one quota card per provider; next task on project cards; New task form with CSRF protection; Claude task workflow template.
 - 2026-11-23 (claude): runs at Windows logon (scheduled task, pythonw); log file when there is no console.
 - 2026-11-23 (claude): automatic quota checks (claude -p stream-json unifiedWindows; codex exec).

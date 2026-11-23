@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ task.title }} · {{ title }}{% endblock %}
+{% block refresh %}{% if task.status in ['queued', 'running'] %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block main %}
+<p><a href="/tasks">← {{ t.tasks_nav }}</a></p>
+<article class="detail">
+  <h2>{{ task.title }} <span class="pill st st-{{ task.status }}">{{ t['st_' ~ task.status] }}</span></h2>
+  <p class="c-meta small">{{ task.repo }} ·
+    {% if task.where == 'cloud' %}☁ {{ t.where_cloud }}{% else %}🖥 {{ agents[task.agent] }} · {{ t.branch }} <code>{{ task.branch }}</code>{% endif %}</p>
+  {% if task.message %}<p>{{ task.message }}</p>{% endif %}
+  {% if task.pr_url %}<p><a class="btn" href="{{ task.pr_url }}">{{ t.open_pr_link }} ↗</a></p>{% endif %}
+  {% if task.issue_url %}<p><a class="btn" href="{{ task.issue_url }}">{{ t.open_issue_link }} ↗</a></p>
+    <p class="muted small">{{ t.cloud_after }}</p>{% endif %}
+  {% if task.worktree %}<p class="small">{{ t.worktree_kept }} <code>{{ task.worktree }}</code></p>{% endif %}
+  {% if task.details %}<h3>{{ t.task_details_short }}</h3><div class="md">{{ task.details|md|safe }}</div>{% endif %}
+  {% if task.steps %}<h3>{{ t.steps }}</h3><ul class="small steps">{% for s in task.steps %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
+  {% if log %}<h3>{{ t.log }}</h3><pre class="log">{{ log }}</pre>{% endif %}
+</article>
+{% endblock %}

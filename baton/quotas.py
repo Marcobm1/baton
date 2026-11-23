@@ -6,8 +6,6 @@ Sources, all local and passive (Baton never reads or sends your credentials):
   * Claude Code: the official status line JSON (rate_limits.five_hour /
     seven_day), saved by `baton statusline`, or the same numbers from a
     scheduled `claude -p` ping (see ping.py); both go to claude-usage.json.
-  * Manual: values you type in the page (e.g. copied from claude.ai's
-    Settings > Usage), saved to data/manual-usage.json.
 The newest reading of each window wins.
 """
 
@@ -151,52 +149,10 @@ def claude_statusline_windows(data_dir: Path) -> list[Window]:
     return out
 
 
-# ------------------------------------------------------------------ manual
-
-def _manual_file(data_dir: Path) -> Path:
-    return data_dir / "manual-usage.json"
-
-
-def manual_windows(data_dir: Path) -> list[Window]:
-    try:
-        items = json.loads(_manual_file(data_dir).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    out = []
-    for it in items if isinstance(items, list) else []:
-        try:
-            out.append(Window(
-                str(it["provider"]).lower(), it["kind"], float(it["used"]),
-                float(it["resets_at"]) if it.get("resets_at") else None,
-                float(it["seen_at"]), "manual",
-            ))
-        except (KeyError, TypeError, ValueError):
-            continue
-    return out
-
-
-def add_manual(data_dir: Path, provider: str, kind: str, used: float,
-               resets_at: float | None) -> None:
-    provider = provider.strip().lower()[:30]
-    if kind not in ("5h", "week") or not provider:
-        raise ValueError("bad provider or window")
-    used = max(0.0, min(100.0, float(used)))
-    data_dir.mkdir(parents=True, exist_ok=True)
-    items = [w for w in manual_windows(data_dir) if not (w.provider == provider and w.kind == kind)]
-    rows = [
-        {"provider": w.provider, "kind": w.kind, "used": w.used,
-         "resets_at": w.resets_at, "seen_at": w.seen_at}
-        for w in items
-    ]
-    rows.append({"provider": provider, "kind": kind, "used": used,
-                 "resets_at": resets_at, "seen_at": time.time()})
-    _manual_file(data_dir).write_text(json.dumps(rows, indent=2), encoding="utf-8")
-
-
 # ---------------------------------------------------------------- combined
 
 def all_windows(data_dir: Path, codex_home: Path) -> list[dict[str, Any]]:
-    readings = codex_windows(codex_home) + claude_statusline_windows(data_dir) + manual_windows(data_dir)
+    readings = codex_windows(codex_home) + claude_statusline_windows(data_dir)
     best: dict[tuple[str, str], Window] = {}
     for w in readings:
         k = (w.provider, w.kind)

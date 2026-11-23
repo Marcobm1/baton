@@ -1,0 +1,307 @@
+"""Run a task with an AI agent on this computer, safely, in its own git worktree.
+
+Flow for one task:
+  1. find the local clone of the repository (BATON_LOCAL_ROOT / BATON_LOCAL_PATHS);
+  2. `git fetch` and create a *worktree* (a second working folder of the same
+     repository) on a new branch `baton/<id>`, so the agent never touches the
+     folder you work in;
+  3. run the agent there with limited permissions:
+       claude-code  `claude -p --permission-mode auto` (a classifier reviews actions)
+       codex        `codex exec -s workspace-write` (sandbox: writes only there)
+       local        `codex exec --oss` with a local model (Ollama or LM Studio)
+  4. Baton commits what changed, and (if asked) pushes the branch and opens a
+     *draft* pull request for you to review;
+  5. the worktree is removed once the branch is safe on GitHub.
+
+Everything is written to <data dir>/tasks/<id>.log and tasks.json.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import re
+import subprocess
+import threading
+import time
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Callable
+
+from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
+
+AGENTS = {
+    "claude-code": "Claude Code",
+    "codex": "Codex",
+    "local": "IA local",
+}
+
+PROMPT = """You are working on the task below for the repository {repo}.
+Baton created this folder for you: a git worktree of {repo} on the new branch
+`{branch}`, based on `{base}`. You are not in the owner's own working folder.
+
+Rules:
+- First read the repository's AGENTS.md or CLAUDE.md and STATUS.md, and follow them.
+- Do the task. Keep the change focused on it.
+- Update STATUS.md as the repository's rules say (updated_by: {agent}).
+- Do NOT commit, push, switch branches or rewrite history: when you finish,
+  Baton commits everything in this folder and opens a draft pull request.
+- If the task is unclear, needs secrets, or would need anything destructive or
+  outside this folder, stop and explain why instead of doing it.
+- End with a short summary of what you changed and anything left to check.
+
+Task: {title}
+
+{details}
+"""
+
+
+@dataclass
+class Task:
+    id: str
+    repo: str
+    title: str
+    details: str
+    agent: str
+    where: str                      # "local" | "cloud"
+    created_at: float
+    status: str = "queued"          # queued | running | done | no-changes | failed
+    branch: str = ""
+    base: str = ""
+    worktree: str = ""
+    pr_url: str = ""
+    issue_url: str = ""
+    message: str = ""
+    finished_at: float | None = None
+    open_pr: bool = True
+    steps: list[str] = field(default_factory=list)
+
+
+def _slug(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return s[:30] or "task"
+
+
+def _remote_repo(url: str) -> str:
+    m = re.search(r"github\.com[:/]+([^/\s]+/[^/\s]+?)(?:\.git)?/?$", url.strip())
+    return m.group(1).lower() if m else ""
+
+
+class LocalRepos:
+    """Maps owner/name -> the folder of its clone on this computer."""
+
+    def __init__(self, root: str, overrides: str):
+        self.root = Path(root) if root else None
+        self.overrides: dict[str, Path] = {}
+        for part in overrides.split(";"):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                self.overrides[k.strip().lower()] = Path(v.strip())
+        self._cache: tuple[float, dict[str, Path]] | None = None
+
+    def _scan(self) -> dict[str, Path]:
+        found: dict[str, list[Path]] = {}
+        if self.root and self.root.is_dir():
+            for d in self.root.iterdir():
+                if not (d / ".git").exists():
+                    continue
+                try:
+                    url = subprocess.run(["git", "-C", str(d), "remote", "get-url", "origin"],
+                                         capture_output=True, text=True, timeout=10,
+                                         **_NO_WINDOW).stdout
+                except (OSError, subprocess.SubprocessError):
+                    continue
+                repo = _remote_repo(url)
+                if repo:
+                    found.setdefault(repo, []).append(d)
+        result = {}
+        for repo, dirs in found.items():
+            name = repo.split("/")[1]
+            exact = [d for d in dirs if d.name.lower() == name]
+            # Prefer the folder named like the repo; otherwise the shortest name
+            # (e.g. "Mamporro-git" over "Mamporro-respaldo-u2").
+            result[repo] = (exact or sorted(dirs, key=lambda d: len(d.name)))[0]
+        return result
+
+    def get(self, repo: str) -> Path | None:
+        repo = repo.lower()
+        if repo in self.overrides:
+            return self.overrides[repo]
+        if not self._cache or time.time() - self._cache[0] > 300:
+            self._cache = (time.time(), self._scan())
+        return self._cache[1].get(repo)
+
+
+class TaskStore:
+    def __init__(self, data_dir: Path):
+        self.dir = data_dir
+        self.file = data_dir / "tasks.json"
+        self.logs = data_dir / "tasks"
+        self.lock = threading.Lock()
+
+    def all(self) -> list[Task]:
+        try:
+            rows = json.loads(self.file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        out = []
+        for r in rows:
+            try:
+                out.append(Task(**r))
+            except TypeError:
+                continue
+        return sorted(out, key=lambda t: t.created_at, reverse=True)
+
+    def get(self, task_id: str) -> Task | None:
+        return next((t for t in self.all() if t.id == task_id), None)
+
+    def save(self, task: Task) -> None:
+        with self.lock:
+            tasks = {t.id: t for t in self.all()}
+            tasks[task.id] = task
+            self.dir.mkdir(parents=True, exist_ok=True)
+            tmp = self.file.with_suffix(".tmp")
+            tmp.write_text(json.dumps([asdict(t) for t in tasks.values()], indent=1), encoding="utf-8")
+            tmp.replace(self.file)
+
+    def log_path(self, task_id: str) -> Path:
+        self.logs.mkdir(parents=True, exist_ok=True)
+        return self.logs / f"{task_id}.log"
+
+    def log_tail(self, task_id: str, lines: int = 200) -> str:
+        try:
+            text = self.log_path(task_id).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+        return "\n".join(text.splitlines()[-lines:])
+
+
+def new_id(title: str) -> str:
+    return dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + _slug(title)
+
+
+class Runner:
+    def __init__(self, store: TaskStore, repos: LocalRepos, *, timeout: int, local_model: str,
+                 local_provider: str, git_name: str, git_email: str,
+                 open_pr: Callable[[str, str, str, str, str], str]):
+        self.store = store
+        self.repos = repos
+        self.timeout = timeout
+        self.local_model = local_model
+        self.local_provider = local_provider
+        self.git_name = git_name
+        self.git_email = git_email
+        self.open_pr = open_pr        # (repo, branch, base, title, body) -> url
+
+    # ---------------------------------------------------------- availability
+    def agents_available(self) -> dict[str, str]:
+        """agent -> "" if usable, else the reason it isn't."""
+        out = {}
+        out["claude-code"] = "" if find_claude() else "Claude Code CLI not found"
+        codex = find_codex()
+        out["codex"] = "" if codex else "Codex CLI not found"
+        out["local"] = ("" if (codex and self.local_model)
+                        else "set BATON_LOCAL_MODEL (and install Ollama or LM Studio)")
+        return out
+
+    def busy(self, repo: str) -> bool:
+        return any(t.repo == repo and t.where == "local" and t.status in ("queued", "running")
+                   for t in self.store.all())
+
+    def start(self, task: Task) -> None:
+        self.store.save(task)
+        threading.Thread(target=self._run, args=(task,), daemon=True).start()
+
+    # --------------------------------------------------------------- running
+    def _log(self, task: Task, text: str) -> None:
+        with open(self.store.log_path(task.id), "a", encoding="utf-8") as f:
+            f.write(text if text.endswith("\n") else text + "\n")
+
+    def _git(self, cwd: Path, *args: str, check: bool = True) -> str:
+        r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=300, **_NO_WINDOW)
+        if check and r.returncode != 0:
+            raise RuntimeError(f"git {' '.join(args[:2])} failed: {r.stderr.strip()[:300]}")
+        return r.stdout.strip()
+
+    def _agent_cmd(self, task: Task, wt: Path) -> list[str]:
+        if task.agent == "claude-code":
+            return [find_claude() or "claude", "-p", "--permission-mode", "auto"]
+        codex = find_codex() or "codex"
+        cmd = [codex, "exec", "-s", "workspace-write", "--color", "never", "-C", str(wt)]
+        if task.agent == "local":
+            cmd[2:2] = ["--oss", "--local-provider", self.local_provider, "-m", self.local_model]
+        return cmd + ["-"]
+
+    def _run(self, task: Task) -> None:
+        def step(msg: str) -> None:
+            task.steps.append(f"{time.strftime('%H:%M:%S')} {msg}")
+            self._log(task, f"== {msg}")
+            self.store.save(task)
+
+        task.status = "running"
+        try:
+            repo_dir = self.repos.get(task.repo)
+            if not repo_dir:
+                raise RuntimeError("No local clone of this repository (check BATON_LOCAL_ROOT).")
+            step(f"Local clone: {repo_dir}")
+            self._git(repo_dir, "fetch", "origin", task.base)
+            wt = self.store.dir / "worktrees" / f"{task.repo.split('/')[1]}-{task.id}"
+            wt.parent.mkdir(parents=True, exist_ok=True)
+            self._git(repo_dir, "worktree", "add", "-b", task.branch, str(wt), f"origin/{task.base}")
+            task.worktree = str(wt)
+            step(f"Worktree on branch {task.branch} (from origin/{task.base})")
+
+            prompt = PROMPT.format(repo=task.repo, branch=task.branch, base=task.base,
+                                   agent=task.agent, title=task.title,
+                                   details=task.details or "(no more details)")
+            step(f"Running {AGENTS.get(task.agent, task.agent)}…")
+            with open(self.store.log_path(task.id), "a", encoding="utf-8") as log:
+                proc = subprocess.run(self._agent_cmd(task, wt), input=prompt, stdout=log,
+                                      stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                                      errors="replace", cwd=str(wt), env=_clean_env(),
+                                      timeout=self.timeout, **_NO_WINDOW)
+            step(f"Agent finished (exit code {proc.returncode})")
+            if proc.returncode != 0:
+                raise RuntimeError(f"The agent stopped with exit code {proc.returncode}; see the log.")
+
+            if not self._git(wt, "status", "--porcelain"):
+                task.status = "no-changes"
+                task.message = "The agent finished without changing anything."
+                self._git(repo_dir, "worktree", "remove", "--force", str(wt), check=False)
+                self._git(repo_dir, "branch", "-D", task.branch, check=False)
+                task.worktree = ""
+                return
+            self._git(wt, "add", "-A")
+            ident = []
+            if not self._git(wt, "config", "user.email", check=False):
+                ident = ["-c", f"user.name={self.git_name}", "-c", f"user.email={self.git_email}"]
+            body = f"Task from Baton, done by {AGENTS.get(task.agent, task.agent)}.\n\n{task.details}".strip()
+            self._git(wt, *ident, "commit", "-m", f"{task.title}\n\n{body}")
+            step("Changes committed")
+
+            if task.open_pr:
+                self._git(wt, "push", "-u", "origin", task.branch)
+                step("Branch pushed to GitHub")
+                pr_body = (f"Task sent from Baton to **{AGENTS.get(task.agent, task.agent)}** "
+                           f"on my computer.\n\n**Task:** {task.title}\n\n{task.details}\n\n"
+                           "Review it before merging.")
+                task.pr_url = self.open_pr(task.repo, task.branch, task.base, task.title, pr_body)
+                step(f"Draft pull request: {task.pr_url}")
+                self._git(repo_dir, "worktree", "remove", "--force", str(wt), check=False)
+                task.worktree = ""
+                task.message = "Done: review the draft pull request."
+            else:
+                task.message = f"Done: the changes are on the local branch {task.branch} in {wt}."
+            task.status = "done"
+        except subprocess.TimeoutExpired:
+            task.status = "failed"
+            task.message = f"The agent took longer than {self.timeout // 60} minutes and was stopped."
+        except Exception as exc:  # report every failure on the page
+            task.status = "failed"
+            task.message = str(exc)[:500]
+            self._log(task, f"!! {task.message}")
+        finally:
+            task.finished_at = time.time()
+            self.store.save(task)

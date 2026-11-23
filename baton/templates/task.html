@@ -1,26 +1,61 @@
 {% extends "base.html" %}
 {% block title %}{{ task.title }} · {{ title }}{% endblock %}
-{% block refresh %}{% if task.status in ['queued', 'running'] %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block refresh %}{% endblock %}
 {% block main %}
 <p><a href="/tasks">← {{ t.tasks_nav }}</a></p>
 <article class="detail">
   <h2>{{ task.title }} <span class="pill st st-{{ task.status }}">{{ t['st_' ~ task.status] }}</span></h2>
-  <p class="c-meta small">{{ task.repo }} ·
-    {% if task.where == 'cloud' %}☁ {{ t.where_cloud }}{% else %}🖥 {{ agents[task.agent] }}{% if task.model %} ({{ task.model }}){% if task.effort %} · {{ task.effort }}{% endif %}{% endif %} · {{ t.branch }} <code>{{ task.branch }}</code>{% endif %}</p>
-  {% if task.message %}<p>{{ task.message }}</p>{% endif %}
-  {% if task.pr_url %}<p><a class="btn" href="{{ task.pr_url }}">{{ t.open_pr_link }} ↗</a></p>{% endif %}
-  {% if task.issue_url %}<p><a class="btn" href="{{ task.issue_url }}">{{ t.open_issue_link }} ↗</a></p>
-    <p class="muted small">{{ t.cloud_after }}</p>{% endif %}
-  {% if task.worktree %}<p class="small">{{ t.worktree_kept }} <code>{{ task.worktree }}</code></p>{% endif %}
-  {% if task.status not in ['queued', 'running'] %}
-  <h3>{{ t.task_summary }}</h3>
-  {% if task.summary %}<div class="md">{{ task.summary|md|safe }}</div>
-  {% elif report_error %}<p>{{ t.summary_error }}</p>
-  {% elif task.issue_number %}<p>{{ t.summary_wait }}</p>
-  {% else %}<p class="muted">{{ t.summary_missing }}</p>{% endif %}
+  {% if task.status == 'running' %}
+    <p><strong>{{ t.last_step }}</strong> · {{ task.steps|last or t.no_step }}</p>
+    <p>{{ report.progress|truncate(240) if report.progress else t.no_progress }}</p>
+  {% elif task.status == 'queued' %}
+    <p>{{ task.details|truncate(240) if task.details else t.queued_plan }}</p>
+    <p>{{ t.requires_local }}{% if task.base %} · {{ t.branch }} <code>{{ task.base }}</code>{% endif %}</p>
+  {% elif task.status == 'sent' %}
+    <p>{{ t.cloud_after }}</p>
+  {% else %}
+    <p><strong>{{ t.result }}</strong> · {{ t['failure_' ~ report.failure] if report.failure else task.message or t['st_' ~ task.status] }}</p>
+    {% if report.reason %}<p>{{ t.cli_reason }} · {{ report.reason }}</p>{% endif %}
+    <p><strong>{{ t.agent_summary }}</strong> · {{ report.summary|truncate(240) if report.summary else t.no_summary }}</p>
+    <p><strong>{{ t.checks }}</strong> · {{ report.checks|truncate(240) if report.checks else t.no_checks }}</p>
   {% endif %}
-  {% if task.details %}<h3>{{ t.task_details_short }}</h3><div class="md">{{ task.details|md|safe }}</div>{% endif %}
-  {% if task.steps %}<h3>{{ t.steps }}</h3><ul class="small steps">{% for s in task.steps %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
-  {% if log %}<h3>{{ t.log }}</h3><pre class="log">{{ log }}</pre>{% endif %}
+  {% if task.status not in ['queued', 'running'] %}
+  <section class="task-summary" aria-labelledby="summary-title">
+    <h3 id="summary-title">{{ t.task_summary }}</h3>
+    {% if task.summary %}<div class="md">{{ task.summary|md|safe }}</div>
+    {% elif report_error %}<p>{{ t.summary_error }}</p>
+    {% elif task.issue_number and not task.finished_at %}<p>{{ t.summary_wait }}</p>
+    {% else %}<p class="muted">{{ t.summary_missing }}</p>{% endif %}
+  </section>
+  {% endif %}
+  {% if task.status == 'cancelled' %}<p class="small">{{ t.cancelled_at }} {{ task.finished_at|when }}</p>{% endif %}
+  {% if can_cancel %}
+  <form method="post" action="/tasks/{{ task.id }}/cancel" class="cancel-form"
+        onsubmit="return confirm({{ t.cancel_confirm|tojson|forceescape }})">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit" class="danger">{{ t.cancel_task }}</button>
+    <span class="muted small">{{ t.cancel_help }}</span>
+  </form>
+  {% endif %}
+  <p class="c-meta small">{{ task.repo }} · {{ agents.get(task.agent, task.agent) }}
+    {% if task.where == 'cloud' %} · {{ t.where_cloud }}{% else %} · {{ t.model }} · {{ task.model or (t.unrecorded if task.agent == 'local' else t.cli_default) }}{% if task.effort %} · {{ task.effort }}{% endif %}{% endif %}</p>
+  {% if task.pr_url %}<p><a class="btn" href="{{ task.pr_url }}">{{ t.open_pr_link }} ↗</a></p>
+  {% elif task.branch and report.pushed %}<p><a href="https://github.com/{{ task.repo }}/tree/{{ task.branch|urlencode }}">{{ task.branch }} ↗</a></p>{% endif %}
+  {% if task.issue_url %}<p><a class="btn" href="{{ task.issue_url }}">{{ t.open_issue_link }} ↗</a></p>{% endif %}
+  <details id="task-details">
+    <summary>{{ t.task_details_short }}</summary>
+    {% if task.details %}<h3>{{ t.objective }}</h3><div class="md">{{ task.details|md|safe }}</div>{% endif %}
+    {% if task.branch %}<p>{{ t.branch }} <code>{{ task.branch }}</code></p>{% endif %}
+    {% if task.worktree %}<p class="small">{{ t.worktree_kept }} <code>{{ task.worktree }}</code></p>{% endif %}
+    {% if task.steps %}<h3>{{ t.steps }}</h3><ul class="small steps">{% for s in task.steps %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
+    {% if task.where == 'local' %}<h3>{{ t.log }}</h3>{% if log %}<pre class="log">{{ log }}</pre>{% else %}<p>{{ t.no_log }}</p>{% endif %}{% endif %}
+  </details>
 </article>
+{% if task.status in ['queued', 'running'] %}
+<script>
+  setInterval(() => {
+    if (!document.getElementById("task-details").open) location.reload();
+  }, 5000);
+</script>
+{% endif %}
 {% endblock %}

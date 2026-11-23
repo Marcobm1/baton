@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Verify the task summary with a live agent from the web.
+next: Check a live task summary from the web, and cancel a real Claude Code task.
 updated: 2026-11-23
-updated_by: codex
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -35,8 +35,11 @@ links:
 - [x] Tokens spent per day/week, per app and model (Quotas page)
 - [x] OpenCode Go quota (5 h, week, month) with an optional key
 - [x] `baton delegate`: subtasks for OpenCode models, read-only by default
-- [ ] Cancel a running task from its page
-- [x] Show the agent's completion summary on local and cloud task pages
+- [x] State-specific task details and Claude model access, quota and other error guidance
+- [ ] Review a historical task and a running task in the web UI
+- [x] Cancel a running task from its page
+- [ ] Try cancelling a real agent task on Windows (check Task Manager afterwards)
+- [x] Show the agent's completion summary on local and cloud task pages (PRs #3 + #4 combined)
 - [ ] Check a live task summary from the web
 
 ## Blockers
@@ -47,9 +50,14 @@ links:
   works the same for every agent and every computer.
 - 2026-11-23: Claude and Codex quota readings come from local sources. OpenCode Go
   is optional and uses its configured key to query the official usage endpoint.
+- 2026-11-23: cancelling kills the agent's whole process tree, commits/pushes
+  nothing, and deletes the worktree + local branch only if the branch is not
+  on GitHub (see docs/cancelling-tasks.md).
 
 ## Log
-- 2026-11-23 (codex): added persistent task summaries covering the outcome, approach, reasoning, checks and pending work. All 26 tests passed with simulated local and cloud reports.
+- 2026-11-23 (claude-code): task summary panel (combined PRs #3 and #4): the agent ends with a marked report (what, how, why, checks, problems, what you need to know); cloud tasks read it from the issue.
+- 2026-11-23 (claude-code): Cancel task button (kills the process tree, no commit/push, removes worktree and branch); status cancelled/cancelada; tests.
+- 2026-11-23 (codex): added collapsible task details using existing records and CLI logs. Tested legacy reports and simulated Claude access, quota and unrelated failures.
 - 2026-11-23 (codex): verified private Tailscale Serve routing to native Baton and documented phone access. Replaced inline placeholder icons in quota and token cards with the bundled Anthropic, OpenAI and OpenCode images. Phone-side confirmation remains with the owner.
 - 2026-11-23 (codex): verified 15 Claude Code and 10 Codex models, per-model effort selection, and 25 tests. Refreshed the task form. Checked quota backgrounds in both themes and local Anthropic, OpenAI and OpenCode logos on Windows and Docker.
 - 2026-11-23 (codex): verified the live Go quota card and all three API windows on native Windows (8787) and Docker Compose (8788). Docker health check passed; 23 tests passed.

@@ -199,9 +199,19 @@ repository's `AGENTS.md`/`CLAUDE.md` and update `STATUS.md`, but not to commit
 or push: Baton commits what changed, pushes the branch and opens a pull request
 (a draft where your plan allows it), then removes the worktree. One task at a
 time per repository. The task page shows the agent's summary before the steps
-and log. It explains the outcome, approach, reasoning, checks and remaining
-work, including for tasks that changed no files. Tasks use
+and log. It explains the outcome, approach, reasoning, checks, problems met
+and what you need to know or do next, including for tasks that changed no files. Tasks use
 your plans' quotas like any other use of those CLIs.
+
+While a local task is running, its page has a **Cancel task** button. Baton
+stops the agent *and every process it started* (on Windows with
+`taskkill /T /F`, elsewhere by killing its process group), commits and pushes
+nothing, removes the worktree and deletes the local branch, and marks the task
+**cancelled** with the time. If the branch is already on GitHub (or Baton
+can't check), the worktree and branch are kept and the page says so. Once Baton
+has started committing the result (a matter of seconds) the task can no longer
+be cancelled. The button uses the same cross-site protection as the task form.
+See [`docs/cancelling-tasks.md`](docs/cancelling-tasks.md) for the details.
 
 On Windows Baton calls `opencode.exe` directly, never npm's `opencode.cmd`
 wrapper, so a task's text never goes through `cmd.exe`.

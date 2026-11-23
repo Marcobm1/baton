@@ -123,6 +123,8 @@ footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 1.5
 .pill.running, .st-running .pill.st, .pill.st-running, .st-queued .pill.st, .pill.st-queued { color: var(--fast); border-color: var(--fast); }
 .st-done .pill.st, .pill.st-done, .st-sent .pill.st, .pill.st-sent { color: var(--ok); border-color: var(--ok); }
 .st-failed .pill.st, .pill.st-failed { color: var(--bad); border-color: var(--bad); }
+button.danger { background: var(--bad); }
+.cancel-form { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; margin: .8rem 0; }
 .task-list { list-style: none; padding: 0; margin: 1rem 0; }
 .task-row { display: flex; flex-wrap: wrap; gap: .4rem .8rem; align-items: baseline; padding: .6rem .2rem; border-bottom: 1px solid var(--line); }
 .task-title { font-weight: 600; color: var(--ink); text-decoration: none; }

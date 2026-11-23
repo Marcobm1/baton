@@ -172,6 +172,7 @@ where it runs:
 |---|---|---|
 | Claude Code | `claude -p --permission-mode auto` | Auto mode: a classifier reviews each action instead of asking you. |
 | Codex | `codex exec -s workspace-write` | Sandbox: it can only write inside the task's folder. |
+| OpenCode | `opencode run --auto --agent baton -m <model>` | Any model OpenCode lists (free ones, your ChatGPT plan, Ollama…). No OS sandbox: Baton defines its own `baton` agent that denies git commits/pushes/branch changes and paths outside the folder (explicit denies hold even with `--auto`). |
 | Local AI | `codex exec --oss --local-provider ollama -m <model>` | Needs `BATON_LOCAL_MODEL` and Ollama or LM Studio. |
 
 Baton finds the repository's clone under `BATON_LOCAL_ROOT` (by its `origin`
@@ -183,6 +184,9 @@ or push: Baton commits what changed, pushes the branch and opens a pull request
 (a draft where your plan allows it), then removes the worktree. One task at a
 time per repository; the log and the steps are on the task's page. Tasks use
 your plans' quotas like any other use of those CLIs.
+
+On Windows Baton calls `opencode.exe` directly, never npm's `opencode.cmd`
+wrapper, so a task's text never goes through `cmd.exe`.
 
 **In the cloud (GitHub Actions)**, an option tucked under the local choices:
 Baton opens an issue that starts with `@claude`, and the
@@ -208,6 +212,16 @@ the same account and run `tailscale serve --bg 8787` on the computer. The page
 is then available at `https://<computer>.<tailnet>.ts.net`, only to your own
 devices, with HTTPS and no open ports. From there you can also start tasks on
 the computer while you're away from it.
+
+## Tokens spent
+
+The Quotas page also counts the tokens each tool spent today and in the last
+7 days, per model, from their own local logs: Claude Code
+(`~/.claude/projects/**/*.jsonl`), Codex (`~/.codex/sessions/**/*.jsonl`) and
+OpenCode (`~/.local/share/opencode/opencode.db`, opened read-only). Models
+served by Ollama or LM Studio are grouped as *Local AI*. Only numbers, model
+names and dates are read. Chats on claude.ai or chatgpt.com leave no log on
+your computer, so they are not counted.
 
 ## Configuration
 

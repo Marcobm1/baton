@@ -102,3 +102,27 @@ def test_runner_no_changes_and_failure(tmp_path, monkeypatch):
                  created_at=time.time(), branch="baton/t3", base="main"))
     failed = _wait(store, "t3")
     assert failed.status == "failed" and "exit code 3" in failed.message
+
+
+def test_opencode_is_launched_without_a_shell(tmp_path, monkeypatch):
+    # npm's wrapper is a .cmd; Baton must call the real exe next to it.
+    npm = tmp_path / "npm"
+    exe = npm / "node_modules" / "@opencode" / "cli" / "bin" / "opencode.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("")
+    (npm / "opencode.cmd").write_text("")
+    monkeypatch.delenv("BATON_OPENCODE_BIN", raising=False)
+    monkeypatch.setattr(runner_mod.shutil, "which", lambda name: str(npm / "opencode.cmd"))
+    assert runner_mod.find_opencode() == str(exe)
+
+    store = TaskStore(tmp_path / "data")
+    r = Runner(store, LocalRepos("", ""), timeout=60, local_model="", local_provider="ollama",
+               git_name="B", git_email="b@x", open_pr=lambda *a: "")
+    task = Task(id="t9", repo="x/demo", title="A & B | C", details="line1\nline2", agent="opencode",
+                where="local", created_at=0, branch="baton/t9", base="main", model="opencode/big-pickle")
+    cmd = r._agent_cmd(task, tmp_path)
+    assert cmd[0] == str(exe) and "--agent" in cmd and cmd[cmd.index("-m") + 1] == "opencode/big-pickle"
+    assert cmd[-1].startswith("You are working on the task") and "A & B | C" in cmd[-1]
+    rules = runner_mod.OPENCODE_CONFIG["agent"]["baton"]["permission"]
+    assert rules["external_directory"] == "deny" and rules["bash"]["git push*"] == "deny"
+    assert list(rules["bash"])[0] == "*"  # last match wins: the general rule must come first

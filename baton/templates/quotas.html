@@ -1,5 +1,30 @@
 {% extends "base.html" %}
-{% block title %}{{ t.quotas }} · {{ title }}{% endblock %}
+{% block title %}{{ t.quotas }} · {{ title }}
+<h2 id="tokens">{{ t.tokens_title }}</h2>
+<p class="muted small">{{ t.tokens_help }}</p>
+{% if tokens.apps %}
+<div class="tok-grid">
+  {% for a in tokens.apps %}
+  <article class="quota tok">
+    <div class="q-head"><strong class="q-provider">{{ t['app_' ~ a.app|replace('-', '_')] }}</strong>
+      <span class="q-kind">{{ t.last_days|replace('N', tokens.days|string) }}</span></div>
+    <div class="tok-nums">
+      <div><span class="muted small">{{ t.today }}</span><b>{{ a.today.total|tok }}</b></div>
+      <div><span class="muted small">{{ tokens.days }} {{ t.days }}</span><b>{{ a.week.total|tok }}</b></div>
+    </div>
+    <div class="spark" aria-hidden="true">{% for b in a.bars %}<span style="height: {{ [b.pct, 3]|max }}%" title="{{ b.day }}: {{ b.total|tok }}"></span>{% endfor %}</div>
+    <p class="muted small">{{ t.split }}: {{ a.week.fresh|tok }} {{ t.fresh }} · {{ a.week.cache|tok }} {{ t.cache }} · {{ a.week.output|tok }} {{ t.output }}</p>
+    <details class="small"><summary>{{ t.by_model }}</summary>
+      <table class="tok-table">
+        <tr><th>{{ t.model }}</th><th>{{ t.today }}</th><th>{{ tokens.days }} {{ t.days }}</th></tr>
+        {% for name, m in a.models %}<tr><td>{{ name }}</td><td>{{ m.today.total|tok }}</td><td>{{ m.week.total|tok }}</td></tr>{% endfor %}
+      </table>
+    </details>
+  </article>
+  {% endfor %}
+</div>
+{% else %}<p class="muted">{{ t.no_tokens }}</p>{% endif %}
+{% endblock %}
 {% block main %}
 <h2>{{ t.quotas }}</h2>
 <p class="muted small">{{ t.quotas_help }}</p>

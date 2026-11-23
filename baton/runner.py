@@ -19,9 +19,11 @@ Everything is written to <data dir>/tasks/<id>.log and tasks.json.
 from __future__ import annotations
 
 import datetime as dt
+import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -34,8 +36,75 @@ from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
 AGENTS = {
     "claude-code": "Claude Code",
     "codex": "Codex",
+    "opencode": "OpenCode",
     "local": "IA local",
 }
+
+# OpenCode has no OS sandbox, so Baton gives it its own agent with explicit
+# rules. Explicit "deny" rules hold even with --auto, and they must live on the
+# agent: an agent's own permissions override the global ones. Last match wins,
+# so the general "*": "allow" goes first and the forbidden commands after it.
+# (Tested 2026-11-23: denying `edit` alone is not enough, because the model can
+# still write files through `bash`.)
+OPENCODE_CONFIG = {
+    "$schema": "https://opencode.ai/config.json",
+    "agent": {
+        "baton": {
+            "mode": "primary",
+            "description": "Task sent from Baton, inside its own git worktree",
+            "permission": {
+                "read": "allow",
+                "edit": "allow",
+                "external_directory": "deny",
+                "bash": {
+                    "*": "allow",
+                    "git commit*": "deny", "git push*": "deny", "git checkout*": "deny",
+                    "git switch*": "deny", "git reset*": "deny", "git rebase*": "deny",
+                    "git worktree*": "deny", "git branch*": "deny", "git remote*": "deny",
+                    "sudo*": "deny",
+                },
+            },
+        }
+    },
+}
+
+
+def find_opencode() -> str | None:
+    """The real opencode.exe, never the npm .cmd/.ps1 wrapper.
+
+    Passing a task's text as an argument to a .cmd file would go through
+    cmd.exe, which treats & | < > ^ as commands and cuts at line breaks.
+    """
+    explicit = os.environ.get("BATON_OPENCODE_BIN")
+    if explicit:
+        return explicit
+    found = shutil.which("opencode")
+    if found and found.lower().endswith((".cmd", ".ps1", ".bat")):
+        exe = Path(found).parent / "node_modules" / "@opencode" / "cli" / "bin" / "opencode.exe"
+        return str(exe) if exe.is_file() else None
+    return found
+
+
+_models_cache: tuple[float, list[str]] | None = None
+
+
+def opencode_models() -> list[str]:
+    """Models OpenCode can use right now (`opencode models`), cached 10 minutes."""
+    global _models_cache
+    if _models_cache and time.time() - _models_cache[0] < 600:
+        return _models_cache[1]
+    exe = find_opencode()
+    models: list[str] = []
+    if exe:
+        try:
+            r = subprocess.run([exe, "models"], capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=60, stdin=subprocess.DEVNULL, **_NO_WINDOW)
+            models = [ln.strip() for ln in r.stdout.splitlines()
+                      if re.fullmatch(r"[\w.\-]+/[\w.:\-/]+", ln.strip())]
+        except (OSError, subprocess.SubprocessError):
+            models = []
+    _models_cache = (time.time(), models)
+    return models
 
 PROMPT = """You are working on the task below for the repository {repo}.
 Baton created this folder for you: a git worktree of {repo} on the new branch
@@ -75,6 +144,7 @@ class Task:
     message: str = ""
     finished_at: float | None = None
     open_pr: bool = True
+    model: str = ""
     steps: list[str] = field(default_factory=list)
 
 
@@ -201,6 +271,7 @@ class Runner:
         out["claude-code"] = "" if find_claude() else "Claude Code CLI not found"
         codex = find_codex()
         out["codex"] = "" if codex else "Codex CLI not found"
+        out["opencode"] = "" if find_opencode() else "OpenCode CLI not found"
         out["local"] = ("" if (codex and self.local_model)
                         else "set BATON_LOCAL_MODEL (and install Ollama or LM Studio)")
         return out
@@ -226,6 +297,10 @@ class Runner:
         return r.stdout.strip()
 
     def _agent_cmd(self, task: Task, wt: Path) -> list[str]:
+        if task.agent == "opencode":
+            # The prompt goes as the message argument (opencode.exe directly, no shell).
+            return [find_opencode() or "opencode", "run", "--standalone", "--auto", "--agent", "baton",
+                    "-m", task.model, "--title", f"Baton {task.id}", self._prompt(task)]
         if task.agent == "claude-code":
             return [find_claude() or "claude", "-p", "--permission-mode", "auto"]
         codex = find_codex() or "codex"
@@ -233,6 +308,11 @@ class Runner:
         if task.agent == "local":
             cmd[2:2] = ["--oss", "--local-provider", self.local_provider, "-m", self.local_model]
         return cmd + ["-"]
+
+    def _prompt(self, task: Task) -> str:
+        return PROMPT.format(repo=task.repo, branch=task.branch, base=task.base,
+                             agent=task.agent, title=task.title,
+                             details=task.details or "(no more details)")
 
     def _run(self, task: Task) -> None:
         def step(msg: str) -> None:
@@ -253,14 +333,18 @@ class Runner:
             task.worktree = str(wt)
             step(f"Worktree on branch {task.branch} (from origin/{task.base})")
 
-            prompt = PROMPT.format(repo=task.repo, branch=task.branch, base=task.base,
-                                   agent=task.agent, title=task.title,
-                                   details=task.details or "(no more details)")
-            step(f"Running {AGENTS.get(task.agent, task.agent)}…")
+            label = AGENTS.get(task.agent, task.agent) + (f" ({task.model})" if task.model else "")
+            step(f"Running {label}…")
+            env = _clean_env()
+            if task.agent == "opencode":
+                env["OPENCODE_CONFIG_CONTENT"] = json.dumps(OPENCODE_CONFIG)
+            # Claude and Codex read the prompt from stdin; OpenCode gets it as an
+            # argument, and its stdin is closed so it never waits for input.
+            stdin_text = "" if task.agent == "opencode" else self._prompt(task)
             with open(self.store.log_path(task.id), "a", encoding="utf-8") as log:
-                proc = subprocess.run(self._agent_cmd(task, wt), input=prompt, stdout=log,
+                proc = subprocess.run(self._agent_cmd(task, wt), input=stdin_text, stdout=log,
                                       stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                                      errors="replace", cwd=str(wt), env=_clean_env(),
+                                      errors="replace", cwd=str(wt), env=env,
                                       timeout=self.timeout, **_NO_WINDOW)
             step(f"Agent finished (exit code {proc.returncode})")
             if proc.returncode != 0:

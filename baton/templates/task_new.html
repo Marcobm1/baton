@@ -22,12 +22,17 @@
     <p class="muted small">{{ t.where_local_help }}</p>
     <div class="choices">
       {% set first = namespace(done=false) %}
-      {% for key in ['claude-code', 'codex', 'local'] %}
+      {% for key in ['claude-code', 'codex', 'opencode', 'local'] %}
       {% set why = available[key] %}
       <label class="choice {% if why %}off{% endif %}">
         <input type="radio" name="where" value="local:{{ key }}" {% if why %}disabled{% elif not first.done %}checked{% set first.done = true %}{% endif %}>
         <span class="c-title">🖥 {{ agents[key] }}</span>
         <span class="small muted">{% if why %}{{ why }}{% else %}{{ t['agent_help_' ~ key|replace('-', '_')] }}{% endif %}</span>
+        {% if key == 'opencode' and not why %}
+        <select name="oc_model" class="model-select" aria-label="{{ t.model }}">
+          {% for m in oc_models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+        </select>
+        {% endif %}
       </label>
       {% endfor %}
     </div>

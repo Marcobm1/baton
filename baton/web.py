@@ -16,12 +16,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
 
-from . import __version__, quotas
+from . import __version__, quotas, usage
 from .config import Settings
 from .github import GitHubError, Hub
 from .i18n import strings
 from .ping import Scheduler
-from .runner import AGENTS, LocalRepos, Runner, Task, TaskStore, new_id
+from .runner import AGENTS, LocalRepos, Runner, Task, TaskStore, new_id, opencode_models
 
 HERE = Path(__file__).parent
 _md = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table")
@@ -106,6 +106,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         css_v=hashlib.sha256((HERE / "static" / "style.css").read_bytes()).hexdigest()[:10])
     templates.env.filters["md"] = _render_md
     templates.env.filters["dur"] = _duration
+    templates.env.filters["tok"] = usage.human
+    usage_cache: dict = {}
+
+    def token_usage() -> dict:
+        # Reading the logs takes a moment: reuse the result for 5 minutes.
+        if not usage_cache or time.time() - usage_cache["at"] > 300:
+            usage_cache.update(at=time.time(), data=usage.collect(
+                settings.claude_home, settings.codex_home, settings.opencode_db))
+        return usage_cache["data"]
 
     def page(request: Request, name: str, nav: str, **ctx):
         return templates.TemplateResponse(request, name, {"nav": nav, **ctx})
@@ -133,7 +142,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def quotas_page(request: Request):
         return page(request, "quotas.html", "quotas",
                     providers=quotas.by_provider(quotas.all_windows(settings.data_dir, settings.codex_home)),
-                    sched=scheduler,
+                    sched=scheduler, tokens=await asyncio.to_thread(token_usage),
                     sched_results={k: {"age": time.time() - v[0], "ok": v[1], "msg": v[2]}
                                    for k, v in scheduler.results.items()})
 
@@ -149,8 +158,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         projects, _ = await hub.load()
         repos = sorted({p.repo for p in projects})
         local = {r: bool(runner.repos.get(r)) for r in repos}
+        available = runner.agents_available()
+        models = await asyncio.to_thread(opencode_models) if not available["opencode"] else []
         return page(request, "task_new.html", "tasks", repos=repos, selected=repo,
-                    local=local, available=runner.agents_available(),
+                    local=local, available=available, oc_models=models,
                     cloud=settings.cloud_tasks, error=error[:300],
                     has_token=bool(settings.github_token))
 
@@ -164,7 +175,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/tasks")
     async def task_create(request: Request, repo: str = Form(...), where: str = Form(...),
                           title: str = Form(...), details: str = Form(""),
-                          open_pr: str = Form(""), csrf: str = Form("")):
+                          open_pr: str = Form(""), oc_model: str = Form(""), csrf: str = Form("")):
         check_post(request, csrf)
         projects, _ = await hub.load()
         by_repo = {p.repo: p for p in projects}
@@ -205,10 +216,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return back("There is no local clone of this repository on this computer.")
         if runner.busy(repo):
             return back("A task is already running on this repository; wait for it to finish.")
+        model = ""
+        if agent == "opencode":
+            # Only a model OpenCode itself lists is accepted.
+            if oc_model not in await asyncio.to_thread(opencode_models):
+                return back("Choose one of the models OpenCode lists.")
+            model = oc_model
         task_id = new_id(title)
         task = Task(id=task_id, repo=repo, title=title, details=details, agent=agent,
                     where="local", created_at=time.time(), branch=f"baton/{task_id}",
-                    base=by_repo[repo].branch, open_pr=bool(open_pr))
+                    base=by_repo[repo].branch, open_pr=bool(open_pr), model=model)
         runner.start(task)
         return RedirectResponse(f"/tasks/{task.id}", status_code=303)
 

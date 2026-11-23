@@ -128,3 +128,16 @@ footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 1.5
 .log { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .7rem; max-height: 480px; overflow: auto;
   white-space: pre-wrap; font-size: .8rem; }
 .steps { padding-left: 1.1rem; }
+
+.model-select { grid-column: 2; margin-top: .3rem; font: inherit; font-size: .85rem; padding: .25rem .35rem;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink); max-width: 100%; }
+#tokens { margin-top: 2.2rem; }
+.tok-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .8rem; }
+.tok-nums { display: flex; gap: 1.5rem; margin: .6rem 0 .4rem; }
+.tok-nums div { display: flex; flex-direction: column; }
+.tok-nums b { font-size: 1.35rem; }
+.spark { display: flex; align-items: flex-end; gap: 3px; height: 40px; margin: .3rem 0 .4rem; }
+.spark span { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .8; }
+.tok-table { width: 100%; border-collapse: collapse; margin-top: .3rem; }
+.tok-table th, .tok-table td { text-align: left; padding: .15rem .3rem; border-bottom: 1px solid var(--line); }
+.tok-table td:not(:first-child), .tok-table th:not(:first-child) { text-align: right; }

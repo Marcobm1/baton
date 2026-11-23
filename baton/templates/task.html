@@ -6,7 +6,7 @@
 <article class="detail">
   <h2>{{ task.title }} <span class="pill st st-{{ task.status }}">{{ t['st_' ~ task.status] }}</span></h2>
   <p class="c-meta small">{{ task.repo }} ·
-    {% if task.where == 'cloud' %}☁ {{ t.where_cloud }}{% else %}🖥 {{ agents[task.agent] }} · {{ t.branch }} <code>{{ task.branch }}</code>{% endif %}</p>
+    {% if task.where == 'cloud' %}☁ {{ t.where_cloud }}{% else %}🖥 {{ agents[task.agent] }}{% if task.model %} ({{ task.model }}){% endif %} · {{ t.branch }} <code>{{ task.branch }}</code>{% endif %}</p>
   {% if task.message %}<p>{{ task.message }}</p>{% endif %}
   {% if task.pr_url %}<p><a class="btn" href="{{ task.pr_url }}">{{ t.open_pr_link }} ↗</a></p>{% endif %}
   {% if task.issue_url %}<p><a class="btn" href="{{ task.issue_url }}">{{ t.open_issue_link }} ↗</a></p>

@@ -123,6 +123,27 @@ def test_parse_claude_stream_and_hours(tmp_path):
     assert {w.source for w in quotas.claude_statusline_windows(tmp_path)} == {"ping"}
 
 
+def test_parse_claude_stream_exhausted_window(tmp_path):
+    from baton import ping
+    # With the plan used up, Claude Code says "rejected" for that window and
+    # may send no utilization: the window must read 100 % used, not stay stale.
+    rejected = ('{"type":"rate_limit_event","rate_limit_info":{"status":"rejected",'
+                '"resetsAt":1795467600,"rateLimitType":"five_hour","isUsingOverage":false}}')
+    out = ping.parse_claude_stream(rejected)
+    assert out == {"five_hour": {"used_percentage": 100.0, "resets_at": 1795467600}}
+    # A later rejection overrides an earlier reading of the same window.
+    earlier = ('{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","unifiedWindows":'
+               '{"five_hour":{"utilization":0.01,"resetsAt":1795467600},'
+               '"seven_day":{"utilization":0.4,"resetsAt":1795993200}}}}')
+    out = ping.parse_claude_stream(earlier + "\n" + rejected)
+    assert out["five_hour"]["used_percentage"] == 100.0
+    assert round(out["seven_day"]["used_percentage"]) == 40
+    from baton import statusline, quotas
+    statusline.save({"rate_limits": out}, tmp_path, source="ping")
+    used = {w.kind: w.used for w in quotas.claude_statusline_windows(tmp_path)}
+    assert used["5h"] == 100.0 and round(used["week"]) == 40
+
+
 def test_next_task_and_grouping():
     s = parse(GOOD)
     assert s.next_task == "two" and s.tasks_left == 2

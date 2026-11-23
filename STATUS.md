@@ -53,11 +53,14 @@ links:
   finished work is always on GitHub and visible from the phone.
 - 2026-11-23: Claude and Codex quota readings come from local sources. OpenCode Go
   is optional and uses its configured key to query the official usage endpoint.
+- 2026-11-23: Claude units: the status line sends used_percentage as 0-100 and the
+  automatic check sends utilization as a 0-1 fraction; claude-usage.json stores percent.
 - 2026-11-23: cancelling kills the agent's whole process tree, commits/pushes
   nothing, and deletes the worktree + local branch only if the branch is not
   on GitHub (see docs/cancelling-tasks.md).
 
 ## Log
+- 2026-11-23 (claude-code): Claude quota: a used-up window ("rejected" in the automatic check) now reads 100 % used instead of keeping an old reading; quota bars turn red when exhausted and orange when fast. PR #5 closed (it read status line values of 1 % or less as fractions).
 - 2026-11-23 (claude-code): removed the "open a pull request" checkbox: every local task now pushes its branch and opens a PR; test for the three agents.
 - 2026-11-23 (claude-code): task summary panel (combined PRs #3 and #4): the agent ends with a marked report (what, how, why, checks, problems, what you need to know); cloud tasks read it from the issue.
 - 2026-11-23 (claude-code): Cancel task button (kills the process tree, no commit/push, removes worktree and branch); status cancelled/cancelada; tests.

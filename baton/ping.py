@@ -67,7 +67,14 @@ def find_codex() -> str | None:
 
 
 def parse_claude_stream(text: str) -> dict | None:
-    """Return {'five_hour': {...}, 'seven_day': {...}} in status line format."""
+    """Return {'five_hour': {...}, 'seven_day': {...}} in status line format.
+
+    Claude Code reports `utilization` as a fraction (0.31 = 31 %). When a
+    window is used up the event says status "rejected" for that window
+    (rateLimitType) and may carry no utilization at all, so that window is
+    recorded as 100 % used. Later events win over earlier ones.
+    """
+    out: dict = {}
     for line in text.splitlines():
         if '"rate_limit_event"' not in line:
             continue
@@ -75,8 +82,8 @@ def parse_claude_stream(text: str) -> dict | None:
             ev = json.loads(line)
         except json.JSONDecodeError:
             continue
-        windows = (ev.get("rate_limit_info") or {}).get("unifiedWindows") or {}
-        out = {}
+        info = ev.get("rate_limit_info") or {}
+        windows = info.get("unifiedWindows") or {}
         for key in ("five_hour", "seven_day"):
             w = windows.get(key)
             if isinstance(w, dict) and w.get("utilization") is not None:
@@ -85,9 +92,11 @@ def parse_claude_stream(text: str) -> dict | None:
                     "used_percentage": util * 100 if util <= 1 else util,
                     "resets_at": w.get("resetsAt"),
                 }
-        if out:
-            return out
-    return None
+        kind = info.get("rateLimitType")
+        if info.get("status") == "rejected" and kind in ("five_hour", "seven_day"):
+            resets = info.get("resetsAt") or (out.get(kind) or {}).get("resets_at")
+            out[kind] = {"used_percentage": 100.0, "resets_at": resets}
+    return out or None
 
 
 def ping_claude(data_dir: Path, binary: str | None = None, model: str = "haiku",

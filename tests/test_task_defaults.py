@@ -102,5 +102,6 @@ def test_every_local_script_and_stylesheet_is_versioned():
     from pathlib import Path
     templates = Path(web.__file__).parent / "templates"
     for page in templates.glob("*.html"):
-        for ref in re.findall(r'(?:src|href)="(/static/[^"]+\.(?:js|css)[^"]*)"', page.read_text()):
+        text = page.read_text(encoding="utf-8")  # Windows would decode cp1252 by default
+        for ref in re.findall(r'(?:src|href)="(/static/[^"]+\.(?:js|css)[^"]*)"', text):
             assert "?v={{ css_v }}" in ref, f"{page.name}: {ref} would stay cached after an update"

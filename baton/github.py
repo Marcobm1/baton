@@ -408,6 +408,10 @@ class Hub:
             raise GitHubError(f"GitHub did not merge the pull request ({r.status_code}"
                               f"{': ' + why[:200] if why else ''}).")
 
+    def invalidate(self) -> None:
+        """Forget the cached projects, e.g. after a task merged a STATUS.md change."""
+        self._cache = None
+
     async def load(self, force: bool = False) -> tuple[list[Project], list[str]]:
         """Return (projects, errors). Cached for settings.cache_seconds."""
         async with self._lock:

@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Review a historical task and a running task in the web UI
 updated: 2026-11-24
-updated_by: codex
+updated_by: claude
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -138,6 +138,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude): after Baton merges a task it drops its 5-minute project cache, so the ticked STATUS.md item shows at once (before, a just-merged task could still look pending for up to five minutes).
 - 2026-11-24 (codex): Compared official Codex triggers with Baton's Claude issue flow and documented a smoke test. Live submission is pending. Windows suite: 114 passed, two known cancellation cleanup failures.
 - 2026-11-24 (codex): Added Projects and Quotas screenshots with sample data to the README. Checked both rendered image paths and inspected both PNGs. Windows suite: 114 passed, two known cancellation cleanup failures.
 - 2026-11-24 (claude): `Repo: <owner/repo>` in a Next item sends its launch to that repository (badge on the project page, warning if Baton doesn't list it) and the finished task offers to tick it in the origin project; agents are told to add it. Installed the daily index workflow in Marcobm1/proyectos (skips quietly until BATON_TOKEN exists; manual run passed); 116 tests passed.

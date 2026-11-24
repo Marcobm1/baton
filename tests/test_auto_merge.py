@@ -32,6 +32,9 @@ class FakeGitHub:
     def merge(self, repo, number, sha):
         self.merged.append((number, sha))
 
+    def invalidate(self):
+        self.invalidated = getattr(self, "invalidated", 0) + 1
+
 
 def _review_script(verdict, fix=False, rating=None):
     lines = ["import sys", "sys.stdin.read()"]
@@ -134,6 +137,7 @@ def test_opencode_work_is_reviewed_fixed_and_merged(tmp_path, monkeypatch):
     assert "Review fixes by Codex" in files and "FIX.md" in files
     assert len(set(shas)) == 2 and shas[-1] == head          # tests checked again on the fixes
     assert gh.merged == [(9, head)]
+    assert gh.invalidated == 1                               # the project list refreshes at once
     assert gh.comments and "Review by Codex" in gh.comments[0][1]
 
     # The task page shows the review and that it was merged. Without a

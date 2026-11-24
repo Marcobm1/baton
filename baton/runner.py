@@ -733,6 +733,11 @@ class Runner:
             sha = new_sha
         self.github.merge(task.repo, number, sha)
         task.merged = True
+        # The merge usually ticks the task in STATUS.md: show it now, not when
+        # the project cache expires minutes later.
+        invalidate = getattr(self.github, "invalidate", None)
+        if callable(invalidate):
+            invalidate()
         step(f"Merged into {task.base}")
         by = f" after a review by {AGENTS[task.reviewer]}" if task.reviewer else ""
         task.message = f"Done: merged into {task.base}{by}."

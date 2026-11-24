@@ -282,6 +282,8 @@ class Task:
     issue_number: int | None = None
     reviewer: str = ""              # agent that reviewed the work before merging
     review: str = ""                # its report
+    reviewer_model: str = ""        # model the reviewer ran ("" = the CLI's default)
+    reviewer_effort: str = ""       # its reasoning effort, if any
     merged: bool = False
     priority: str = "normal"        # high | normal | low: order in the queue
     started_at: float | None = None  # when it left the queue
@@ -788,6 +790,7 @@ class Runner:
         """Run the reviewer in the task's worktree; returns the commit to merge."""
         task.reviewer = reviewer
         model, effort = self.reviewer_model(reviewer)
+        task.reviewer_model, task.reviewer_effort = model, effort  # saved by step() below
         setup = " · ".join(x for x in (model, effort) if x)
         step(f"Review by {AGENTS[reviewer]}{f' ({setup})' if setup else ''}…")
         rtask = replace(task, agent=reviewer, model=model, effort=effort)

@@ -136,12 +136,13 @@ def test_opencode_work_is_reviewed_fixed_and_merged(tmp_path, monkeypatch):
     assert gh.merged == [(9, head)]
     assert gh.comments and "Review by Codex" in gh.comments[0][1]
 
-    # The task page shows the review and that it was merged.
+    # The task page shows the review and that it was merged. Without a
+    # configured model the heading stays plain: no dangling separator.
     from fastapi.testclient import TestClient
     from baton.config import Settings
     from baton.web import create_app
     html = TestClient(create_app(Settings(data_dir=tmp_path / "data", lang="es"))).get("/tasks/t1").text
-    assert "Revisión de Codex" in html and "fusionada" in html
+    assert '<h3 id="review-title">Revisión de Codex</h3>' in html and "fusionada" in html
 
 
 def test_reviewer_block_leaves_it_open(tmp_path, monkeypatch):
@@ -200,7 +201,15 @@ def test_reviewer_uses_the_configured_model_and_effort(tmp_path, monkeypatch):
     r._agent_cmd = lambda task, wt: (seen.append((task.agent, task.model, task.effort)), agent_cmd(task, wt))[1]
     t = _start(r, store, "opencode")
     assert t.merged and seen[1] == ("claude-code", "opus", "medium")
+    assert t.reviewer_model == "opus" and t.reviewer_effort == "medium"
     assert any("Review by Claude Code (opus · medium)" in s for s in t.steps)
+
+    # The task page shows the reviewer's model and effort next to its name.
+    from fastapi.testclient import TestClient
+    from baton.config import Settings
+    from baton.web import create_app
+    html = TestClient(create_app(Settings(data_dir=tmp_path / "data", lang="es"))).get("/tasks/t1").text
+    assert "Revisión de Claude Code ·" in html and "opus · medium" in html
 
     # A model the CLI doesn't list falls back to the CLI default; a bad effort is dropped.
     r.review_models = {"claude-code": ("opus-9", "medium"), "codex": ("", "turbo")}

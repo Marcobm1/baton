@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Watch the first OpenCode task go through review and auto-merge
 updated: 2026-11-24
-updated_by: claude
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -19,7 +19,7 @@ links:
 ## Next
 - [x] 2026-11-24 Prepare the next editable task from the project page
 - [x] 2026-11-24 Recommended agent/model/effort for drafted tasks, last choice remembered, Spanish STATUS headings, project cards and page redesign
-- [ ] Check on the live page that "Launch next task" preselects the recommended model
+- [x] 2026-11-24 Check on the live page that "Launch next task" preselects the recommended model
   Open a project whose next item has a `Recommended:` line, press Launch next task
   and check the agent, model and effort; then open New task from Tasks and check
   it starts with the last task's choice.
@@ -27,6 +27,7 @@ links:
 - [ ] Watch the first OpenCode task go through review and auto-merge
   Follow a real OpenCode task through review and CI. Check that Baton records
   the verdict on the task page and merges the reviewed commit after tests pass.
+  Recommended: codex, gpt-6.2-sol, medium
 - [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
 - [x] 2026-11-24 Check the project detail on a phone
 - [x] Automatic idle-only self-update with validation, rollback and status on Quotas
@@ -104,6 +105,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): In live Edge, Launch next task matched the Baton recommendation and Tasks > New task matched the latest local task. Both selected Codex, gpt-6.2-astra, low.
 - 2026-11-24 (claude): the self-update rolled back #22 because the new test read templates with Windows' default encoding (cp1252); it now reads UTF-8. Suite checked on Windows before merging.
 - 2026-11-24 (claude): phones kept the old task-form.js after the update (only style.css and theme.js had a version in their URL), so the recommended model was not preselected there; every script and stylesheet URL now carries a version that changes with any of them; test added; 97 tests passed.
 - 2026-11-24 (claude): drafted tasks carry a recommended agent/model/effort that the form preselects; the form remembers the last local choice; prompts list this computer's models; Spanish section headings parsed; cards open the project and launch the next task, project page features the next task; 96 tests passed, checked with screenshots (1440 px and 390 px, light and dark).

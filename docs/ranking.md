@@ -6,8 +6,9 @@ name, or select **Delegation** or **Baton task** to compare one workload.
 
 ## Baton tasks
 
-Every finished local OpenCode or local-AI task gets one entry, including
-failures, cancellations and runs with no changes. Open **Rate** on the task
+Every finished local task gets one entry, including
+failures, cancellations and runs with no changes. A cloud task sent to GitHub
+qualifies once Baton has stored its completion summary. Open **Rate** on the task
 to add your evaluation. The entry links back to the task and shows its model,
 start date (creation date if it never started), assignment, outcome, whether
 Baton merged it, and the review report when present.
@@ -22,14 +23,13 @@ BATON_RATING_END
 ```
 
 Each score must be an integer from 1 to 10 and the comment must contain
-1–500 characters. A missing or invalid block leaves the agent scores blank.
+1–500 characters. A missing or invalid block leaves the individual agent criteria blank.
 The verdict still governs the merge.
 
 On startup Baton imports finished tasks from `tasks.json`. A unique task ID
 links each task to its Ranking entry. The entry, link and any structured agent
 rating are written in one SQLite transaction. Restarting reuses that link and
-preserves human scores. Older free-text reviews appear as written for the
-owner to assess. If a historical record lacks a model name, the page shows
+preserves human scores. Older free-text reviews appear as written. If a historical record lacks a model name, the page shows
 **Model not recorded**. Only new reviews request the structured scores.
 
 ## Delegations
@@ -62,10 +62,31 @@ updates that evaluator's entry. The comment is optional (500 characters).
 | Rework | You could use the result exactly as delivered. |
 
 All three scores are integers from 1 to 10. Each model's criterion averages
-use every submitted review. The human and agent columns average the three
-criteria for that evaluator across rated jobs. Models are sorted by human
-score, then agent score. A missing review leaves a blank score. A job counts
-once as evaluated when either review exists, including when both exist.
+use every submitted review. The chart compares models on a ten-point scale.
+**Agent score** and **Your score** average each evaluator's job scores.
+For **Combined average**, Baton averages both scores on each jointly rated
+job, then averages those pairs by model. For example, agent 7 and human 9
+contribute 8. A second job with only an agent score affects the agent chart
+alone. The model table is ordered by human score, then agent score.
+
+### Historical delivery estimates
+
+If the job has no scored agent review, Baton computes a provisional delivery
+score from the recorded verdict or outcome each time the page loads.
+
+| First available evidence | Score |
+|---|---:|
+| Reviewer verdict APPROVE / FIXED / BLOCK | 9 / 7 / 3 |
+| Merged | 8 |
+| Completed | 6 |
+| Failed or timed out | 2 |
+| Cancelled, no changes, or unfinished, without stronger evidence | Unscored |
+
+The job detail gives the reason for an estimate. This rubric measures delivery
+as recorded, so an infrastructure failure can lower it. It supplies no
+individual criterion grades and never writes a review on a person's or
+agent's behalf. An explicit agent review takes precedence. Each job with at
+least one score counts once in the table.
 
 The CLI and web service share `ranking.sqlite3` in `BATON_DATA_DIR` (default
 `~/.baton`). The history includes the exact model, start time, assignment

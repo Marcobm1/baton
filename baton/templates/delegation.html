@@ -17,8 +17,10 @@
   {% for key in criteria %} · {{ t[key] }} <b>{{ reviews.agent[key] }}</b>{% endfor %}
 </p>
 {% if reviews.agent.comment %}<p>{{ reviews.agent.comment }}</p>{% endif %}
-{% else %}<p class="muted">{{ t.review_pending }}</p>{% endif %}
-<h2>{{ t.human_review }}</h2>
+{% elif estimate[0] is not none %}
+<p><b>{{ estimate[0] }}/10</b> · {{ t.estimated }} · {{ t[estimate[1]] }}</p>
+{% else %}<p class="muted">{{ t.insufficient }}</p>{% endif %}
+<h2 id="your-score">{{ t.human_review }}</h2>
 <p>{{ t.scale }}</p>
 <form class="task-form" method="post" action="/ranking/{{ job.id }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">

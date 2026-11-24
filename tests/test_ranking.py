@@ -35,7 +35,7 @@ def test_reviews_survive_restart(tmp_path, monkeypatch, capsys):
     pending = store.start(model, "summary", "Another job")
     store.finish(pending, "done", "Summary")
     row = store.overview()[0][0]
-    assert row["human"] is None and row["agent"] == 9 and row["evaluated"] == 1
+    assert row["human"] is None and row["agent"] == 7.5 and row["evaluated"] == 2
     url = f"/ranking/{job}"
     with TestClient(create_app(settings)) as web:
         page = web.get(url).text
@@ -54,8 +54,8 @@ def test_reviews_survive_restart(tmp_path, monkeypatch, capsys):
         assert model in restarted.get("/ranking").text
     assert main(args) == 0  # Re-saving the agent rating preserves the human rating.
     row = Ranking(tmp_path).overview()[0][0]
-    assert dict(row) == dict(model=model, evaluated=1, fulfillment=8, correctness=6,
-                             rework=7, agent=9, human=5)
+    assert dict(row) == dict(model=model, evaluated=2, fulfillment=8, correctness=6,
+                             rework=7, agent=7.5, human=5, combined=7)
 
 
 def test_worktree_reviews_collected(tmp_path, monkeypatch):
@@ -85,7 +85,7 @@ def test_failed_delegations(tmp_path, monkeypatch, completed, code, outcome):
     monkeypatch.setattr(delegate.subprocess, "run", run)
     assert delegate.run("provider/model", "prompt", ".", check_model=False) == code
     models, jobs = Ranking(tmp_path).overview()
-    assert jobs[0]["outcome"] == outcome and models[0]["evaluated"] == 0
+    assert jobs[0]["outcome"] == outcome and models[0]["agent"] == 2
 
 @pytest.mark.parametrize("field,value", [("fulfillment", 0), ("correctness", 11), ("rework", True),
                                          ("comment", " "), ("comment", "x" * 501), ("rework", "8")])
@@ -117,10 +117,12 @@ def test_import_filter_and_restart(tmp_path):
     web = TestClient(create_app(settings))
     jobs = ranking.overview("task")[1]
     assert {j["task_id"] for j in jobs} == {r["id"] for r in rows}
-    assert all(not j["agent"] and not j["human"] for j in jobs)
+    assert all(j["human"] is None for j in jobs)
+    assert {j["outcome"]: j["agent"] for j in jobs} == {
+        "done": 6, "no-changes": None, "failed": 2, "cancelled": None}
     job = jobs[0]
     link = f"/ranking/{job['id']}"
-    assert f'href="{link}">Valorar' in web.get(f"/tasks/{job['task_id']}").text
+    assert f'href="{link}#your-score">Valorar' in web.get(f"/tasks/{job['task_id']}").text
     detail = web.get(link).text
     assert "The assignment" in detail and "Sin fusionar" in detail and "&lt;old report&gt;" in detail
     ranking.review(job["id"], "human", 8, 8, 8, "Keep this")
@@ -134,15 +136,38 @@ def test_import_filter_and_restart(tmp_path):
         assert f"<td>{average}.0</td>" in page
 
 
-def test_only_finished_local_model_tasks_count(tmp_path):
+def test_only_finished_tasks_count(tmp_path):
     store = TaskStore(tmp_path)
     task = Task("x", "owner/repo", "Example", "", "opencode", "local", 123)
     for where, agent, status in [("local", "opencode", "queued"), ("local", "local", "running"),
-                                 ("cloud", "opencode", "done"), ("local", "codex", "done")]:
+                                 ("cloud", "claude-code", "sent"), ("local", "codex", "running")]:
         task.where, task.agent, task.status = where, agent, status
         store.save(task)
     assert not store.ranking.overview()[1]
-    task.agent = "opencode"
+    task.status = "done"
     store.save(task)
     store.save(task)
     assert len(store.ranking.overview()[1]) == 1
+
+    cloud = Task("issue", "owner/repo", "Cloud work", "", "claude-code", "cloud", 456,
+                 status="sent", summary="Completed the requested check")
+    store.save(cloud)
+    assert {job["task_id"] for job in store.ranking.overview("task")[1]} == {"x", "issue"}
+
+@pytest.mark.parametrize("view", ["agent", "human", "combined"])
+def test_chart_and_old_task_reviews(tmp_path, view):
+    store = TaskStore(tmp_path)
+    task = Task("a", "owner/repo", "Legacy change", "", "claude-code", "local", 123,
+                status="done", review="Verdict: FIXED", model="example")
+    store.save(task)
+    job = store.record_task(task)
+    web = TestClient(create_app(Settings(data_dir=tmp_path, lang="en")))
+    empty = web.get("/ranking?origin=task&view=combined").text
+    assert "No scores for this view yet." in empty
+    assert "Reviewer made fixes" in web.get(f"/ranking/{job}").text
+    store.ranking.review(job, "human", 9, 9, 9, "")
+    page = web.get(f"/ranking?origin=task&view={view}").text
+    score = {"agent": 7, "human": 9, "combined": 8}[view]
+    assert f'<strong>{score:.1f}<small>/10</small>' in page
+    assert f'view={view}" aria-current="page"' in page
+    assert f'href="/ranking/{job}#your-score">Edit score' in page

@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Watch the first OpenCode task go through review and auto-merge
 updated: 2026-11-24
-updated_by: claude
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,7 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] 2026-11-24 Add historical delivery scores, three ranking charts and per-job rating actions
 - [x] 2026-11-24 Prepare the next editable task from the project page
 - [x] 2026-11-24 Recommended agent/model/effort for drafted tasks, last choice remembered, Spanish STATUS headings, project cards and page redesign
 - [x] 2026-11-24 Check on the live page that "Launch next task" preselects the recommended model
@@ -29,6 +30,7 @@ links:
   Follow a real OpenCode task through review and CI. Check that Baton records
   the verdict on the task page and merges the reviewed commit after tests pass.
   Follow Rate to verify the model, merge outcome and reviewer scores in Ranking.
+  Save a human score and check the three chart views against the job details.
   Recommended: codex, gpt-6.2-sol, medium
 - [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
 - [x] 2026-11-24 Check the project detail on a phone
@@ -108,6 +110,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): Ranking imports finished tasks across agents, labels delivery estimates and charts agent, human and paired scores. Suite: 108 passed, two known Windows cancellation cleanup failures. Live history check pending.
 - 2026-11-24 (claude): reviewer model and effort configurable (BATON_REVIEW_CLAUDE_MODEL/EFFORT, BATON_REVIEW_CODEX_MODEL/EFFORT); Marco's PC reviews with Opus 5.5 at medium effort; values the CLI doesn't list fall back to its default; 107 tests passed.
 - 2026-11-24 (codex): Ranking includes finished OpenCode/local tasks, structured reviewer scores, historical reports and origin filters. Suite: 104 passed; both Windows cancellation cleanup failures also reproduced on the unchanged base. Live review check remains next.
 - 2026-11-24 (codex): In live Edge, Launch next task matched the Baton recommendation and Tasks > New task matched the latest local task. Both selected Codex, gpt-6.2-astra, low.

@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block title %}{{ t.ranking }} · {{ title }}{% endblock %}
 {% block main %}
-<h1>{{ t.ranking }}</h1>
+<div class="page-head ranking-head"><h1>{{ t.ranking }}</h1>
 <form method="get" action="/ranking">
+  <input type="hidden" name="view" value="{{ view }}">
   <label>{{ t.origin }}
     <select name="origin">
       {% for value, label in [('all', t.all_origins), ('delegation', t.delegation), ('task', t.baton_task)] %}
@@ -11,9 +12,26 @@
     </select>
   </label>
   <button type="submit">{{ t.filter_origin }}</button>
-</form>
+</form></div>
 {% if models %}
-<p>{{ t.rank_order }}</p>
+<section class="card score-chart" aria-labelledby="chart-title">
+  <h2 id="chart-title">{{ t.score_chart }}</h2>
+  <nav class="score-switch" aria-label="{{ t.score_chart }}">
+    {% for key, label in [('agent', t.chart_agent), ('human', t.your_score), ('combined', t.combined)] %}
+    <a href="?origin={{ origin }}&amp;view={{ key }}"{% if view == key %} aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  {% if view != 'human' %}<p class="small muted">{{ t.chart_estimates }} {% if view == 'combined' %}{{ t.chart_pairs }}{% endif %}</p>{% endif %}
+  <ul class="score-bars">
+    {% for row in models|rejectattr(view, 'none')|sort(attribute=view, reverse=true) %}
+    <li><span>{{ row.model or t.unknown_model }}</span>
+      <span class="bar" aria-hidden="true"><span class="fill" style="width: {{ row[view] * 10 }}%"></span></span>
+      <strong>{{ '%.1f'|format(row[view]) }}<small>/10</small></strong>
+    </li>
+    {% else %}<li class="muted">{{ t.chart_empty }}</li>{% endfor %}
+  </ul>
+</section>
+<p class="muted small">{{ t.rank_order }}</p>
 <div class="ranking-table">
   <table class="tok-table">
     <thead><tr>
@@ -33,12 +51,16 @@
 <h2>{{ t.rank_entries }}</h2>
 <ul class="task-list">
   {% for job in jobs %}
-  <li class="task-row">
-    <a href="/ranking/{{ job.id }}">#{{ job.id }} · {{ job.model or t.unknown_model }} · {{ t.baton_task if job.task_id else t.delegation }} · {{ job.title if job.task_id else job.kind }}</a>
-    <span>{{ job.started|when }}</span>
-    <span>{{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</span>
-    <span class="muted">{{ t.human_review }} · {{ t.st_done if job.human else t.review_pending }}</span>
-    <span class="muted">{{ t.agent_review }} · {{ t.st_done if job.agent else t.review_pending }}</span>
+  <li class="task-row ranking-entry">
+    <div><a class="task-title" href="/ranking/{{ job.id }}">{{ job.title if job.task_id else job.kind }}</a>
+      <div class="muted small">{{ job.model or t.unknown_model }} · {{ t.baton_task if job.task_id else t.delegation }} · {{ job.started|when }}</div>
+    </div>
+    <span class="pill">{{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</span>
+    <div class="small">{{ t.chart_agent }} · {{ '%.1f'|format(job.agent) if job.agent is not none else '—' }}
+      {% if job.estimate and job.agent is not none %}<small>({{ t.estimated }})</small>{% endif %}
+      <div class="muted">{{ t.your_score }} · {{ '%.1f'|format(job.human) if job.human is not none else t.review_pending }}</div>
+    </div>
+    <a class="btn ghost small" href="/ranking/{{ job.id }}#your-score">{{ t.edit_score if job.human is not none else t.rate_job }}</a>
   </li>
   {% endfor %}
 </ul>

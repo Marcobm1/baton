@@ -5,7 +5,7 @@
 <p><a href="/tasks">← {{ t.tasks_nav }}</a></p>
 <article class="detail">
   <h2>{{ task.title }} <span class="pill st st-{{ task.status }}">{{ t['st_' ~ task.status] }}</span></h2>
-  {% if ranking_job %}<p><a href="/ranking/{{ ranking_job }}">{{ t.rate_job }}</a></p>{% endif %}
+  {% if ranking_job %}<p><a class="btn ghost small" href="/ranking/{{ ranking_job }}#your-score">{{ t.rate_job }}</a></p>{% endif %}
   {% if task.status == 'running' %}
     <p><strong>{{ t.last_step }}</strong> · {{ task.steps|last or t.no_step }}</p>
     <p>{{ report.progress|truncate(240) if report.progress else t.no_progress }}</p>

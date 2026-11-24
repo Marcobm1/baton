@@ -398,3 +398,22 @@ ol.upcoming li:hover .btn.small, ol.upcoming .btn.small:focus-visible { opacity:
   ol.upcoming .draft-row { flex-direction: column; align-items: stretch; gap: .4rem; }
   ol.upcoming .draft-row .btn.small { align-self: flex-end; opacity: 1; }
 }
+
+/* Ranking chart and review actions */
+.ranking-head, .ranking-head form { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
+.score-chart { gap: .85rem; }
+.score-chart h2, .score-chart p { margin: 0; }
+.score-switch { display: flex; align-self: flex-start; flex-wrap: wrap; gap: .2rem; padding: .25rem;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.score-switch a { padding: .45rem .7rem; border-radius: .35rem; color: var(--ink); text-decoration: none; }
+.score-switch a:hover { background: var(--accent-soft); }
+.score-switch a[aria-current] { background: var(--accent); color: var(--on-accent); }
+.score-bars { padding: 0; margin: 0; list-style: none; }
+.score-bars li { display: grid; grid-template-columns: minmax(6rem, 1fr) minmax(3rem, 2fr) auto;
+  align-items: center; gap: .75rem; padding: .5rem 0; overflow-wrap: anywhere; }
+.score-bars li.muted { display: block; }
+.score-bars .bar { height: .65rem; margin: 0; }
+.score-bars strong { font-variant-numeric: tabular-nums; }
+.score-bars small { color: var(--faint); margin-left: .2rem; }
+.ranking-entry > div:first-child { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
+.score-switch a:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }

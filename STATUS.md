@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Watch the first OpenCode task go through review and auto-merge
+next: Verify live OpenCode reviewer scores and charts
 updated: 2026-11-24
 updated_by: codex
 open_source: true
@@ -26,12 +26,13 @@ links:
   it starts with the last task's choice.
   Recommended: codex, gpt-6.2-astra, low
 - [x] 2026-11-24 Include OpenCode and local-AI tasks and their reviews in Ranking
-- [ ] Watch the first OpenCode task go through review and auto-merge
-  Follow a real OpenCode task through review and CI. Check that Baton records
-  the verdict on the task page and merges the reviewed commit after tests pass.
-  Follow Rate to verify the model, merge outcome and reviewer scores in Ranking.
-  Save a human score and check the three chart views against the job details.
-  Recommended: codex, gpt-6.2-sol, medium
+- [x] 2026-11-24 Confirm the first OpenCode review and auto-merge
+- [ ] Verify live OpenCode reviewer scores and charts
+  Follow a new OpenCode delivery with a structured review through CI and
+  auto-merge. Open Rate and compare the model, merge outcome and three reviewer
+  scores with the task. Have Marco save his score and compare all three chart
+  views with the job details.
+  Recommended: codex, gpt-6.2-sol, low
 - [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
 - [x] 2026-11-24 Check the project detail on a phone
 - [x] Automatic idle-only self-update with validation, rollback and status on Quotas
@@ -110,6 +111,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): [PR #16](https://github.com/Marcobm1/baton/pull/16) logged `APPROVE` and merged `17c7bf2` after [CI passed](https://github.com/Marcobm1/baton/actions/runs/45337107945). Rate showed `opencode-go/glm-5.3`, merged, and an estimated 9/10. An isolated form save survived restart and charts matched 6.6 (agent), 8.0 (human) and 8.5 (combined). Local suite: 108 passed, two known Windows cancellation cleanup failures. Live reviewer criteria and Marco's score remain pending.
 - 2026-11-24 (codex): Ranking imports finished tasks across agents, labels delivery estimates and charts agent, human and paired scores. Suite: 108 passed, two known Windows cancellation cleanup failures. Live history check pending.
 - 2026-11-24 (claude): reviewer model and effort configurable (BATON_REVIEW_CLAUDE_MODEL/EFFORT, BATON_REVIEW_CODEX_MODEL/EFFORT); Marco's PC reviews with Opus 5.5 at medium effort; values the CLI doesn't list fall back to its default; 107 tests passed.
 - 2026-11-24 (codex): Ranking includes finished OpenCode/local tasks, structured reviewer scores, historical reports and origin filters. Suite: 104 passed; both Windows cancellation cleanup failures also reproduced on the unchanged base. Live review check remains next.

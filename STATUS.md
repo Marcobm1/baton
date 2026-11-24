@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Load the updater once on Windows and confirm the first scheduled restart in updates.jsonl.
 updated: 2026-11-24
-updated_by: codex
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -48,7 +48,8 @@ links:
 - [ ] Check a live task summary from the web
 - [x] Every local task (Claude Code, Codex, OpenCode, local AI) ends in a pull request; no opt-out checkbox
 - [x] Auto-merge: Claude/Codex PRs merge when tests pass; OpenCode/local AI work and repos without tests get a review (with fixes) by Claude Code or Codex first
-- [ ] Watch the first real auto-merged tasks (one Codex, one OpenCode)
+- [x] First real auto-merges without review: Codex (#10, #12) and Claude Code (#11)
+- [ ] Watch the first OpenCode task go through review and auto-merge
 - [x] Local task queue with priority (high/normal/low), one task per repository, `BATON_MAX_PARALLEL` global limit, change priority or cancel while queued
 - [ ] Queue two real tasks on one repository and check the second starts from the merged result
 - [x] Test: "en" and "es" UI strings have the same keys and no empty text
@@ -76,6 +77,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude-code): installed #10-#12 on Windows by hand (73 tests passed there); this commit is the first one the self-updater should pull and restart on by itself.
 - 2026-11-24 (codex): added native self-update, a CSRF-protected Quotas control and update history. All 11 updater tests passed; two Windows cancellation failures also reproduced on the unchanged base. Live scheduler handoff pending.
 - 2026-11-24 (claude-code): task queue with priority instead of refusing a second task per repository; global limit BATON_MAX_PARALLEL; change priority / cancel while queued; queue survives restarts; en/es texts; docs/task-queue.md; tasks.json reads now take the store lock and the replace retries (Windows "Access denied" race, seen once in 3 runs); 8 new tests, 62 passing 5 runs in a row.
 - 2026-11-24 (codex): added OpenCode Ranking and confirmed both reviews survived a process restart. 52 tests passed; two Windows cancellation tests also failed on the unchanged base.

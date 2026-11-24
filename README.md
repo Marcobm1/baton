@@ -172,8 +172,8 @@ reset with quota left over.
 |---|---|---|
 | **Codex** (CLI, IDE, app) | Read automatically from Codex's own session logs in `~/.codex/sessions` (the `rate_limits` it records). | Updated whenever you use Codex. |
 | **Claude Code** (terminal) | Set Baton as your status line command (below). Claude Code passes `rate_limits.five_hour` and `rate_limits.seven_day` to it, and Baton saves them to `~/.baton/claude-usage.json`. | Claude Code runs status line commands only in the terminal, not in the VS Code extension. Usage on claude.ai counts against the same limits. |
-| **Automatic checks** | Set `BATON_PING_CLAUDE_MINUTES` (and/or `BATON_PING_CODEX_MINUTES`). Every N minutes Baton runs the official CLI with a one-word prompt (`claude -p --model haiku --output-format stream-json --verbose`, `codex exec -`) and records the plan usage it reports. Also `baton ping [claude\|codex\|all]`. | Needs Baton running natively on the computer where the CLIs are logged in (not in Docker). Each check spends a little quota and opens a 5-hour window if none is open; `BATON_PING_HOURS=8-24` keeps it to your waking hours. Baton removes `ANTHROPIC_API_KEY` from the CLI's environment so the check always uses your plan. |
-| **OpenCode Go** | Its documented usage endpoint, `GET https://opencode.ai/inference/go/v1/usage`, only if you set `BATON_OPENCODE_GO_KEY`. | Free to ask; Baton asks at most every 5 minutes, when the page is open. |
+| **Automatic checks** | Set `BATON_PING_CLAUDE_MINUTES` (and/or `BATON_PING_CODEX_MINUTES`); **5-10 keeps the page fresh**. Every N minutes Baton runs the official CLI with a one-word prompt (`claude -p --model haiku --output-format stream-json --verbose`, `codex exec -`) and records the plan usage it reports. A check is skipped when a fresher reading already exists — you just used the CLI, so its status line or session logs already reported usage — which is why even 5-10 minute intervals cost little extra quota. Also `baton ping [claude\|codex\|all]`. | Needs Baton running natively on the computer where the CLIs are logged in (not in Docker). Each check that runs spends a little quota and opens a 5-hour window if none is open; `BATON_PING_HOURS=8-24` keeps it to your waking hours. Baton removes `ANTHROPIC_API_KEY` from the CLI's environment so the check always uses your plan. |
+| **OpenCode Go** | Its documented usage endpoint, `GET https://opencode.ai/inference/go/v1/usage`, only if you set `BATON_OPENCODE_GO_KEY`. | Free to ask; Baton asks at most every 5 minutes while the server runs, so the card is fresh whenever you look (the page also reloads itself every 5 minutes). |
 
 The newest reading of each window wins. Baton never reads or uses your Claude
 or ChatGPT credentials: the CLIs use their own login. (Reading a subscription
@@ -364,6 +364,10 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_EXCLUDE` | — | Skip these repos. |
 | `BATON_LANG` | `en` | `en` or `es`. |
 | `BATON_CACHE_SECONDS` | `300` | Reuse GitHub answers for this long. |
+| `BATON_PING_CLAUDE_MINUTES` | `0` | Minutes between automatic Claude quota checks (0 = off; 5-10 recommended). Skipped when a fresher reading exists. |
+| `BATON_PING_CODEX_MINUTES` | `0` | Same for Codex. |
+| `BATON_PING_HOURS` | — | Only run those checks between these local hours (e.g. `8-24`). |
+| `BATON_PING_MODEL` | `haiku` | Model for the Claude check (the cheapest is enough). |
 | `BATON_STALE_DAYS` | `1` | Threshold for the ⚠ warning. |
 | `BATON_DATA_DIR` | `~/.baton` | Quota readings, tasks, logs and task worktrees. |
 | `BATON_LOCAL_ROOT` | — | Folder that contains your clones (for local tasks). |

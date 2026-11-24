@@ -58,7 +58,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     settings = settings or Settings.from_env()
     hub = Hub(settings)
     scheduler = Scheduler(settings.data_dir, settings.ping_claude_minutes,
-                          settings.ping_codex_minutes, settings.ping_hours, settings.ping_model)
+                          settings.ping_codex_minutes, settings.ping_hours, settings.ping_model,
+                          codex_home=settings.codex_home)
     store = TaskStore(settings.data_dir)
     ranking = Ranking(settings.data_dir)
 
@@ -92,12 +93,18 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(update_requested.wait(), 300)
 
+    def _quota_tick():
+        scheduler.tick()
+        # OpenCode Go's usage endpoint is free to ask: keep that card fresh
+        # even when nobody has the page open (throttled to every 5 minutes).
+        refresh_go()
+
     async def _loop():
         # Check once a minute whether a quota check is due; checks run in a
         # thread so the pages keep answering while a CLI is working.
         while True:
             try:
-                await asyncio.to_thread(scheduler.tick)
+                await asyncio.to_thread(_quota_tick)
             except Exception:  # never let the loop die
                 pass
             await asyncio.sleep(60)
@@ -105,7 +112,10 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(_app):
         await asyncio.to_thread(runner.dispatch)   # the queue left by the last run
-        loop_task = asyncio.create_task(_loop()) if scheduler.enabled else None
+        # The loop keeps every quota source at most ~N minutes old (pings when
+        # enabled, OpenCode Go when a key is set), not only while pages are open.
+        loop_task = (asyncio.create_task(_loop())
+                     if scheduler.enabled or settings.opencode_go_key else None)
         update_task = None
         if updater.enabled:
             loop = asyncio.get_running_loop()

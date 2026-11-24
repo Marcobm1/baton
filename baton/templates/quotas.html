@@ -50,7 +50,7 @@
     {% if sched.claude_minutes and sched.codex_minutes %} · {% endif %}
     {% if sched.codex_minutes %}Codex {{ t.every }} {{ sched.codex_minutes }} {{ t.minutes }}{% endif %}
     {% if sched.hours %} ({{ sched.hours }} h){% endif %}
-    {% for name, r in sched_results.items() %} · {{ name|capitalize }}: {{ t.last_check }} {{ r.age|dur }} {{ t.ago }} {% if r.ok %}✓{% else %}<span class="stale" title="{{ r.msg }}">✗ {{ r.msg }}</span>{% endif %}{% endfor %}
+    {% for name, r in sched_results.items() %} · {{ name|capitalize }}: {{ t.last_check }} {{ r.age|dur }} {{ t.ago }} {% if r.ok %}<span title="{{ r.msg }}">✓</span>{% else %}<span class="stale" title="{{ r.msg }}">✗ {{ r.msg }}</span>{% endif %}{% endfor %}
   {% else %}{{ t.auto_off }}{% endif %}
 </p>
 

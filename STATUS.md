@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Check how Codex cloud tasks can be triggered
+next: Review a historical task and a running task in the web UI
 updated: 2026-11-24
 updated_by: codex
 open_source: true
@@ -62,12 +62,12 @@ links:
 - [x] Separate pages: Projects, Tasks, Quotas
 - [x] Local tasks on this computer (Claude Code, Codex, local AI) in git worktrees, ending in a PR
 - [x] Remote access through Tailscale Serve
-- [ ] Check how Codex cloud tasks can be triggered
-  Compare the official Codex GitHub integration guide with Baton's issue-based
-  cloud task flow. Record which triggers are documented and how to test any
-  proposed trigger before adding it to the task form.
-  Recommended: codex, gpt-6.2-sol, low
-- [ ] Codex cloud tasks (only documented from PR comments; test first)
+- [x] 2026-11-24 Check how Codex cloud tasks can be triggered
+  Recorded the [documented triggers and smoke test](docs/codex-cloud-tasks.md).
+- [ ] (Marco) Validate a Codex cloud implementation trigger
+  Use a connected test repository and the intended Baton GitHub identity for
+  the [smoke test](docs/codex-cloud-tasks.md#smoke-test). Record the task and
+  delivery links, or the observed failure, before adding a form option.
 - [x] OpenCode as a local agent, with any model it lists
 - [x] Select model and supported reasoning effort for local Claude Code and Codex tasks
 - [x] Tokens spent per day/week, per app and model (Quotas page)
@@ -76,6 +76,13 @@ links:
 - [x] `baton delegate`: subtasks for OpenCode models, read-only by default
 - [x] State-specific task details and Claude model access, quota and other error guidance
 - [ ] Review a historical task and a running task in the web UI
+  Open the completed task for [PR #29](https://github.com/Marcobm1/baton/pull/29)
+  and a running task in Baton's Tasks page. Check the report and PR link on the
+  completed task and the active step and cancel control on the running task.
+  If no task is running, use the [task report fixture](tests/test_task_report.py)
+  for the active step and the [web cancellation test](tests/test_runner.py)
+  for the control.
+  Recommended: codex, gpt-6.2-sol, low
 - [x] Cancel a running task from its page
 - [ ] Try cancelling a real agent task on Windows (check Task Manager afterwards)
 - [x] Show the agent's completion summary on local and cloud task pages (PRs #3 + #4 combined)
@@ -96,9 +103,12 @@ links:
   Recommended: claude-code, opus, high
 
 ## Blockers
+- Adding a Codex cloud form option depends on the live test above.
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-24: a Codex cloud form option needs a live implementation task and a
+  retrievable result from the intended trigger ([test plan](docs/codex-cloud-tasks.md)).
 - 2026-11-24: a Next item can run in another repository with a `Repo:` line; the origin project keeps the checklist item, ticked from the finished task's page.
 - 2026-11-24: an agent task can be ticked from the web when it was already done or is no longer needed; Baton commits STATUS.md like an agent would (date prefix, `next` moved, YAML-safe), refusing stale pages.
 - 2026-11-24: owner checkboxes use a version-checked GitHub Contents commit. Follow-ups read the finished task by ID (docs/project-detail.md).
@@ -128,6 +138,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): Compared official Codex triggers with Baton's Claude issue flow and documented a smoke test. Live submission is pending. Windows suite: 114 passed, two known cancellation cleanup failures.
 - 2026-11-24 (codex): Added Projects and Quotas screenshots with sample data to the README. Checked both rendered image paths and inspected both PNGs. Windows suite: 114 passed, two known cancellation cleanup failures.
 - 2026-11-24 (claude): `Repo: <owner/repo>` in a Next item sends its launch to that repository (badge on the project page, warning if Baton doesn't list it) and the finished task offers to tick it in the origin project; agents are told to add it. Installed the daily index workflow in Marcobm1/proyectos (skips quietly until BATON_TOKEN exists; manual run passed); 116 tests passed.
 - 2026-11-24 (claude): "Mark as done" for agent tasks in STATUS.md (project page, and on a finished task whose item is still unchecked, e.g. after "no changes"); ticks with today's date and moves `next`; 115 tests passed.

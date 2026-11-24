@@ -228,3 +228,51 @@ def test_owner_actions(tmp_path, monkeypatch, agent_task):
     assert writes[0]["branch"] == "release" and writes[0]["sha"] == project.status_sha
     assert base64.b64decode(writes[0]["content"]).decode() == source.replace("* [ ]", "* [x]")
     assert client.post(endpoint, data=data).status_code == 409
+
+
+def test_mark_agent_task_done(tmp_path, monkeypatch):
+    import datetime as dt
+    from baton.runner import Task, TaskStore
+    source = ("---\nname: Hub\nstatus: active\nupdated: 2026-11-24\nnext: Future phase\n---\n"
+              "## Next\n- [ ] Future phase\n  Nothing left.\n- [ ] (Marco) Rate it\n"
+              "- [ ] Ranking: export CSV\n- [x] Old\n").replace("\n", "\r\n")
+    project = Project("u/hub", "u/hub", "STATUS.md", "main", False, "", None, parse(source))
+    writes = []
+
+    async def load(self, force=False):
+        return [project], []
+
+    def github(request):
+        writes.append(json.loads(request.content))
+        return httpx.Response(200)
+
+    monkeypatch.setattr(Hub, "load", load)
+    monkeypatch.setattr(Hub, "_client", lambda self: httpx.AsyncClient(
+        base_url="https://api.github.com", transport=httpx.MockTransport(github)))
+    TaskStore(tmp_path).save(Task(id="t1", repo="u/hub", title="Future phase", details="", agent="codex",
+                                  where="local", created_at=1.0, status="no-changes", finished_at=2.0))
+    client = TestClient(create_app(Settings(data_dir=tmp_path, lang="es")))
+
+    # The finished task offers to tick its STATUS.md item.
+    page = client.get("/tasks/t1").text
+    assert "sigue sin marcar en el STATUS.md de Hub" in page and "Marcar como hecha" in page
+    form = re.search(r'<form method="post" action="(/p/u/hub/check)".*?</form>', page, re.S)
+    data = dict(re.findall(r'name="(\w+)" value="([^"]+)"', form[0]))
+    assert data["back"] == "/tasks/t1"
+    assert client.post(form[1], data={**data, "csrf": "wrong"}).status_code == 403
+    owner_line = next(i.line for i in project.status.sections.owner_actions)
+    assert client.post(form[1], data={**data, "line": owner_line}).status_code == 409   # not an agent task
+    assert client.post(form[1], data={**data, "sha": "stale"}).status_code == 409
+    assert not writes
+    response = client.post(form[1], data=data, follow_redirects=False)
+    assert response.status_code == 303 and response.headers["location"] == "/tasks/t1"
+    written = base64.b64decode(writes[0]["content"]).decode()
+    today = dt.date.today().isoformat()
+    assert f"- [x] {today} Future phase\r\n  Nothing left.\r\n" in written
+    assert 'next: "Ranking: export CSV"\r\n' in written           # quoted: the title has ": "
+    assert written.count("[ ]") == 2 and "Marcar" not in writes[0]["message"]
+    assert parse(written).next == "Ranking: export CSV" and not parse(written).problems
+
+    # The project page offers it too, for the featured task and the rest.
+    page = client.get("/p/u/hub").text
+    assert page.count('action="/p/u/hub/check"') == 2

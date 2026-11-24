@@ -393,7 +393,7 @@ ol.upcoming .btn.small { opacity: .8; }
 ol.upcoming li:hover .btn.small, ol.upcoming .btn.small:focus-visible { opacity: 1; }
 .preset-note { margin: .2rem 0 .5rem; color: var(--ok); }
 .preset-note.last { color: var(--muted); }
-.draft-main > span, .draft-main > details { flex: 1 1 10rem; min-width: 0; }
+.draft-main > span:not(.badge), .draft-main > details { flex: 1 1 10rem; min-width: 0; }
 @media (max-width: 640px) {
   ol.upcoming .draft-row { flex-direction: column; align-items: stretch; gap: .4rem; }
   ol.upcoming .draft-row .btn.small { align-self: flex-end; opacity: 1; }
@@ -431,3 +431,10 @@ ol.upcoming li:hover .btn.small, ol.upcoming .btn.small:focus-visible { opacity:
 .toast.hide { opacity: 0; visibility: hidden; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, .5rem); } }
 .toast:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+/* Mark a Next item as done (already done, or no longer needed). */
+.inline-form { display: inline-flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin: 0; }
+.next-up-actions, .row-actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.row-actions .inline-form .btn { opacity: .75; }
+.pending-item { margin: .6rem 0 .9rem; padding: .7rem .85rem; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); background: color-mix(in srgb, var(--warn) 7%, var(--panel)); }
+.pending-item p { margin: 0 0 .5rem; }

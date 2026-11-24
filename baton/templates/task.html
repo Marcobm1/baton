@@ -5,7 +5,19 @@
 <p><a href="/tasks">← {{ t.tasks_nav }}</a></p>
 <article class="detail">
   <h2>{{ task.title }} <span class="pill st st-{{ task.status }}">{{ t['st_' ~ task.status] }}</span></h2>
-  {% if task.finished %}<a class="btn" href="/tasks/new?followup={{ task.id|urlencode }}">{{ t.continue_task }}</a>{% endif %}
+  {% if pending %}
+  <div class="pending-item">
+    <p class="small">{{ t.still_pending|format(pending.project.status.name) }}</p>
+    <form method="post" action="/p/{{ pending.project.id }}/check" class="inline-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="line" value="{{ pending.item.line }}">
+      <input type="hidden" name="sha" value="{{ pending.project.status_sha }}">
+      <input type="hidden" name="back" value="/tasks/{{ task.id|urlencode }}">
+      <button type="submit" class="btn">✓ {{ t.mark_item_done }}</button>
+      <a class="btn ghost" href="/tasks/new?followup={{ task.id|urlencode }}">{{ t.continue_task }}</a>
+    </form>
+  </div>
+  {% elif task.finished %}<a class="btn" href="/tasks/new?followup={{ task.id|urlencode }}">{{ t.continue_task }}</a>{% endif %}
   {% if ranking_job %}<p><a class="btn ghost small" href="/ranking/{{ ranking_job }}#your-score">{{ t.rate_job }}</a></p>{% endif %}
   {% if task.status == 'running' %}
     <p><strong>{{ t.last_step }}</strong> · {{ task.steps|last or t.no_step }}</p>

@@ -233,6 +233,25 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             raise HTTPException(502, str(exc)) from exc
         return RedirectResponse(f"/p/{quote(pid)}", status_code=303)
 
+    @app.post("/p/{pid:path}/check")
+    async def item_done(request: Request, pid: str, line: int = Form(...), sha: str = Form(...),
+                        csrf: str = Form(""), back: str = Form("")):
+        """Mark an agent task in STATUS.md as done (it was already done, or a
+        task ended without changes because there was nothing left to do)."""
+        check_post(request, csrf)
+        projects, _ = await hub.load()
+        project = next((p for p in projects if p.id == pid), None)
+        if project is None:
+            raise HTTPException(404, "Unknown project")
+        try:
+            await hub.complete_item(project, line, sha)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (GitHubError, httpx.RequestError) as exc:
+            raise HTTPException(502, str(exc)) from exc
+        target = back if back.startswith("/") and not back.startswith("//") else f"/p/{quote(pid)}"
+        return RedirectResponse(target, status_code=303)
+
     # --------------------------------------------------------------- quotas
     @app.get("/quotas", response_class=HTMLResponse)
     async def quotas_page(request: Request):
@@ -356,7 +375,20 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             except (GitHubError, httpx.RequestError):
                 report_error = True
         log = store.read_log(task.id)
-        return page(request, "task.html", "tasks", task=task, report=task_report(task, log),
+        # A finished task whose item is still unchecked in STATUS.md (typical
+        # after "no changes": it was already done) can be ticked from here.
+        pending = None
+        if task.finished and task.status != "cancelled":
+            projects, _ = await hub.load()
+            for project in projects:
+                if project.repo.casefold() != task.repo.casefold():
+                    continue
+                item = next((i for i in project.status.sections.upcoming
+                             if i.title.casefold() == task.title.strip().casefold()), None)
+                if item:
+                    pending = {"project": project, "item": item}
+                    break
+        return page(request, "task.html", "tasks", task=task, report=task_report(task, log), pending=pending,
                     log="\n".join(log.splitlines()[-200:]), can_cancel=runner.can_cancel(task.id),
                     report_error=report_error, ranking_job=store.record_task(task), queue=runner.queue_info().get(task.id),
                     priorities=PRIORITIES)

@@ -3,6 +3,14 @@
 {% block main %}
 {% set s = p.status %}
 {% import "_macros.html" as m with context %}
+{% macro check_form(item, label, cls, title='') -%}
+  <form method="post" action="/p/{{ p.id }}/check" class="inline-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="line" value="{{ item.line }}">
+    <input type="hidden" name="sha" value="{{ p.status_sha }}">
+    <button type="submit" class="{{ cls }}"{% if title %} title="{{ title }}" aria-label="{{ title }}: {{ item.title }}"{% endif %}>{{ label }}</button>
+  </form>
+{%- endmacro %}
 <div class="page-head">
   <p><a href="/">← {{ t.back }}</a></p>
   <a class="btn ghost small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
@@ -73,7 +81,10 @@
     </div>
     <p class="next-up-title">{{ next_title }}</p>
     {% if next_detail %}<pre class="next-up-detail">{{ next_detail }}</pre>{% endif %}
-    <a class="btn" href="{{ m.draft_href(p, next_title, next_detail, next_rec) }}">{{ t.launch_next }} →</a>
+    <div class="next-up-actions">
+      <a class="btn" href="{{ m.draft_href(p, next_title, next_detail, next_rec) }}">{{ t.launch_next }} →</a>
+      {% if first %}{{ check_form(first, '✓ ' ~ t.mark_item_done, 'btn ghost') }}{% endif %}
+    </div>
   </section>
   {% endif %}
 
@@ -85,7 +96,10 @@
       <div class="draft-main">{% if item.detail %}<details><summary>{{ item.title }}</summary><pre>{{ item.detail }}</pre></details>
         {% else %}<span>{{ item.title }}</span>{% endif %}
         {{ m.rec_badge(item.recommended) }}</div>
-      <a class="btn small" href="{{ m.draft_href(p, item.title, item.detail, item.recommended) }}">{{ t.launch_task }}</a>
+      <div class="row-actions">
+        {{ check_form(item, '✓', 'btn ghost small icon', t.mark_item_done) }}
+        <a class="btn small" href="{{ m.draft_href(p, item.title, item.detail, item.recommended) }}">{{ t.launch_task }}</a>
+      </div>
     </li>
     {% endfor %}
     </ol>

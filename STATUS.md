@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Future phase for native ChatGPT and Claude model rankings
+next: Prepare the daily INDEX.md workflow in the hub repository
 updated: 2026-11-24
 updated_by: claude
 open_source: true
@@ -48,7 +48,7 @@ links:
 - [x] OpenCode delegation ranking with separate agent and human reviews
 - [x] 2026-11-24 Visual redesign: sidebar / phone tab bar, Auto-Light-Dark theme, WCAG AA colour tokens
 - [x] (Marco) Rate a real delegation from the CLI and web
-- [ ] Future phase for native ChatGPT and Claude model rankings
+- [x] 2026-11-24 Future phase for native ChatGPT and Claude model rankings
 - [x] STATUS.md format and parser
 - [x] Web page with projects and quota panel
 - [x] Docker + README instructions

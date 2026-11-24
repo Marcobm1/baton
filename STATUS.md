@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Prepare the daily INDEX.md workflow in the hub repository
+next: Screenshots in the README
 updated: 2026-11-24
 updated_by: claude
 open_source: true
@@ -55,7 +55,7 @@ links:
 - [x] Tested on Marco's Windows PC: native (gh login) and Docker (public repos without token)
 - [x] (Marco) Use Baton for a few days and give feedback
 - [x] (Marco) Configure the `BATON_TOKEN` secret for the daily hub index workflow
-- [ ] Prepare the daily INDEX.md workflow in the hub repository
+- [x] 2026-11-24 Prepare the daily INDEX.md workflow in the hub repository
 - [x] Automatic Claude/Codex quota checks via the official CLIs (`baton ping`, scheduler)
 - [ ] Screenshots in the README
 - [x] "New task" form: GitHub issue for @claude (Claude Code GitHub Action)
@@ -94,6 +94,7 @@ links:
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-24: a Next item can run in another repository with a `Repo:` line; the origin project keeps the checklist item, ticked from the finished task's page.
 - 2026-11-24: an agent task can be ticked from the web when it was already done or is no longer needed; Baton commits STATUS.md like an agent would (date prefix, `next` moved, YAML-safe), refusing stale pages.
 - 2026-11-24: owner checkboxes use a version-checked GitHub Contents commit. Follow-ups read the finished task by ID (docs/project-detail.md).
 - 2026-11-24: the reviewer's model and effort come from settings, checked against the CLI's own list; an unknown value falls back to the CLI default so a typo can't block every merge (docs/auto-merge.md).
@@ -122,6 +123,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude): `Repo: <owner/repo>` in a Next item sends its launch to that repository (badge on the project page, warning if Baton doesn't list it) and the finished task offers to tick it in the origin project; agents are told to add it. Installed the daily index workflow in Marcobm1/proyectos (skips quietly until BATON_TOKEN exists; manual run passed); 116 tests passed.
 - 2026-11-24 (claude): "Mark as done" for agent tasks in STATUS.md (project page, and on a finished task whose item is still unchecked, e.g. after "no changes"); ticks with today's date and moves `next`; 115 tests passed.
 - 2026-11-24 (claude): verified live: OpenCode tasks #30 and #31 were reviewed by Claude Code (opus · medium) with structured scores 9/9/10 and 10/10/10, merged after CI, and Ranking shows them (9.3 and 10.0); GLM 5.3 human average 7.4 matches the five saved human scores.
 - 2026-11-24 (codex): added owner actions and editable task follow-ups. All 16 project-detail and task-default tests passed with simulated GitHub writes. Full suite: 112 passed; both Windows cancellation cleanup failures reproduced on the unchanged base.

@@ -343,6 +343,13 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         initial = task_defaults.initial_choice(
             {"agent": agent, "model": model, "effort": effort}, store.all(),
             available, catalogs, models)
+        # A draft can name another repository (Repo: line); match its letter case
+        # to the listed one, or warn instead of silently picking another.
+        listed = {r.casefold(): r for r in repos}
+        repo_missing = ""
+        if repo and repo not in repos:
+            repo = listed.get(repo.casefold(), repo)
+            repo_missing = "" if repo in repos else repo
         if original and original.repo not in repos:
             raise HTTPException(409, "The original repository is unavailable. Refresh the projects list.")
         if original and original.where == "cloud":
@@ -356,7 +363,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                     cloud=settings.cloud_tasks, error=error[:300], auto_merge=settings.auto_merge,
                     has_token=bool(settings.github_token), priorities=PRIORITIES,
                     max_parallel=settings.max_parallel, draft_title=title, draft_details=details,
-                    initial=initial, followup=followup, details_limit=details_limit)
+                    initial=initial, followup=followup, details_limit=details_limit,
+                    repo_missing=repo_missing)
 
     @app.get("/tasks/{task_id}", response_class=HTMLResponse)
     async def task_detail(request: Request, task_id: str):
@@ -380,11 +388,12 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         pending = None
         if task.finished and task.status != "cancelled":
             projects, _ = await hub.load()
+            here = task.repo.casefold()
             for project in projects:
-                if project.repo.casefold() != task.repo.casefold():
-                    continue
+                # Its own repository, or another project's item that runs here (Repo: line).
                 item = next((i for i in project.status.sections.upcoming
-                             if i.title.casefold() == task.title.strip().casefold()), None)
+                             if i.title.casefold() == task.title.strip().casefold()
+                             and here in (project.repo.casefold(), i.repo.casefold())), None)
                 if item:
                     pending = {"project": project, "item": item}
                     break

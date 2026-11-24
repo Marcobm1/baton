@@ -143,7 +143,10 @@ NEXT_TASK_REQUEST = (
     "Prefix owner-only actions with (Marco). Find links in tasks.json or on GitHub yourself. "
     "Prepare the first unchecked agent task under ## Next so an agent can do it independently. Reuse or add "
     "a short title and an indented description of the work and how to check it. "
-    "A provisional draft is fine. Set the front matter next field to that title."
+    "A provisional draft is fine. Set the front matter next field to that title. "
+    "If that task must be done in another repository, add a line `Repo: <owner/repo>` to its "
+    "description. If this task belongs in another repository, say so in your report instead "
+    "of changing files outside this one."
 )
 
 RECOMMEND_REQUEST = (

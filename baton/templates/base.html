@@ -2,24 +2,76 @@
 <html lang="{{ lang }}">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   {% block refresh %}<meta http-equiv="refresh" content="300">{% endblock %}
   <title>{% block title %}{{ title }}{% endblock %}</title>
+  {# Runs before the first paint, so a saved theme never flashes the other one. #}
+  <script>
+    (function () {
+      var d = document.documentElement, theme = "auto";
+      d.classList.add("js");
+      try { theme = localStorage.getItem("baton-theme") || "auto"; } catch (e) {}
+      if (theme === "light" || theme === "dark") d.dataset.theme = theme;
+    })();
+  </script>
   <link rel="stylesheet" href="/static/style.css?v={{ css_v }}">
   {% block styles %}{% endblock %}
 </head>
 <body>
-  <header class="top">
-    <a class="brand" href="/"><span class="mark">◆</span> {{ title }}</a>
-    <nav>
-      <a href="/" {% if nav == 'projects' %}aria-current="page"{% endif %}>{{ t.projects }}</a>
-      <a href="/tasks" {% if nav == 'tasks' %}aria-current="page"{% endif %}>{{ t.tasks_nav }}</a>
-      <a href="/quotas" {% if nav == 'quotas' %}aria-current="page"{% endif %}>{{ t.quotas }}</a>
-      <a href="/ranking" {% if nav == 'ranking' %}aria-current="page"{% endif %}>{{ t.ranking }}</a>
+{% macro icon(name) -%}
+<svg class="icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor"
+     stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+{%- if name == 'projects' %}<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>
+{%- elif name == 'tasks' %}<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/>
+{%- elif name == 'quotas' %}<path d="M4 15a8 8 0 1 1 16 0"/><path d="M12 15l4-5"/><path d="M4 19h16"/>
+{%- elif name == 'ranking' %}<path d="M5 20V11M12 20V5M19 20v-6"/><path d="M3 20h18"/>
+{%- elif name == 'auto' %}<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>
+{%- elif name == 'light' %}<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>
+{%- elif name == 'dark' %}<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>
+{%- endif %}</svg>
+{%- endmacro %}
+{% set sections = [('projects', '/', t.projects), ('tasks', '/tasks', t.tasks_nav),
+                   ('quotas', '/quotas', t.quotas), ('ranking', '/ranking', t.ranking)] %}
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="/">
+      <span class="mark" aria-hidden="true">◆</span>
+      <span class="brand-text"><span class="brand-name">{{ title }}</span><span class="brand-version">v{{ version }}</span></span>
+    </a>
+    <p class="side-label">{{ t.nav_panel }}</p>
+    <nav class="side-nav" aria-label="{{ t.nav_panel }}">
+      {% for key, href, label in sections %}
+      <a href="{{ href }}" {% if nav == key %}aria-current="page"{% endif %}>{{ icon(key) }}<span>{{ label }}</span></a>
+      {% endfor %}
     </nav>
+    <div class="side-foot">
+      <p class="side-label">{{ t.theme }}</p>
+      <div class="theme-switch" role="group" aria-label="{{ t.theme }}">
+        {% for key in ['auto', 'light', 'dark'] %}
+        <button type="button" data-theme-choice="{{ key }}" aria-pressed="false" title="{{ t['theme_' ~ key] }}">
+          {{ icon(key) }}<span>{{ t['theme_' ~ key] }}</span></button>
+        {% endfor %}
+      </div>
+      <p class="side-meta">Baton {{ version }} · <a href="https://github.com/Marcobm1/baton">GitHub</a></p>
+    </div>
+  </aside>
+
+  <header class="mobile-top">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true">◆</span><span class="brand-name">{{ title }}</span></a>
+    <button type="button" class="theme-cycle" data-theme-cycle aria-label="{{ t.theme }}">
+      <span data-when="auto">{{ icon('auto') }}</span><span data-when="light">{{ icon('light') }}</span><span data-when="dark">{{ icon('dark') }}</span>
+    </button>
   </header>
+
   <main>{% block main %}{% endblock %}</main>
-  <footer>Baton {{ version }} · <a href="https://github.com/Marcobm1/baton">github.com/Marcobm1/baton</a></footer>
+
+  <nav class="tab-bar" aria-label="{{ t.nav_panel }}">
+    {% for key, href, label in sections %}
+    <a href="{{ href }}" {% if nav == key %}aria-current="page"{% endif %}>{{ icon(key) }}<span>{{ label }}</span></a>
+    {% endfor %}
+  </nav>
+</div>
+<script src="/static/theme.js?v={{ css_v }}" defer></script>
 </body>
 </html>

@@ -31,6 +31,11 @@ Baton runs on your own computer. It only talks to the GitHub API with your
 read-only token, and reads quota data from local files. Nothing is sent
 anywhere else.
 
+The page has a light and a dark theme: **Auto** follows your system, or pick
+**Light** or **Dark** in the sidebar (on a phone, the button at the top right).
+The choice is remembered by that browser. On a phone the sections are in a tab
+bar at the bottom. See [`docs/design.md`](docs/design.md).
+
 ## Quick start (Docker)
 
 ```bash

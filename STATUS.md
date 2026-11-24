@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Watch the first OpenCode task go through review and auto-merge.
 updated: 2026-11-24
-updated_by: opencode
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -22,6 +22,7 @@ links:
 - [x] Automatic idle-only self-update with validation, rollback and status on Quotas
 - [x] 2026-11-24 Confirm the first live self-update and scheduled restart on Windows
 - [x] OpenCode delegation ranking with separate agent and human reviews
+- [x] 2026-11-24 Visual redesign: sidebar / phone tab bar, Auto-Light-Dark theme, WCAG AA colour tokens
 - [ ] Rate a real delegation from the CLI and web
 - [ ] Future phase for native ChatGPT and Claude model rankings
 - [x] STATUS.md format and parser
@@ -60,6 +61,7 @@ links:
 - None.
 
 ## Decisions
+- 2026-11-24: one design system with colour tokens for light and dark; theme Auto/Light/Dark stored per browser and applied before the first paint; phone tab bar, desktop sidebar (docs/design.md).
 - 2026-11-24: project detail combines repository activity with each project's own Next checklist. Undated completions keep their source order after dated history (docs/project-detail.md).
 - 2026-11-24: the updater reserves the idle queue until validation and restart finish; Windows relaunches the scheduled task after the server PID exits (docs/self-update.md).
 - 2026-11-23: the page reads STATUS.md from GitHub (not local folders), so it
@@ -80,6 +82,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude-code): visual redesign (control-panel style), sidebar on desktop and tab bar on phones, Auto/Light/Dark theme without flash, colour tokens with WCAG AA tests; checked with screenshots in both themes at 1440 px and 390 px.
 - 2026-11-24 (opencode): confirmed the first live self-update on Windows: c34eb76→16a9f3a validated 05:20Z and running 05:21Z; two more updates (→551150c, →82b9604) pulled, pytest-validated and restarted themselves through the Baton scheduled task; server on 82b9604, up to date, clean checkout.
 - 2026-11-24 (codex): the owner confirmed the project detail and prefilled task draft worked on mobile. The Windows self-update check is next.
 - 2026-11-24 (codex): added structured project details and editable checklist drafts. All six detail tests passed, including cached GitHub failure and token-free views. Full suite: 77 passed, two known Windows cancellation cleanup failures. Phone and live PR check pending.

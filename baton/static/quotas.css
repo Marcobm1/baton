@@ -1,5 +1,5 @@
-.quotas { background: var(--bg); }
-.quotas .q-logo { vertical-align: middle; margin-right: .35em; object-fit: contain; }
-@media (prefers-color-scheme: dark) {
-  .quotas .q-logo { filter: invert(1); }
-}
+/* Quota page extras. Colours come from the tokens in style.css. */
+.quotas .q-logo { vertical-align: middle; margin-right: .45em; object-fit: contain; }
+.quota[data-provider="claude"] .q-row:not(.v-fast):not(.v-exhausted) .bar .fill { background: var(--claude); }
+.quota[data-provider="codex"] .q-row:not(.v-fast):not(.v-exhausted) .bar .fill { background: var(--openai); }
+.quota[data-provider="opencode"] .q-row:not(.v-fast):not(.v-exhausted) .bar .fill { background: var(--opencode); }

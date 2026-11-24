@@ -353,8 +353,10 @@ The task form is protected against cross-site requests (a per-run secret in
 the form and an Origin check), so another website open in your browser can't
 start tasks through Baton.
 
-Codex in the cloud: OpenAI documents `@codex` mentions in pull request
-comments, not in issues, so Baton doesn't create Codex cloud tasks yet.
+For Codex, the GitHub integration documents reviews on pull requests. Baton's
+cloud option launches Claude through GitHub issues. See
+[Codex cloud triggers and the test plan](docs/codex-cloud-tasks.md) for ways to
+start Codex work and the evidence needed before adding a Codex option.
 
 ## Subtasks for cheaper models: `baton delegate`
 

@@ -61,3 +61,12 @@ state of each head commit in a paginated GraphQL query. Concurrent visitors
 share the result in the Hub for the configured `BATON_CACHE_SECONDS`. This
 optional query needs GitHub read access to pull requests and their checks.
 Without a token or when the request fails, the page omits the PR list.
+
+## Layout (2026-11-24)
+
+The project page was getting long, so it is split: a compact header (name,
+summary, links, progress and a blockers warning), "Your turn" and "Right now"
+when they have something, then three tabs: **Next** (the next task with its
+description and the next five, the rest folded), **Done** (10 per page) and
+**Notes** (blockers, decisions, log and the full STATUS.md). Descriptions are
+rendered as Markdown; relative links point to the file on GitHub.

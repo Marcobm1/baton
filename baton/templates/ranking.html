@@ -27,7 +27,7 @@
 </script>
 {% endif %}
 {% import "_macros.html" as m with context %}
-{% set base = {'origin': origin, 'view': view, 'tab': tab, 'model': model} %}
+{% set base = {'origin': origin, 'view': view, 'tab': tab, 'model': model, 'real': 1 if real else none} %}
 {% macro q(changes) -%}?{{ base|combine(changes)|dictsort|selectattr(1)|list|urlencode }}{%- endmacro %}
 {% macro score(value) -%}{{ '%.1f'|format(value) if value is not none else '—' }}{%- endmacro %}
 
@@ -60,7 +60,11 @@
       {% endfor %}
     </nav>
   </div>
-  <p class="small muted">{{ t['view_help_' ~ view] }}</p>
+  <div class="board-options">
+    <p class="small muted">{{ t['view_help_' ~ view] if not real else t.view_help_real }}</p>
+    <a class="chip toggle" href="{{ q({'real': none if real else 1, 'page': none}) }}" role="switch" aria-checked="{{ 'true' if real else 'false' }}"
+       {% if real %}aria-current="true"{% endif %}>{{ '☑' if real else '☐' }} {{ t.only_reviewed }}</a>
+  </div>
   {% if rows|rejectattr(view, 'none')|list|length == 0 %}<p class="muted">{{ t.chart_empty }}</p>{% endif %}
   <ol class="board">
     {% for row in rows %}
@@ -111,7 +115,25 @@
         <span title="{{ t.chart_agent }}">{{ t.agent_short }} <strong>{{ score(job.agent) }}</strong>{% if job.estimate and job.agent is not none %}<sup title="{{ t.estimated }}">*</sup>{% endif %}</span>
         <span title="{{ t.your_score }}">{{ t.you_short }} <strong>{{ score(job.human) }}</strong></span>
       </div>
-      <a class="btn {{ 'ghost ' if job.human is not none }}small" href="/ranking/{{ job.id }}?origin={{ origin }}&amp;view={{ view }}#your-score">{{ t.edit_score if job.human is not none else t.rate_job }}</a>
+      {% if job.human is not none %}
+      <a class="btn ghost small" href="/ranking/{{ job.id }}?origin={{ origin }}&amp;view={{ view }}#your-score">{{ t.edit_score }}</a>
+      {% else %}
+      <details class="quick-rate">
+        <summary class="btn small">{{ t.rate_job }}</summary>
+        <form method="post" action="/ranking/{{ job.id }}">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="origin" value="{{ origin }}"><input type="hidden" name="view" value="{{ view }}">
+          <input type="hidden" name="back" value="/ranking{{ q({}) }}">
+          {% for key in ('fulfillment', 'correctness', 'rework') %}
+          <label>{{ t[key] }}
+            <select name="{{ key }}" required><option value="">–</option>{% for n in range(10, 0, -1) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}</select>
+          </label>
+          {% endfor %}
+          <button type="submit" class="btn small">{{ t.save_score }}</button>
+          <a class="small" href="/ranking/{{ job.id }}?origin={{ origin }}&amp;view={{ view }}#your-score">{{ t.full_review }} →</a>
+        </form>
+      </details>
+      {% endif %}
     </li>
     {% else %}<li class="muted">{{ t.no_pending if tab == 'pending' else t.no_rank_entries }}</li>{% endfor %}
   </ul>

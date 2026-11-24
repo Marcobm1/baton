@@ -496,3 +496,35 @@ ol.upcoming li:hover .btn.small, ol.upcoming .btn.small:focus-visible { opacity:
   .board-scores, .board-meta { grid-column: 2; }
   .kpis { grid-template-columns: 1fr 1fr; }
 }
+
+/* Ranking: rate a job without leaving the list */
+.quick-rate > summary { list-style: none; cursor: pointer; }
+.quick-rate > summary::-webkit-details-marker { display: none; }
+.quick-rate[open] { flex-basis: 100%; order: 9; }
+.quick-rate[open] > summary { display: none; }
+.quick-rate form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .6rem .9rem; padding: .7rem .8rem;
+  margin-top: .3rem; border-radius: 8px; background: color-mix(in srgb, var(--accent) 6%, var(--panel-2)); }
+.quick-rate label { display: flex; flex-direction: column; gap: .2rem; font-size: .78rem; color: var(--muted); }
+.quick-rate select { min-width: 4.2rem; }
+.board-options { display: flex; justify-content: space-between; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.board-options p { margin: 0; flex: 1 1 20rem; }
+.chip.toggle { white-space: nowrap; }
+.repo-chips { margin: .5rem 0 .2rem; }
+
+/* Project page: header, owner box and tabs */
+.project-head { display: grid; gap: .35rem; }
+.project-head h2, .project-head p { margin: 0; }
+.owner-box { margin-top: 1rem; padding: .75rem .95rem; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); background: color-mix(in srgb, var(--warn) 6%, var(--panel)); }
+.owner-box h3 { margin: 0 0 .3rem; }
+.owner-row { display: flex; justify-content: space-between; align-items: flex-start; gap: .8rem; }
+.owner-text { flex: 1; min-width: 0; }
+.now-box { margin-top: 1rem; }
+.project-tabs { margin: 1.3rem 0 .2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.next-up-detail.md p { margin: .2rem 0; }
+.draft-main .md { margin: .35rem 0 .2rem; color: var(--muted); }
+details.more { margin-top: .4rem; }
+details.more > summary { cursor: pointer; color: var(--accent); font-size: .9rem; padding: .3rem 0; }
+.notes-list li { margin: .25rem 0; }
+.next-up-detail { color: var(--muted); font-size: .9rem; line-height: 1.5; margin: 0 0 .8rem; }
+.chip .warn-count { background: color-mix(in srgb, var(--warn) 25%, var(--panel-2)); }

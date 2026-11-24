@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import re
 import secrets
 import time
 from pathlib import Path
@@ -35,6 +36,16 @@ from .runner import (AGENTS, PRIORITIES, NEXT_TASK_REQUEST, SUMMARY_REQUEST, nex
 
 HERE = Path(__file__).parent
 _md = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table")
+
+
+_relative_link = re.compile(r"\]\((?![a-zA-Z][a-zA-Z0-9+.-]*:|#|/)([^)\s]+)\)")
+
+
+def _render_repo_md(text: str, p) -> str:
+    """Markdown from a STATUS.md: relative links point to the file on GitHub."""
+    base = f"https://github.com/{p.repo}/blob/{p.branch}/"
+    folder = p.path.rsplit("/", 1)[0] + "/" if "/" in p.path else ""
+    return _render_md(_relative_link.sub(lambda m: f"]({base}{folder}{m[1]})", text or ""))
 
 
 def _render_md(text: str) -> str:
@@ -167,6 +178,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             f.read_bytes() for f in sorted((HERE / "static").glob("*")) if f.suffix in (".css", ".js")
         )).hexdigest()[:10])
     templates.env.filters["md"] = _render_md
+    templates.env.filters["repo_md"] = _render_repo_md
     templates.env.filters["dur"] = _duration
     templates.env.filters["ordinal"] = lambda n: ordinal(n, settings.lang)
     templates.env.filters["tok"] = usage.human
@@ -205,7 +217,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                     errors=errors, no_token=not settings.github_token, running=running)
 
     @app.get("/p/{pid:path}", response_class=HTMLResponse)
-    async def project(request: Request, pid: str):
+    async def project(request: Request, pid: str, tab: Literal["next", "done", "notes"] = "next",
+                      page_number: int = Query(1, alias="page")):
         projects, _ = await hub.load()
         for p in projects:
             if p.id == pid:
@@ -213,10 +226,12 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                 tasks = [task for task in store.all() if task.repo.casefold() == p.repo.casefold()]
                 active = sorted((task for task in tasks if task.status in ("running", "queued")),
                                 key=lambda task: (task.status == "queued", queue_key(task)))
-                return page(request, "project.html", "projects", p=p, content=content,
+                finished = finished_items(content, tasks)
+                return page(request, "project.html", "projects", p=p, content=content, tab=tab,
                             upcoming=content.upcoming, checked=sum(item.checked for item in content.checklist),
-                            finished=finished_items(content, tasks), active=active,
-                            queue=runner.queue_info(), pulls=await hub.open_pulls(p.repo))
+                            finished=finished, done_page=ranking_view.paginate(finished, page_number, 10),
+                            notes=len(content.blockers) + len(content.decisions) + len(content.log),
+                            active=active, queue=runner.queue_info(), pulls=await hub.open_pulls(p.repo))
         raise HTTPException(404, "Unknown project")
 
     @app.post("/p/{pid:path}/done")
@@ -275,14 +290,16 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     def ranking_page(request: Request, origin: Literal["all", "delegation", "task"] = "all",
                      view: Literal["agent", "human", "combined"] = "agent", saved: int = 0,
                      tab: Literal["all", "pending"] = "all", model: str | None = None,
-                     page_number: int = Query(1, alias="page")):
+                     real: int = 0, page_number: int = Query(1, alias="page")):
         models, jobs = ranking.overview(origin)
+        if real:
+            models, jobs = ranking_view.without_estimates(models, jobs)
         rows = ranking_view.leaderboard(models, jobs, view)
         if model is not None and model not in {r["model"] for r in rows}:
             model = None
         listed = ranking_view.job_list(jobs, tab, model)
         return page(request, "ranking.html", "ranking", models=models, rows=rows, origin=origin,
-                    view=view, saved=bool(saved), tab=tab, model=model,
+                    view=view, saved=bool(saved), tab=tab, model=model, real=bool(real),
                     selected_label=ranking_view.model_label(model or ""),
                     stats=ranking_view.summary(rows, jobs, view),
                     pending_count=len(ranking_view.job_list(jobs, "pending", model)),
@@ -304,28 +321,40 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                      correctness: int = Form(..., ge=1, le=10), rework: int = Form(..., ge=1, le=10),
                      comment: str = Form("", max_length=500),
                      origin: Literal["all", "delegation", "task"] = Form("all"),
-                     view: Literal["agent", "human", "combined"] = Form("agent")):
+                     view: Literal["agent", "human", "combined"] = Form("agent"),
+                     back: str = Form("")):
         check_post(request, csrf)
         try:
             ranking.review(job, "human", fulfillment, correctness, rework, comment)
         except KeyError:
             raise HTTPException(404, "Unknown delegation")
-        # Back to the list (same filter and view), with a one-time confirmation.
+        # Back to the list (same filter, view and page), with a one-time confirmation.
+        if back.startswith("/ranking?") or back == "/ranking":
+            sep = "&" if "?" in back else "?"
+            return RedirectResponse(f"{back}{sep}saved=1#jobs", status_code=303)
         return RedirectResponse(f"/ranking?origin={origin}&view={view}&saved=1", status_code=303)
 
     # ---------------------------------------------------------------- tasks
     @app.get("/tasks", response_class=HTMLResponse)
     async def tasks_page(request: Request,
                          status: Literal["all", "done", "no-changes", "failed", "cancelled", "sent"] = "all",
-                         page_number: int = Query(1, alias="page")):
+                         repo: str = "", page_number: int = Query(1, alias="page")):
         tasks = store.all()
         active = [x for x in tasks if x.status in ("queued", "running")]
         history = [x for x in tasks if x.status not in ("queued", "running")]
+        repos = {}
+        for x in history:
+            repos[x.repo] = repos.get(x.repo, 0) + 1
+        if repo not in repos:
+            repo = ""
+        if repo:
+            history = [x for x in history if x.repo == repo]
         counts = {key: sum(x.status == key for x in history)
                   for key in ("done", "no-changes", "failed", "cancelled", "sent")}
         if status != "all":
             history = [x for x in history if x.status == status]
         return page(request, "tasks.html", "tasks", tasks=tasks, active=active, status=status,
+                    repo=repo, repos=dict(sorted(repos.items(), key=lambda kv: -kv[1])),
                     counts={k: v for k, v in counts.items() if v}, total=sum(counts.values()),
                     history=ranking_view.paginate(history, page_number, ranking_view.PER_PAGE_TASKS),
                     queue=runner.queue_info(), any_running=bool(active))

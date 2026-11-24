@@ -2,9 +2,20 @@
 {% block title %}{{ p.status.name }} · {{ title }}{% endblock %}
 {% block main %}
 {% set s = p.status %}
+{% macro draft(title, detail, label) %}
+  {% set description = detail or t.provisional_details|format(title) %}
+  {% if p.path != 'STATUS.md' %}{% set description = p.path ~ '\n\n' ~ description %}{% endif %}
+  <a class="btn small" href="/tasks/new?{{ {'repo': p.repo, 'title': title, 'details': description}|urlencode }}">{{ label }}</a>
+{% endmacro %}
 <div class="page-head">
   <p><a href="/">← {{ t.back }}</a></p>
-  <a class="btn small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
+  {% if upcoming %}
+    {{ draft(upcoming[0].title, upcoming[0].detail, t.create_next) }}
+  {% elif s.next %}
+    {{ draft(s.next, '', t.create_next) }}
+  {% else %}
+    <a class="btn small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
+  {% endif %}
 </div>
 <article class="detail project-detail prio-{{ s.priority }}{% if p.blocked %} blocked{% endif %}">
   <h2>{{ s.name }} <span class="badge prio">{{ t[s.priority] }}</span> <span class="badge">{{ t[s.status] }}</span>
@@ -12,7 +23,7 @@
   {% if p.blocked %}<p class="blocked-note">🔒 {{ t.blocked_by }}: {{ p.blocked_by|join(', ') }}</p>{% endif %}
   {% if s.parent %}<p class="muted small">{{ t.subproject_of }} {{ s.parent }}</p>{% endif %}
   {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
-  {% if s.next %}<p class="c-next"><span class="label">{{ t.next }}</span> {{ s.next }}</p>{% endif %}
+  {% if upcoming or s.next %}<p class="c-next"><span class="label">{{ t.next }}</span> {{ upcoming[0].title if upcoming else s.next }}</p>{% endif %}
   <p class="c-meta small">
     {% if p.stale %}<span class="stale">⚠ {{ t.stale }}</span><br>{% endif %}
     {{ t.updated }} {{ s.updated or '?' }}{% if s.updated_by %} {{ t.by }} {{ s.updated_by }}{% endif %}
@@ -52,7 +63,7 @@
     <div class="project-row draft-row">
       <div>{% if item.detail %}<details><summary>{{ item.title }}</summary><pre>{{ item.detail }}</pre></details>
         {% else %}{{ item.title }}{% endif %}</div>
-      <a class="btn small" href="/tasks/new?{{ {'repo': p.repo, 'title': item.title, 'details': item.detail}|urlencode }}">{{ t.launch_task }}</a>
+      {{ draft(item.title, item.detail, t.launch_task) }}
     </div>
     {% endfor %}
   </section>

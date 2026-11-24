@@ -8,9 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from baton.config import Settings
-from baton.github import Hub
+from baton.github import Hub, Project
 from baton.project_detail import sections
 from baton.runner import AGENTS, Runner, Task, TaskStore
+from baton.status import parse
 from baton.web import create_app
 
 
@@ -19,6 +20,9 @@ name: Project
 status: active
 updated: 2026-11-24
 ---
+## Done recently
+- 2023-02-01 First release
+
 Next:
 =====
 * [ ] Fix "A&B"
@@ -87,19 +91,43 @@ def test_dashboard_without_token(tmp_path, monkeypatch, lang):
     assert "foreign-job" not in page and 'href="/tasks/active-job"' in page
     assert 'href="/tasks/queued-job"' in page and ("en cola, 1" if lang == "es" else "queued, 1") in page
     assert page.index("completed-job") < page.index("Older milestone") < page.index("older-job-9")
-    assert page.index("older-job-2") < page.index("(2)</summary>") < page.index("older-job-1")
+    assert page.index("Older milestone") < page.index("First release") < page.index("older-job-9")
+    assert page.index("older-job-3") < page.index("(3)</summary>") < page.index("older-job-2")
     # Text from STATUS.md and agents is escaped; the only scripts are Baton's own.
     assert "Result &lt;script&gt;" in page and "Result <script>" not in page
     assert "Use <script> & check" not in page
     assert 'href="https://github.com/u/demo/pull/7"' in page
     assert '<details class="full-status">' in page and "---\nname: Project" in page
-    url = re.search(r'href="(/tasks/new\?[^"]*details=[^"]*)"', page)[1]
+    label = "Crear siguiente tarea" if lang == "es" else "Create next task"
+    url = re.search(r'href="(/tasks/new\?[^"]+)">' + label + r'</a>', page)[1]
     form = client.get(html.unescape(url))
     assert form.status_code == 200
     assert '<option value="u/demo" selected>' in form.text
     assert 'value="Fix &#34;A&amp;B&#34;"' in form.text
     assert '>Use &lt;script&gt; &amp; check.\nSecond line.</textarea>' in form.text
+    legacy_url = re.search(r'href="(/tasks/new\?[^"]*title=No\+detail[^"]*)"', page)[1]
+    legacy_form = client.get(html.unescape(legacy_url))
+    assert re.search(r'<textarea[^>]*>[^<]*No detail[^<]+</textarea>', legacy_form.text)
     assert len(store.all()) == 14
+
+
+def test_hub_project_with_only_front_matter_next(tmp_path, monkeypatch):
+    path = "projects/report/STATUS.md"
+    project = Project("u/hub/report", "u/hub", path, "main", False, "", None,
+                      parse("---\nname: Report\nstatus: active\nupdated: 2026-11-24\nnext: Export CSV\n---"))
+
+    async def load(self, force=False):
+        return [project], []
+
+    monkeypatch.setattr(Hub, "load", load)
+    monkeypatch.setattr(Hub, "open_pulls", lambda self, repo: asyncio.sleep(0, result=[]))
+    client = TestClient(create_app(Settings(data_dir=tmp_path)))
+    assert 'href="/p/u/hub/report"' in client.get("/").text
+    page = client.get("/p/u/hub/report").text
+    url = re.search(r'href="(/tasks/new\?[^"]+)">Create next task</a>', page)[1]
+    form = client.get(html.unescape(url)).text
+    assert '<option value="u/hub" selected>' in form and 'value="Export CSV"' in form
+    assert path in form and "Export CSV" in form.split("<textarea", 1)[1]
 
 
 @pytest.mark.parametrize("success", [True, False])

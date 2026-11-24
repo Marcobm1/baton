@@ -34,8 +34,9 @@ of truth for where the project stands.
     (`claude-code`, `codex`, `chatgpt`, `human`, ...), `next` = the next
     concrete step. Change `status` or `priority` only when the owner decides it;
   - tick finished tasks (`- [x]`) and add new ones (`- [ ]`) under "Next";
-    give each item a short title and indent optional instructions,
-    prerequisites and acceptance checks below it for the task form.
+    for an ongoing project, make the first unchecked item the next task.
+    Give it a short title and an indented description of the work and how to
+    verify it, even if provisional. Set `next` to the same title.
     Prefix completed titles with YYYY-MM-DD when the date is known;
   - update "Blockers" and "Decisions" if they changed;
   - add one line at the top of "Log": `- YYYY-MM-DD (tool): what changed`.

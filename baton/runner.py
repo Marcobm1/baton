@@ -135,6 +135,13 @@ def opencode_models() -> list[str]:
     _models_cache = (time.time(), models)
     return models
 
+NEXT_TASK_REQUEST = (
+    "When you finish a task, mark its checklist item complete in the project's STATUS.md. "
+    "For an ongoing project, prepare the first unchecked item under ## Next: reuse or add "
+    "a short title and an indented description of the work and how to check it. "
+    "A provisional draft is fine. Set the front matter next field to that title."
+)
+
 SUMMARY_REQUEST = (
     "Finish with a report for the owner, in the language required by the project's "
     "instructions or otherwise in the language of the task. Explain in plain language "
@@ -221,6 +228,7 @@ Rules:
 - First read the repository's AGENTS.md or CLAUDE.md and STATUS.md, and follow them.
 - Do the task. Keep the change focused on it.
 - Update STATUS.md as the repository's rules say (updated_by: {agent}).
+- {next_task_request}
 - Do NOT commit, push, switch branches or rewrite history: when you finish,
   Baton commits everything in this folder and opens a pull request.
 - If the task is unclear, needs secrets, or would need anything destructive or
@@ -803,7 +811,7 @@ class Runner:
     def _prompt(self, task: Task) -> str:
         return PROMPT.format(repo=task.repo, branch=task.branch, base=task.base,
                              agent=task.agent, title=task.title, summary_request=SUMMARY_REQUEST,
-                             details=task.details or "(no more details)")
+                             next_task_request=NEXT_TASK_REQUEST, details=task.details or "(no more details)")
 
     def _run(self, task: Task) -> None:
         def step(msg: str) -> None:

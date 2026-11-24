@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Review a historical task and a running task in the web UI
+next: Diagnose Windows cancellation cleanup failures
 updated: 2026-11-24
-updated_by: claude
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -75,7 +75,7 @@ links:
 - [x] 2026-11-24 Faster quota updates: 5-10 min automatic checks that skip when a newer reading exists, OpenCode Go refreshed in the background
 - [x] `baton delegate`: subtasks for OpenCode models, read-only by default
 - [x] State-specific task details and Claude model access, quota and other error guidance
-- [ ] Review a historical task and a running task in the web UI
+- [x] 2026-11-24 Review a historical task and a running task in the web UI
   Open the completed task for [PR #29](https://github.com/Marcobm1/baton/pull/29)
   and a running task in Baton's Tasks page. Check the report and PR link on the
   completed task and the active step and cancel control on the running task.
@@ -84,9 +84,20 @@ links:
   for the control.
   Recommended: codex, gpt-6.2-sol, low
 - [x] Cancel a running task from its page
-- [ ] Try cancelling a real agent task on Windows (check Task Manager afterwards)
+- [ ] Diagnose Windows cancellation cleanup failures
+  Run the two cancellation tests in [test_runner.py](tests/test_runner.py) on
+  Windows with their temporary repositories. Check whether the agent and its
+  child exit and whether Git removes the worktree and branch. Record the
+  failing command and exit code, or document a clean reproduction if both pass.
+  Recommended: codex, gpt-6.2-sol, medium
+- [ ] (Marco) Try cancelling a real agent task on Windows (check Task Manager afterwards)
+  Use a disposable task. Cancel it from its Tasks detail page, then confirm
+  the page says Cancelled and the agent and its children exit in Task Manager.
+  See [cancellation behavior](docs/cancelling-tasks.md).
 - [x] Show the agent's completion summary on local and cloud task pages (PRs #3 + #4 combined)
-- [ ] Check a live task summary from the web
+- [x] 2026-11-24 Check a live task summary from the web
+  The [PR #29](https://github.com/Marcobm1/baton/pull/29) task shows a saved
+  report with Summary and Checks.
 - [x] Every local task (Claude Code, Codex, OpenCode, local AI) ends in a pull request; no opt-out checkbox
 - [x] Auto-merge: Claude/Codex PRs merge when tests pass; OpenCode/local AI work and repos without tests get a review (with fixes) by Claude Code or Codex first
 - [x] First real auto-merges without review: Codex (#10, #12) and Claude Code (#11)
@@ -138,6 +149,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): Checked the saved report and merged [PR #29](https://github.com/Marcobm1/baton/pull/29) link in Tasks. This running review showed the Codex step and the cancel button with confirmation. Windows suite: 117 passed, two known cancellation cleanup failures.
 - 2026-11-24 (claude): Ranking "Reviewed scores only" toggle and rating from the list; Tasks filter by repository; project page split into Next / Done / Notes tabs with a compact header, Markdown descriptions with GitHub links; 119 tests passed; screenshots checked at 1440 and 390 px.
 - 2026-11-24 (claude): Ranking redesign (summary tiles, one leaderboard with agent/you/average per model and readable names, sample counts and a few-scores warning, filter by model, 8 jobs per page with All/To rate tabs, origin chips); Tasks page keeps running and queued tasks on top and pages the history (10 per page) with status filters; 117 tests passed; checked with screenshots at 1440 and 390 px in both themes.
 - 2026-11-24 (claude): after Baton merges a task it drops its 5-minute project cache, so the ticked STATUS.md item shows at once (before, a just-merged task could still look pending for up to five minutes).

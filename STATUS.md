@@ -17,6 +17,10 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] 2026-11-24 Show the reviewer's model and effort on the task page
+  Saved on the task when the review starts and shown next to "Review by"
+  (for example "opus · medium"); with nothing configured the heading stays
+  plain. Suite: 111 passed on Windows.
 - [x] 2026-11-24 Saving a personal rating returns to the Ranking list with a confirmation toast
   The form keeps the origin filter and chart view; the message fades out and
   never repeats after a page reload. Suite: 111 passed on Windows.
@@ -117,6 +121,10 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (opencode): the task page shows the reviewer's model and effort
+  (for example "opus · medium") next to "Review by Claude Code/Codex"; both are
+  saved on the task when the review starts, and nothing configured keeps the
+  heading plain; 111 tests passed on Windows.
 - 2026-11-24 (opencode): saving a personal rating on Ranking now returns to the
   list (origin filter and chart view kept) with a one-time "valoración guardada"
   toast that fades out and disappears from the URL; 111 tests passed on Windows.

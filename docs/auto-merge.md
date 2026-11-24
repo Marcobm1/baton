@@ -22,7 +22,9 @@ Codex work directly, OpenCode work only after Claude Code or Codex reviewed it.
 - **Reviewer model:** `BATON_REVIEW_CLAUDE_MODEL` / `_EFFORT` and
   `BATON_REVIEW_CODEX_MODEL` / `_EFFORT` (2026-11-24). Empty uses each CLI's
   own default. A model or effort the CLI doesn't list is ignored (CLI default)
-  rather than making the review fail and leaving the PR open.
+  rather than making the review fail and leaving the PR open. The model and
+  effort the review runs with are saved on the task when it starts and shown
+  on its page next to "Review by" (2026-11-24).
 - **Fixes.** Marco chose "the reviewer fixes it" over "leave it open": the
   reviewer edits the same worktree, Baton commits `Review fixes by …`, pushes,
   and the tests must pass again on the new commit. One review round only.

@@ -44,7 +44,7 @@
   {% endif %}
   {% if task.reviewer %}
   <section class="task-review" aria-labelledby="review-title">
-    <h3 id="review-title">{{ t.task_review }} {{ agents.get(task.reviewer, task.reviewer) }}</h3>
+    <h3 id="review-title">{{ t.task_review }} {{ agents.get(task.reviewer, task.reviewer) }}{% if task.reviewer_model or task.reviewer_effort %} · <span class="muted small">{{ [task.reviewer_model, task.reviewer_effort] | select | join(" · ") }}</span>{% endif %}</h3>
     {% if task.review %}<div class="md">{{ task.review|md|safe }}</div>
     {% else %}<p class="muted">{{ t.summary_missing }}</p>{% endif %}
   </section>

@@ -115,3 +115,7 @@ it checks for changes to commit. The same delegation ID survives collection.
 Why: the chart and the table repeated the same numbers, and estimated scores
 (8.0 for every merged task) looked as solid as reviewed ones. Showing the
 counts next to each average makes that visible without hiding the estimates.
+
+**More options (2026-11-24):** "Reviewed scores only" leaves estimates out of
+every average (`?real=1`), and a job waiting for your score can be rated from
+the list itself (three selects and Save); "With comment" opens the full form.

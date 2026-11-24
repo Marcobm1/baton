@@ -188,3 +188,48 @@ def test_tasks_and_ranking_are_paged(tmp_path, monkeypatch):
     assert pending.count('class="task-row ranking-entry"') == 7          # 23 jobs: 8 + 8 + 7
     only = client.get("/ranking?model=gpt-a").text
     assert "All models" in only
+
+
+def test_ranking_options_quick_rate_and_repo_filter(tmp_path, monkeypatch):
+    from baton.ranking import Ranking
+
+    async def load(self, force=False):
+        return [], []
+
+    monkeypatch.setattr(Hub, "load", load)
+    store = runner_mod.TaskStore(tmp_path)
+    for i, repo in enumerate(["u/a", "u/a", "u/b"]):
+        store.save(Task(id=f"t{i}", repo=repo, title=f"Task {i}", details="", agent="codex", where="local",
+                        created_at=1.0 + i, status="done", finished_at=2.0 + i, merged=True, model="gpt-a"))
+    client = TestClient(web.create_app(Settings(data_dir=tmp_path, lang="en")))
+    board = client.get("/ranking").text
+    assert "Reviewed scores only" in board and "8.0" in board          # merged = estimated 8
+    real = client.get("/ranking?real=1").text
+    assert "Only scores from a real review" in real and 'aria-checked="true"' in real
+    assert re.search(r'class="metric main">.*?<span class="metric-value">—</span>', real, re.S)
+
+    # Rate from the list and come back to the same list.
+    page = client.get("/ranking?tab=pending&real=1").text
+    form = re.search(r'<details class="quick-rate">.*?</details>', page, re.S)[0]
+    data = dict(re.findall(r'name="(\w+)" value="([^"]*)"', form))
+    action = re.search(r'action="([^"]+)"', form)[1]
+    back = html.unescape(data["back"])
+    assert back.startswith("/ranking?") and "real=1" in back and "tab=pending" in back
+    saved = client.post(action, data={**data, "back": back, "fulfillment": 9, "correctness": 8, "rework": 7},
+                        follow_redirects=False)
+    assert saved.status_code == 303 and saved.headers["location"] == back + "&saved=1#jobs"
+    assert Ranking(tmp_path).overview()[0][0]["human"] == 8.0
+    assert client.post(action, data={**data, "back": "https://evil.test/", "fulfillment": 9, "correctness": 8,
+                                     "rework": 7}, follow_redirects=False).headers["location"].startswith("/ranking?origin=")
+
+    tasks = client.get("/tasks?repo=u/b").text
+    assert "Task 2" in tasks and "Task 0" not in tasks and "All repositories" in tasks
+
+
+def test_status_markdown_links_point_to_github():
+    from types import SimpleNamespace
+    from baton.web import _render_repo_md
+    p = SimpleNamespace(repo="u/hub", branch="main", path="projects/x/STATUS.md")
+    out = _render_repo_md("See [the doc](docs/a.md), [web](https://e.org) and [x](javascript:alert(1)).", p)
+    assert 'href="https://github.com/u/hub/blob/main/projects/x/docs/a.md"' in out
+    assert 'href="https://e.org"' in out and 'href="javascript' not in out and "blob/main/projects/x/javascript" not in out

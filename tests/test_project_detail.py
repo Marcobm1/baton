@@ -91,14 +91,19 @@ def test_dashboard_without_token(tmp_path, monkeypatch, lang):
     assert '<progress value="1" max="3">' in page
     assert "foreign-job" not in page and 'href="/tasks/active-job"' in page
     assert 'href="/tasks/queued-job"' in page and ("en cola, 1" if lang == "es" else "queued, 1") in page
-    assert page.index("completed-job") < page.index("Older milestone") < page.index("older-job-9")
-    assert page.index("Older milestone") < page.index("First release") < page.index("older-job-9")
-    assert page.index("older-job-3") < page.index("(3)</summary>") < page.index("older-job-2")
+    # Finished work is its own tab, 10 per page, newest first.
+    done = client.get("/p/u/demo?tab=done").text
+    assert "completed-job" not in page and "completed-job" in done
+    assert done.index("completed-job") < done.index("Older milestone") < done.index("older-job-9")
+    assert done.index("Older milestone") < done.index("First release") < done.index("older-job-9")
+    assert "older-job-3" in done and "older-job-2" not in done
+    assert "older-job-2" in client.get("/p/u/demo?tab=done&page=2").text
     # Text from STATUS.md and agents is escaped; the only scripts are Baton's own.
-    assert "Result &lt;script&gt;" in page and "Result <script>" not in page
+    assert "Result &lt;script&gt;" in done and "Result <script>" not in done
     assert "Use <script> & check" not in page
-    assert 'href="https://github.com/u/demo/pull/7"' in page
-    assert '<details class="full-status">' in page and "---\nname: Project" in page
+    assert 'href="https://github.com/u/demo/pull/7"' in done
+    notes = client.get("/p/u/demo?tab=notes").text
+    assert '<details class="full-status">' in notes and "---\nname: Project" in notes
     label = "Lanzar siguiente tarea →" if lang == "es" else "Launch next task →"
     url = re.search(r'href="(/tasks/new\?[^"]+)">' + label + r'</a>', page)[1]
     form = client.get(html.unescape(url))
@@ -215,7 +220,7 @@ def test_owner_actions(tmp_path, monkeypatch, agent_task):
         assert any("Export+CSV" in url for url in links) == agent_task
         assert ("Lanzar siguiente tarea" in page) == agent_task
     assert project.status.next_task == ("Export CSV" if agent_task else "")
-    forms = re.findall(r'<form class="project-row".*?</form>', page, re.S)
+    forms = re.findall(r'<form class="project-row owner-row".*?</form>', page, re.S)
     assert len(forms) == 2
     data = dict(re.findall(r'name="(\w+)" value="([^"]+)"', forms[1]))
     endpoint = "/p/u/hub/sub/done"

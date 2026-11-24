@@ -83,3 +83,20 @@ def job_list(jobs: list[dict], tab: str, model: str | None) -> list[dict]:
     if tab == "pending":
         jobs = [j for j in jobs if j["human"] is None and j["outcome"] in ("done", "no-changes", "failed")]
     return [{**j, **{"label": model_label(j["model"])}} for j in jobs]
+
+
+def without_estimates(models: list[dict], jobs: list[dict]) -> tuple[list[dict], list[dict]]:
+    """The same overview counting only reviewed agent scores (no estimates)."""
+    jobs = [{**j, "agent": None, "estimate": None} if j.get("estimate") else j for j in jobs]
+    out = []
+    for model in models:
+        entries = [j for j in jobs if j["model"] == model["model"]]
+        row = dict(model)
+        for role in ("agent", "human"):
+            scores = [j[role] for j in entries if j[role] is not None]
+            row[role] = sum(scores) / len(scores) if scores else None
+        pairs = [(j["agent"] + j["human"]) / 2 for j in entries
+                 if j["agent"] is not None and j["human"] is not None]
+        row["combined"] = sum(pairs) / len(pairs) if pairs else None
+        out.append(row)
+    return out, jobs

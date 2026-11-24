@@ -23,18 +23,28 @@
 <ul class="task-list">{% for x in active %}{{ row(x) }}{% endfor %}</ul>
 </section>
 {% endif %}
+{% set base = {'status': status if status != 'all' else none, 'repo': repo or none} %}
+{% macro q(changes) -%}?{{ base|combine(changes)|dictsort|selectattr(1)|list|urlencode }}{%- endmacro %}
 {% if total %}
 <section id="history">
   <div class="jobs-head"><h3>{{ t.history }}</h3>
     <nav class="chips" aria-label="{{ t.history }}">
-      <a class="chip" href="?status=all#history"{% if status == 'all' %} aria-current="true"{% endif %}>{{ t.all_jobs }} <span class="count">{{ total }}</span></a>
+      <a class="chip" href="{{ q({'status': none}) }}#history"{% if status == 'all' %} aria-current="true"{% endif %}>{{ t.all_jobs }} <span class="count">{{ total }}</span></a>
       {% for key, n in counts.items() %}
-      <a class="chip" href="?status={{ key }}#history"{% if status == key %} aria-current="true"{% endif %}>{{ t['st_' ~ key]|capitalize }} <span class="count">{{ n }}</span></a>
+      <a class="chip" href="{{ q({'status': key}) }}#history"{% if status == key %} aria-current="true"{% endif %}>{{ t['st_' ~ key]|capitalize }} <span class="count">{{ n }}</span></a>
       {% endfor %}
     </nav>
   </div>
+  {% if repos|length > 1 %}
+  <nav class="chips repo-chips" aria-label="{{ t.repo }}">
+    <a class="chip" href="{{ q({'repo': none}) }}#history"{% if not repo %} aria-current="true"{% endif %}>{{ t.all_repos }}</a>
+    {% for name, n in repos.items() %}
+    <a class="chip" href="{{ q({'repo': name}) }}#history"{% if repo == name %} aria-current="true"{% endif %}>{{ name.split('/')[-1] }} <span class="count">{{ n }}</span></a>
+    {% endfor %}
+  </nav>
+  {% endif %}
   <ul class="task-list">{% for x in history['items'] %}{{ row(x) }}{% else %}<li class="muted">{{ t.no_tasks }}</li>{% endfor %}</ul>
-  {{ m.pager(history, {'status': status if status != 'all' else none}, '#history') }}
+  {{ m.pager(history, base, '#history') }}
 </section>
 {% endif %}
 {% endblock %}

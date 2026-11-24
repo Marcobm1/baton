@@ -64,7 +64,7 @@ links:
 - [x] Remote access through Tailscale Serve
 - [x] 2026-11-24 Check how Codex cloud tasks can be triggered
   Recorded the [documented triggers and smoke test](docs/codex-cloud-tasks.md).
-- [ ] (Marco) Validate a Codex cloud implementation trigger
+- [x] (Marco) Validate a Codex cloud implementation trigger
   Use a connected test repository and the intended Baton GitHub identity for
   the [smoke test](docs/codex-cloud-tasks.md#smoke-test). Record the task and
   delivery links, or the observed failure, before adding a form option.

@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Watch the first OpenCode task go through review and auto-merge.
 updated: 2026-11-24
-updated_by: opencode
+updated_by: claude
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -57,11 +57,19 @@ links:
 - [x] Local task queue with priority (high/normal/low), one task per repository, `BATON_MAX_PARALLEL` global limit, change priority or cancel while queued
 - [ ] Queue two real tasks on one repository and check the second starts from the merged result
 - [x] Test: "en" and "es" UI strings have the same keys and no empty text
+- [x] 2026-11-24 Project dependencies (`depends_on`) and subprojects (`parent`): blocked cards turn red until the dependency is done
+- [ ] Check a blocked card on the live page (hub: Cuantización depends on IA local)
+- [ ] Monitoring section for this PC and, later, other computers and servers
+  One card per machine: CPU, RAM, disk, GPU load, VRAM, temperatures and power draw, uptime, online/offline.
+  Alerts for high temperatures, RAM or disk almost full, and unusual use (unknown processes using the GPU or the network, logins at odd hours).
+  Start with this Windows PC; design the data source so a small agent on each extra machine can report to Baton later.
+  Prerequisite for a "Models" tab: start/stop local models (llama-server router mode), VRAM budget, tokens/s and tokens served (see the hub project "Cuantización").
 
 ## Blockers
 - None.
 
 ## Decisions
+- 2026-11-24: "blocked" is computed from `depends_on` each time projects load instead of being a status value, so it clears itself when the dependency is marked done; unknown names keep the project blocked so typos are visible (docs/dependencies.md).
 - 2026-11-24: a scheduled quota check is skipped when a stored reading is fresher than the interval (the CLI just reported usage through its status line or logs), so 5-10 minute intervals cost little extra quota; OpenCode Go is asked at most every 5 minutes while the server runs, not only when the page is open (README "Quota panel").
 - 2026-11-24: one design system with colour tokens for light and dark; theme Auto/Light/Dark stored per browser and applied before the first paint; phone tab bar, desktop sidebar (docs/design.md).
 - 2026-11-24: project detail combines repository activity with each project's own Next checklist. Undated completions keep their source order after dated history (docs/project-detail.md).
@@ -84,6 +92,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude): `depends_on` and `parent` in STATUS.md; red blocked cards and detail note, blocked note in INDEX.md, en/es strings, README section and docs/dependencies.md; monitoring section added to Next; 90 tests passed.
 - 2026-11-24 (opencode): quota update review: scheduled checks now skip when a fresher reading exists (5-10 minute intervals barely spend extra quota), the OpenCode Go card refreshes every 5 minutes in the background, README/.env.example recommend 5-10 minutes; 87 tests passed plus an end-to-end smoke run of the loop.
 - 2026-11-24 (claude-code): visual redesign (control-panel style), sidebar on desktop and tab bar on phones, Auto/Light/Dark theme without flash, colour tokens with WCAG AA tests; checked with screenshots in both themes at 1440 px and 390 px.
 - 2026-11-24 (opencode): confirmed the first live self-update on Windows: c34eb76→16a9f3a validated 05:20Z and running 05:21Z; two more updates (→551150c, →82b9604) pulled, pytest-validated and restarted themselves through the Baton scheduled task; server on 82b9604, up to date, clean checkout.

@@ -154,6 +154,24 @@ baton index -o INDEX.md          # or --lang es
 [`docs/hub-index-workflow.yml`](docs/hub-index-workflow.yml) is a GitHub
 Actions workflow that regenerates `INDEX.md` every day.
 
+### Dependencies and subprojects
+
+Two optional fields describe how projects relate:
+
+```yaml
+depends_on: [Local AI]   # blocked until these projects are done
+parent: Local AI         # this is a subproject of a bigger one
+```
+
+A dependency can be written as the other project's `name`, its repository
+(`owner/repo` or just `repo`) or its hub folder (`local-ai`), in any letter
+case. While any dependency is missing or not `status: done`, the card turns
+red with the list of what has to be finished first, and `INDEX.md` says so in
+the next-step column. When the dependency is marked `done`, the warning goes
+away by itself. Split a very large project into subprojects, each with its own
+`STATUS.md` and `parent`, and chain them with `depends_on` when one has to
+wait for another. See [docs/dependencies.md](docs/dependencies.md).
+
 ### "Out of date" warnings
 
 A project shows ⚠ when its repository received a push on a later day than the

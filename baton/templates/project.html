@@ -6,9 +6,11 @@
   <p><a href="/">← {{ t.back }}</a></p>
   <a class="btn small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
 </div>
-<article class="detail project-detail prio-{{ s.priority }}">
+<article class="detail project-detail prio-{{ s.priority }}{% if p.blocked %} blocked{% endif %}">
   <h2>{{ s.name }} <span class="badge prio">{{ t[s.priority] }}</span> <span class="badge">{{ t[s.status] }}</span>
     {% if s.open_source %}<span class="badge os">{{ t.open_source }}</span>{% endif %}</h2>
+  {% if p.blocked %}<p class="blocked-note">🔒 {{ t.blocked_by }}: {{ p.blocked_by|join(', ') }}</p>{% endif %}
+  {% if s.parent %}<p class="muted small">{{ t.subproject_of }} {{ s.parent }}</p>{% endif %}
   {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
   {% if s.next %}<p class="c-next"><span class="label">{{ t.next }}</span> {{ s.next }}</p>{% endif %}
   <p class="c-meta small">

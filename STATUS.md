@@ -40,7 +40,7 @@ links:
   recorded review and merge outcome with Ranking. Check chart calculations
   against existing ratings and document any missing sample.
   Recommended: codex, gpt-6.2-sol, low
-- [ ] (Marco) Rate a real OpenCode delivery in Ranking
+- [x] (Marco) Rate a real OpenCode delivery in Ranking
 - [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
 - [x] 2026-11-24 Check the project detail on a phone
 - [x] Automatic idle-only self-update with validation, rollback and status on Quotas

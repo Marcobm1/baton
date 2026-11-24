@@ -477,8 +477,11 @@ class Runner:
                  open_pr: Callable[[str, str, str, str, str], str], github=None,
                  auto_merge: bool = False,
                  quota_left: Callable[[str], float | None] | None = None,
-                 max_parallel: int = 3):
+                 max_parallel: int = 3,
+                 review_models: dict[str, tuple[str, str]] | None = None):
         self.store = store
+        # Reviewer -> (model, effort); "" keeps the CLI's own default.
+        self.review_models = review_models or {}
         self.max_parallel = max(1, max_parallel)   # local tasks at once on this computer
         self.repos = repos
         self.timeout = timeout
@@ -772,12 +775,32 @@ class Runner:
         # Most quota left first; an unknown reading counts as 1 %; ties go to Claude Code.
         return max(usable, key=lambda a: (1.0 if left[a] is None else left[a], a == "claude-code"))
 
+    def reviewer_model(self, reviewer: str) -> tuple[str, str]:
+        """The configured model and effort for a reviewer, if its CLI lists them.
+
+        A model the CLI doesn't list (a typo, or one the account can't use)
+        would make the review fail and leave the PR open, so it falls back to
+        the CLI default instead; an unknown effort is dropped the same way."""
+        model, effort = self.review_models.get(reviewer, ("", ""))
+        if not model and not effort:
+            return "", ""
+        options = catalog(reviewer)
+        if not options:                 # the list could not be read: trust the setting
+            return model, effort
+        if model and model not in options:
+            return "", ""
+        if not model:
+            return "", effort
+        return model, effort if effort in options[model]["efforts"] else ""
+
     def _review(self, task: Task, wt: Path, reviewer: str, number: int, ident: list[str],
                 step) -> str:
         """Run the reviewer in the task's worktree; returns the commit to merge."""
         task.reviewer = reviewer
-        step(f"Review by {AGENTS[reviewer]}…")
-        rtask = replace(task, agent=reviewer, model="", effort="")
+        model, effort = self.reviewer_model(reviewer)
+        setup = " · ".join(x for x in (model, effort) if x)
+        step(f"Review by {AGENTS[reviewer]}{f' ({setup})' if setup else ''}…")
+        rtask = replace(task, agent=reviewer, model=model, effort=effort)
         prompt = REVIEW_PROMPT.format(author=AGENTS.get(task.agent, task.agent), repo=task.repo,
                                       branch=task.branch, base=task.base, title=task.title,
                                       details=task.details or "(no more details)")

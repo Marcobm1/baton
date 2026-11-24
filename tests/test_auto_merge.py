@@ -184,3 +184,27 @@ def test_review_verdict_parsing():
     assert review_verdict("**Verdict:** fixed\n- typo") == "FIXED"
     assert review_verdict("Summary\nVerdict: BLOCK") == "BLOCK"
     assert review_verdict("Verdict: maybe") == "" and review_verdict("") == ""
+
+
+def test_reviewer_uses_the_configured_model_and_effort(tmp_path, monkeypatch):
+    work, origin = make_repo(tmp_path)
+    monkeypatch.setattr(runner_mod, "_remote_repo", lambda url: "x/demo" if url.strip() else "")
+    monkeypatch.setattr(runner_mod, "catalog", lambda agent: {
+        "opus": {"label": "Opus 5.5", "efforts": ["low", "medium", "high"]}} if agent == "claude-code" else {})
+    gh = FakeGitHub(lambda sha: PASSED)
+    store, r, calls = _runner(tmp_path, work, gh, review=_review_script("APPROVE"),
+                              quota={"claude-code": 80.0, "codex": 10.0}.get)
+    r.review_models = {"claude-code": ("opus", "medium")}
+    seen = []
+    agent_cmd = r._agent_cmd
+    r._agent_cmd = lambda task, wt: (seen.append((task.agent, task.model, task.effort)), agent_cmd(task, wt))[1]
+    t = _start(r, store, "opencode")
+    assert t.merged and seen[1] == ("claude-code", "opus", "medium")
+    assert any("Review by Claude Code (opus · medium)" in s for s in t.steps)
+
+    # A model the CLI doesn't list falls back to the CLI default; a bad effort is dropped.
+    r.review_models = {"claude-code": ("opus-9", "medium"), "codex": ("", "turbo")}
+    assert r.reviewer_model("claude-code") == ("", "")
+    r.review_models = {"claude-code": ("opus", "turbo")}
+    assert r.reviewer_model("claude-code") == ("opus", "")
+    assert r.reviewer_model("codex") == ("", "")          # nothing configured

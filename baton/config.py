@@ -79,6 +79,12 @@ class Settings:
     self_update: bool = True
     auto_merge: bool = True          # local tasks: merge the PR when tests pass / review allows
     max_parallel: int = 3            # local tasks running at once on this computer
+    # Model and reasoning effort of the agent that reviews work before merging
+    # (empty = that CLI's own default).
+    review_claude_model: str = ""
+    review_claude_effort: str = ""
+    review_codex_model: str = ""
+    review_codex_effort: str = ""
     claude_home: Path = Path.home() / ".claude"
     opencode_db: Path = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
     # Optional, typed by you in .env. Used only to read your OpenCode Go usage
@@ -122,6 +128,10 @@ class Settings:
             self_update=os.environ.get("BATON_SELF_UPDATE", "1") != "0",
             auto_merge=os.environ.get("BATON_AUTO_MERGE", "1") != "0",
             max_parallel=max(1, int(os.environ.get("BATON_MAX_PARALLEL", "3") or 3)),
+            review_claude_model=os.environ.get("BATON_REVIEW_CLAUDE_MODEL", "").strip(),
+            review_claude_effort=os.environ.get("BATON_REVIEW_CLAUDE_EFFORT", "").strip().lower(),
+            review_codex_model=os.environ.get("BATON_REVIEW_CODEX_MODEL", "").strip(),
+            review_codex_effort=os.environ.get("BATON_REVIEW_CODEX_EFFORT", "").strip().lower(),
             claude_home=Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"),
             opencode_db=Path(os.environ.get("BATON_OPENCODE_DB")
                              or Path.home() / ".local" / "share" / "opencode" / "opencode.db"),

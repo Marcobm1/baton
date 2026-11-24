@@ -413,6 +413,8 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_GIT_NAME` / `BATON_GIT_EMAIL` | Baton | Commit identity when the clone has none. |
 | `BATON_CLOUD_TASKS` | `1` | `0` hides the GitHub Actions option. |
 | `BATON_AUTO_MERGE` | `1` | Local tasks: merge the pull request when the tests pass, after a review by Claude Code or Codex when needed. `0` leaves a draft for you. |
+| `BATON_REVIEW_CLAUDE_MODEL`, `BATON_REVIEW_CLAUDE_EFFORT` | *(CLI default)* | Model and reasoning effort Claude Code uses when it reviews work before merging, e.g. `opus` and `medium`. A value the CLI doesn't list falls back to its default. |
+| `BATON_REVIEW_CODEX_MODEL`, `BATON_REVIEW_CODEX_EFFORT` | *(CLI default)* | The same for Codex as reviewer. |
 | `BATON_MAX_PARALLEL` | `3` | Local tasks running at the same time on this computer (always one per repository); the rest wait in the queue. |
 | `BATON_SELF_UPDATE` | `1` | Automatically update a native Baton checkout. Set to `0` to disable automatic and manual update checks. |
 | `CODEX_HOME` | `~/.codex` | Where Codex keeps its logs. |

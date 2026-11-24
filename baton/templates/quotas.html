@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ t.quotas }} · {{ title }}{% endblock %}
-{% block styles %}<link rel="stylesheet" href="/static/quotas.css?v=brand-2">{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/quotas.css?v=design-1">{% endblock %}
 {% block main %}
 {% macro logo(provider) -%}
   {% set brand = {'claude': 'anthropic', 'claude-code': 'anthropic', 'codex': 'openai', 'opencode': 'opencode'}.get(provider) %}
@@ -13,7 +13,7 @@
 <div class="quota-grid">
   {% for pv in providers %}
   {% set provider_name = {'claude': 'Claude', 'codex': 'Codex', 'opencode': 'OpenCode'}.get(pv.provider, pv.provider|capitalize) %}
-  <article class="quota">
+  <article class="quota" data-provider="{{ pv.provider }}">
     <div class="q-head">
       <strong class="q-provider">
         {{ logo(pv.provider) }}
@@ -59,7 +59,7 @@
 {% if tokens.apps %}
 <div class="tok-grid">
   {% for a in tokens.apps %}
-  <article class="quota tok">
+  <article class="quota tok" data-app="{{ a.app }}">
     <div class="q-head"><strong class="q-provider">{{ logo(a.app) }}{{ t['app_' ~ a.app|replace('-', '_')] }}</strong>
       <span class="q-kind">{{ t.last_days|replace('N', tokens.days|string) }}</span></div>
     <div class="tok-nums">

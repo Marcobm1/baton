@@ -88,7 +88,9 @@ def test_dashboard_without_token(tmp_path, monkeypatch, lang):
     assert 'href="/tasks/queued-job"' in page and ("en cola, 1" if lang == "es" else "queued, 1") in page
     assert page.index("completed-job") < page.index("Older milestone") < page.index("older-job-9")
     assert page.index("older-job-2") < page.index("(2)</summary>") < page.index("older-job-1")
-    assert "Result &lt;script&gt;" in page and "<script>" not in page
+    # Text from STATUS.md and agents is escaped; the only scripts are Baton's own.
+    assert "Result &lt;script&gt;" in page and "Result <script>" not in page
+    assert "Use <script> & check" not in page
     assert 'href="https://github.com/u/demo/pull/7"' in page
     assert '<details class="full-status">' in page and "---\nname: Project" in page
     url = re.search(r'href="(/tasks/new\?[^"]*details=[^"]*)"', page)[1]

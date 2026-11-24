@@ -32,7 +32,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BATON_TOKEN }}
           BATON_OWNER: ${{ github.repository_owner }}
           BATON_LANG: en
-        run: baton index -o INDEX.md
+        run: |
+          # Until the BATON_TOKEN secret exists, skip quietly instead of failing every day.
+          if [ -z "$GITHUB_TOKEN" ]; then echo "BATON_TOKEN is not set: skipping."; exit 0; fi
+          baton index -o INDEX.md
       - name: Commit if changed
         run: |
           if git diff --quiet -- INDEX.md; then exit 0; fi

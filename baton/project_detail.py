@@ -40,6 +40,20 @@ def recommendation(detail: str) -> tuple[dict, str]:
             "effort": parts[2].casefold() if len(parts) > 2 else ""}, rest
 
 
+# A line naming the repository where the task is done, when it is not the
+# project's own:  Repo: Marcobm1/proyectos
+_repo_line = re.compile(r"^\s*(?:repo|repositorio)\s*:\s*([\w.-]+/[\w.-]+)\s*$", re.I | re.M)
+
+
+def target_repo(detail: str) -> tuple[str, str]:
+    """Split a task description into its target repository (if any) and the rest."""
+    match = _repo_line.search(detail or "")
+    if not match:
+        return "", detail
+    end = match.end() + (detail[match.end():match.end() + 1] == "\n")
+    return match[1], (detail[:match.start()] + detail[end:]).strip()
+
+
 @dataclass
 class ChecklistItem:
     title: str
@@ -47,6 +61,7 @@ class ChecklistItem:
     detail: str
     recommended: dict = field(default_factory=dict)
     line: int = 0
+    repo: str = ""          # where the task is done, if not in the project's repository
 
     @property
     def owner_action(self) -> bool:
@@ -55,6 +70,8 @@ class ChecklistItem:
     def __post_init__(self):
         if not self.recommended:
             self.recommended, self.detail = recommendation(self.detail)
+        if not self.repo:
+            self.repo, self.detail = target_repo(self.detail)
 
 
 @dataclass

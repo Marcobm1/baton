@@ -77,12 +77,12 @@
   <section class="next-up">
     <div class="next-up-head">
       <h3>{{ t.next_up }}</h3>
-      {{ m.rec_badge(next_rec) }}
+      <span>{{ m.repo_badge(p, first.repo if first else '') }} {{ m.rec_badge(next_rec) }}</span>
     </div>
     <p class="next-up-title">{{ next_title }}</p>
     {% if next_detail %}<pre class="next-up-detail">{{ next_detail }}</pre>{% endif %}
     <div class="next-up-actions">
-      <a class="btn" href="{{ m.draft_href(p, next_title, next_detail, next_rec) }}">{{ t.launch_next }} →</a>
+      <a class="btn" href="{{ m.draft_href(p, next_title, next_detail, next_rec, first.repo if first else '') }}">{{ t.launch_next }} →</a>
       {% if first %}{{ check_form(first, '✓ ' ~ t.mark_item_done, 'btn ghost') }}{% endif %}
     </div>
   </section>
@@ -95,10 +95,10 @@
     <li class="project-row draft-row">
       <div class="draft-main">{% if item.detail %}<details><summary>{{ item.title }}</summary><pre>{{ item.detail }}</pre></details>
         {% else %}<span>{{ item.title }}</span>{% endif %}
-        {{ m.rec_badge(item.recommended) }}</div>
+        {{ m.rec_badge(item.recommended) }} {{ m.repo_badge(p, item.repo) }}</div>
       <div class="row-actions">
         {{ check_form(item, '✓', 'btn ghost small icon', t.mark_item_done) }}
-        <a class="btn small" href="{{ m.draft_href(p, item.title, item.detail, item.recommended) }}">{{ t.launch_task }}</a>
+        <a class="btn small" href="{{ m.draft_href(p, item.title, item.detail, item.recommended, item.repo) }}">{{ t.launch_task }}</a>
       </div>
     </li>
     {% endfor %}

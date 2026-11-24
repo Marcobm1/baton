@@ -159,6 +159,11 @@ recommends for it:
   Recommended: codex, gpt-6.2-astra, high
 ```
 
+If a task must be done in another repository (for example, a workflow for
+the hub listed in Baton's STATUS.md), add `Repo: <owner/repo>` to its
+description: the launch buttons open the form on that repository, and the
+finished task offers to tick the item in the original project.
+
 If a task turns out to be already done (for example, it ended with no
 changes), use **Mark as done** on its task page or next to the item on the
 project page: Baton ticks it in STATUS.md with today's date and moves `next`.

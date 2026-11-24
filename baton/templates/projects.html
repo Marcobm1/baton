@@ -48,7 +48,7 @@
         {% set d = s.sections.upcoming|first %}
         {% if d %}
         <a class="btn ghost small icon" href="/tasks/new?repo={{ p.repo|urlencode }}" title="{{ t.task_button }}" aria-label="{{ t.task_button }}">＋</a>
-        <a class="btn small" href="{{ m.draft_href(p, d.title, d.detail, d.recommended) }}"
+        <a class="btn small" href="{{ m.draft_href(p, d.title, d.detail, d.recommended, d.repo) }}"
            title="{{ d.title }}{% if d.recommended.agent %} · ★ {{ agents.get(d.recommended.agent, d.recommended.agent) }}{% endif %}">▶ {{ t.launch_next }}</a>
         {% else %}
         <a class="btn small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>

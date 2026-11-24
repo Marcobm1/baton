@@ -9,6 +9,7 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   {% if followup %}<input type="hidden" name="followup" value="{{ followup }}">{% endif %}
   <label class="wide">{{ t.repo }}
+    {% if repo_missing %}<p class="warn small">{{ t.repo_unavailable|format(repo_missing) }}</p>{% endif %}
     <select name="repo" required>{% for r in repos %}<option value="{{ r }}" {% if r == selected %}selected{% endif %}>{{ r }}{% if not local[r] %} ({{ t.no_clone }}){% endif %}</option>{% endfor %}</select>
   </label>
   <label class="wide">{{ t.task_name }}

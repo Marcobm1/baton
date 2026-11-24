@@ -276,3 +276,37 @@ def test_mark_agent_task_done(tmp_path, monkeypatch):
     # The project page offers it too, for the featured task and the rest.
     page = client.get("/p/u/hub").text
     assert page.count('action="/p/u/hub/check"') == 2
+
+
+def test_task_done_in_another_repository(tmp_path, monkeypatch):
+    from baton.project_detail import target_repo
+    assert target_repo("Build it.\nRepo: Marcobm1/proyectos\nCheck.") == ("Marcobm1/proyectos", "Build it.\nCheck.")
+    assert target_repo("no repo here") == ("", "no repo here")
+
+    baton_source = ("---\nname: Baton\nstatus: active\nupdated: 2026-11-24\n---\n## Next\n"
+                    "- [ ] Daily index workflow\n  Install it.\n  Repo: u/hub\n  Recommended: codex\n")
+    baton = Project("u/baton", "u/baton", "STATUS.md", "main", False, "", None, parse(baton_source))
+    hub = Project("u/hub", "u/hub", "STATUS.md", "main", False, "", None,
+                  parse("---\nname: Hub\nstatus: active\nupdated: 2026-11-24\n---\n"))
+    item = baton.status.sections.upcoming[0]
+    assert item.repo == "u/hub" and item.detail == "Install it." and item.recommended["agent"] == "codex"
+
+    async def load(self, force=False):
+        return [baton, hub], []
+
+    monkeypatch.setattr(Hub, "load", load)
+    TaskStore(tmp_path).save(Task(id="t1", repo="u/hub", title="Daily index workflow", details="",
+                                  agent="codex", where="local", created_at=1.0, status="done", finished_at=2.0))
+    client = TestClient(create_app(Settings(data_dir=tmp_path, lang="es")))
+
+    page = client.get("/p/u/baton").text
+    assert "↗ u/hub" in page
+    url = html.unescape(re.search(r'href="(/tasks/new\?[^"]+)">Lanzar siguiente tarea', page)[1])
+    assert "repo=u%2Fhub" in url and "De+la+lista+Siguiente+de+Baton" in url
+    form = client.get(url).text
+    assert '<option value="u/hub" selected>' in form and "no tiene en su lista" not in form
+    assert "no tiene en su lista" in client.get("/tasks/new?repo=u/missing").text
+
+    # Finished in the hub, the task page offers to tick it in Baton's STATUS.md.
+    page = client.get("/tasks/t1").text
+    assert "sigue sin marcar en el STATUS.md de Baton" in page and 'action="/p/u/baton/check"' in page

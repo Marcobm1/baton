@@ -28,10 +28,12 @@ links:
 - [x] 2026-11-24 Include OpenCode and local-AI tasks and their reviews in Ranking
 - [x] 2026-11-24 Confirm the first OpenCode review and auto-merge
 - [ ] Verify live OpenCode reviewer scores and charts
-  Follow a new OpenCode delivery with a structured review through CI and
-  auto-merge. Open Rate and compare the model, merge outcome and three reviewer
-  scores with the task. Have Marco save his score and compare all three chart
-  views with the job details.
+  Have Marco start a small OpenCode delivery in a repository with CI. To
+  observe it while this Baton task is running, use another repository because
+  the local queue runs one task per repository at a time. Follow CI and
+  auto-merge, then use Rate to match the model, merge outcome and three scores
+  to the task and its structured review. After Marco saves his review, compare
+  the Agent, Your score and Combined views with the rated jobs for that model.
   Recommended: codex, gpt-6.2-sol, low
 - [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
 - [x] 2026-11-24 Check the project detail on a phone
@@ -82,7 +84,8 @@ links:
   Recommended: claude-code, opus, high
 
 ## Blockers
-- None.
+- Live Ranking verification needs a fresh OpenCode delivery with a structured
+  review and Marco's own saved scores.
 
 ## Decisions
 - 2026-11-24: the reviewer's model and effort come from settings, checked against the CLI's own list; an unknown value falls back to the CLI default so a typo can't block every merge (docs/auto-merge.md).
@@ -111,6 +114,12 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): On live Ranking, five historical `opencode-go/glm-5.3`
+  estimates averaged 6.6, with no human or combined scores for that model.
+  Rate matched the model and merge result for #16 and #18. GitHub confirmed
+  [CI](https://github.com/Marcobm1/baton/actions/runs/45349145376) and merge
+  for #18. Local suite: 108 passed, two known Windows cancellation cleanup
+  failures. A fresh structured review and Marco's rating are still pending.
 - 2026-11-24 (codex): [PR #16](https://github.com/Marcobm1/baton/pull/16) logged `APPROVE` and merged `17c7bf2` after [CI passed](https://github.com/Marcobm1/baton/actions/runs/45337107945). Rate showed `opencode-go/glm-5.3`, merged, and an estimated 9/10. An isolated form save survived restart and charts matched 6.6 (agent), 8.0 (human) and 8.5 (combined). Local suite: 108 passed, two known Windows cancellation cleanup failures. Live reviewer criteria and Marco's score remain pending.
 - 2026-11-24 (codex): Ranking imports finished tasks across agents, labels delivery estimates and charts agent, human and paired scores. Suite: 108 passed, two known Windows cancellation cleanup failures. Live history check pending.
 - 2026-11-24 (claude): reviewer model and effort configurable (BATON_REVIEW_CLAUDE_MODEL/EFFORT, BATON_REVIEW_CODEX_MODEL/EFFORT); Marco's PC reviews with Opus 5.5 at medium effort; values the CLI doesn't list fall back to its default; 107 tests passed.

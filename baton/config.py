@@ -76,6 +76,7 @@ class Settings:
     git_name: str = "Baton"
     git_email: str = "baton@localhost"
     cloud_tasks: bool = True
+    self_update: bool = True
     auto_merge: bool = True          # local tasks: merge the PR when tests pass / review allows
     max_parallel: int = 3            # local tasks running at once on this computer
     claude_home: Path = Path.home() / ".claude"
@@ -118,6 +119,7 @@ class Settings:
             git_name=os.environ.get("BATON_GIT_NAME", "Baton"),
             git_email=os.environ.get("BATON_GIT_EMAIL", "baton@localhost"),
             cloud_tasks=os.environ.get("BATON_CLOUD_TASKS", "1") != "0",
+            self_update=os.environ.get("BATON_SELF_UPDATE", "1") != "0",
             auto_merge=os.environ.get("BATON_AUTO_MERGE", "1") != "0",
             max_parallel=max(1, int(os.environ.get("BATON_MAX_PARALLEL", "3") or 3)),
             claude_home=Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"),

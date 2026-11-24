@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Queue two real tasks on one repository and check the second starts from the merged result.
+next: Load the updater once on Windows and confirm the first scheduled restart in updates.jsonl.
 updated: 2026-11-24
-updated_by: claude-code
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,8 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] Automatic idle-only self-update with validation, rollback and status on Quotas
+- [ ] Confirm the first live self-update and scheduled restart on Windows
 - [x] OpenCode delegation ranking with separate agent and human reviews
 - [ ] Rate a real delegation from the CLI and web
 - [ ] Future phase for native ChatGPT and Claude model rankings
@@ -55,6 +57,7 @@ links:
 - None.
 
 ## Decisions
+- 2026-11-24: the updater reserves the idle queue until validation and restart finish; Windows relaunches the scheduled task after the server PID exits (docs/self-update.md).
 - 2026-11-23: the page reads STATUS.md from GitHub (not local folders), so it
   works the same for every agent and every computer.
 - 2026-11-23: every local task ends in a pull request (owner's request), so
@@ -73,6 +76,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): added native self-update, a CSRF-protected Quotas control and update history. All 11 updater tests passed; two Windows cancellation failures also reproduced on the unchanged base. Live scheduler handoff pending.
 - 2026-11-24 (claude-code): task queue with priority instead of refusing a second task per repository; global limit BATON_MAX_PARALLEL; change priority / cancel while queued; queue survives restarts; en/es texts; docs/task-queue.md; tasks.json reads now take the store lock and the replace retries (Windows "Access denied" race, seen once in 3 runs); 8 new tests, 62 passing 5 runs in a row.
 - 2026-11-24 (codex): added OpenCode Ranking and confirmed both reviews survived a process restart. 52 tests passed; two Windows cancellation tests also failed on the unchanged base.
 - 2026-11-23 (claude-code): auto-merge of local tasks: wait for GitHub tests, review and fix by Claude Code or Codex when needed (OpenCode, local AI, repos without tests), merge the checked commit; BATON_AUTO_MERGE; docs/auto-merge.md; 7 tests.

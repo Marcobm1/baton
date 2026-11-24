@@ -423,6 +423,10 @@ def new_id(title: str) -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + _slug(title)
 
 
+class UpdateInProgress(Exception):
+    """Task admission is closed until the self-update finishes."""
+
+
 class Runner:
     def __init__(self, store: TaskStore, repos: LocalRepos, *, timeout: int, local_model: str,
                  local_provider: str, git_name: str, git_email: str,
@@ -451,6 +455,8 @@ class Runner:
         # lock makes "is it cancelled?" plus "start the agent" (or "start
         # committing") a single step, so a cancel can never slip in between.
         self._lock = threading.Lock()
+        self._updating = False
+        self.on_finished: Callable[[Task], None] | None = None
         # The same lock also guards the queue: while a task is "queued" the
         # queue is its only writer (start, priority change, cancel), always
         # under this lock; once "running", its own thread is.
@@ -478,6 +484,19 @@ class Runner:
         return sorted((t for t in self.store.all() if t.where == "local" and t.status == "queued"),
                       key=queue_key)
 
+    def reserve_update(self) -> bool:
+        with self._lock:
+            if self._updating or self._active or any(
+                t.where == "local" and t.status in ("running", "queued") for t in self.store.all()
+            ):
+                return False
+            self._updating = True
+            return True
+
+    def release_update(self) -> None:
+        with self._lock:
+            self._updating = False
+
     def submit(self, task: Task) -> None:
         """Put a local task in the queue; it starts as soon as its repository
         and one of the `max_parallel` slots are free (maybe right now)."""
@@ -485,6 +504,8 @@ class Runner:
             task.model = self.local_model
         task.status = "queued"
         with self._lock:
+            if self._updating:
+                raise UpdateInProgress
             self.store.save(task)
         self.dispatch()
 
@@ -492,6 +513,8 @@ class Runner:
         """Start queued tasks while there are free slots. Called when a task
         is submitted, when one finishes and when Baton starts."""
         with self._lock:
+            if self._updating:
+                return
             busy = {t.repo for t in self._active.values()}
             for task in self.queued():
                 if len(self._active) >= self.max_parallel:
@@ -917,5 +940,7 @@ class Runner:
             # free: the next queued task fetches the merged result.
             try:
                 self.dispatch()
+                if self.on_finished:
+                    self.on_finished(task)
             except Exception as exc:  # a broken queue must not hide this task's result
                 self._log(task, f"!! Could not start the next queued task: {exc}")

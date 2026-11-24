@@ -25,6 +25,8 @@ from .ping import Scheduler
 from .ranking import CRITERIA, Ranking
 from .task_models import catalog
 from .task_report import task_report
+from .self_update import SelfUpdate
+from .runner import UpdateInProgress
 from .runner import (AGENTS, PRIORITIES, SUMMARY_REQUEST, LocalRepos, Runner, Task, TaskStore,
                      extract_summary, new_id, opencode_models)
 
@@ -51,7 +53,7 @@ def _duration(seconds: float | None) -> str:
     return f"{m}m"
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     settings = settings or Settings.from_env()
     hub = Hub(settings)
     scheduler = Scheduler(settings.data_dir, settings.ping_claude_minutes,
@@ -78,6 +80,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Tasks that were running when Baton stopped can't be resumed: mark them
     # failed. Queued tasks keep their place and start when the server is up.
     runner.recover()
+    updater = SelfUpdate(HERE.resolve().parent, runner, settings.self_update, restart)
+    update_requested = asyncio.Event()
+
+    async def update_loop():
+        while not updater.restarting:
+            update_requested.clear()
+            await asyncio.to_thread(updater.check)
+            if not updater.restarting:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(update_requested.wait(), 300)
 
     async def _loop():
         # Check once a minute whether a quota check is due; checks run in a
@@ -93,7 +105,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_app):
         await asyncio.to_thread(runner.dispatch)   # the queue left by the last run
         loop_task = asyncio.create_task(_loop()) if scheduler.enabled else None
+        update_task = None
+        if updater.enabled:
+            loop = asyncio.get_running_loop()
+
+            def finished(task):
+                if updater.reason == "busy" or (task.merged and task.repo.lower() == updater.repo):
+                    loop.call_soon_threadsafe(update_requested.set)
+
+            runner.on_finished = finished
+            update_task = asyncio.create_task(update_loop())
         yield
+        runner.on_finished = None
+        if update_task:
+            update_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await update_task
         if loop_task:
             loop_task.cancel()
 
@@ -169,11 +196,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/quotas", response_class=HTMLResponse)
     async def quotas_page(request: Request):
         go_error = await asyncio.to_thread(refresh_go)
-        return page(request, "quotas.html", "quotas", go_error=go_error,
+        return page(request, "quotas.html", "quotas", go_error=go_error, updater=updater,
                     providers=quotas.by_provider(quotas.all_windows(settings.data_dir, settings.codex_home)),
                     sched=scheduler, tokens=await asyncio.to_thread(token_usage),
                     sched_results={k: {"age": time.time() - v[0], "ok": v[1], "msg": v[2]}
                                    for k, v in scheduler.results.items()})
+
+    @app.post("/self-update")
+    async def update_now(request: Request, csrf: str = Form("")):
+        check_post(request, csrf)
+        if updater.enabled:
+            update_requested.set()
+        return RedirectResponse("/quotas#self-update", status_code=303)
 
     @app.get("/ranking", response_class=HTMLResponse)
     def ranking_page(request: Request):
@@ -332,7 +366,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     base=by_repo[repo].branch, model=model, effort=effort,  # always ends in a PR
                     priority=priority)
         # Queued; it starts now if its repository and a slot are free.
-        runner.submit(task)
+        try:
+            runner.submit(task)
+        except UpdateInProgress:
+            raise HTTPException(503, t["update_testing"])
         return RedirectResponse(f"/tasks/{task.id}", status_code=303)
 
     # ------------------------------------------------------------------ api

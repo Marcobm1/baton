@@ -79,4 +79,18 @@
 </div>
 {% else %}<p class="muted">{{ t.no_tokens }}</p>{% endif %}
 </section>
+<section id="self-update">
+  <h2>{{ t.update_title }}</h2>
+  <p>{{ t.update_running }} <code>{{ updater.running[:12] or '—' }}</code> ·
+     {{ t.update_checked }} {{ updater.checked|when }}</p>
+  {% if updater.pending %}<p>{{ t.update_pending }} <code>{{ updater.pending[:12] }}</code></p>{% endif %}
+  <p>{{ t['update_' ~ updater.reason] }}</p>
+  {% if updater.error %}<p class="stale">{{ t.update_error }}: {{ updater.error }}</p>{% endif %}
+  {% if updater.enabled %}
+  <form method="post" action="/self-update">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit">{{ t.update_now }}</button>
+  </form>
+  {% endif %}
+</section>
 {% endblock %}

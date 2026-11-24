@@ -412,6 +412,15 @@ served by Ollama or LM Studio are grouped as *Local AI*. Only numbers, model
 names and dates are read. Chats on claude.ai or chatgpt.com leave no log on
 your computer, so they are not counted.
 
+## Local models
+
+The **Models** page shows this computer (CPU, RAM, disk, GPU load, VRAM,
+temperature and power draw), a VRAM budget and one card per local
+`llama-server` model with Start/Stop, generation and prompt speed and tokens
+served. It updates every 5 seconds. List your models in `~/.baton/models.json`;
+Baton only ever runs what that file says, always bound to `127.0.0.1`.
+See [docs/models.md](docs/models.md).
+
 ## Configuration
 
 All settings are environment variables (or a `.env` file); see

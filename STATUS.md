@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Diagnose Windows cancellation cleanup failures
+next: Start and stop a model from the live Models page
 updated: 2026-11-24
-updated_by: codex
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,17 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [ ] Start and stop a model from the live Models page
+  On Marco's PC, with no llama-server running, press Start on Inkling 2 Mini in
+  Baton's Models page: the card should go Loading -> Running in about 25 s,
+  `nvidia-smi` should show ~15.6 GiB used, and a chat request should raise
+  "Tokens generated". Then restart Baton (scheduled task) and check the model
+  is still running and still shown as started by Baton; press Stop and check
+  VRAM drops back. Record the result in the Log.
+  Recommended: claude-code, opus, medium
+- [x] 2026-11-24 Models page: this computer, VRAM budget and local models with Start/Stop
+  `/models`: CPU, RAM, disk, GPU load, VRAM, temperature, power; one card per
+  model in `~/.baton/models.json` with live speed and tokens served (docs/models.md).
 - [x] 2026-11-24 Separate owner actions and continue finished tasks
 - [x] 2026-11-24 Show the reviewer's model and effort on the task page
   Saved on the task when the review starts and shown next to "Review by"
@@ -106,11 +117,12 @@ links:
 - [x] Test: "en" and "es" UI strings have the same keys and no empty text
 - [x] 2026-11-24 Project dependencies (`depends_on`) and subprojects (`parent`): blocked cards turn red until the dependency is done
 - [ ] Check a blocked card on the live page (hub: Cuantización depends on IA local)
-- [ ] Monitoring section for this PC and, later, other computers and servers
-  One card per machine: CPU, RAM, disk, GPU load, VRAM, temperatures and power draw, uptime, online/offline.
-  Alerts for high temperatures, RAM or disk almost full, and unusual use (unknown processes using the GPU or the network, logins at odd hours).
-  Start with this Windows PC; design the data source so a small agent on each extra machine can report to Baton later.
-  Prerequisite for a "Models" tab: start/stop local models (llama-server router mode), VRAM budget, tokens/s and tokens served (see the hub project "Cuantización").
+- [ ] Monitoring for other computers and servers, and alerts
+  The Models page already has this PC's card (CPU, RAM, disk, GPU, VRAM,
+  temperature, power, uptime, amber/red levels). Still to do: online/offline
+  for extra machines through a small agent that reports to Baton, and alerts
+  (notifications) for high temperatures, RAM or disk almost full and unusual
+  use (unknown processes using the GPU or the network, logins at odd hours).
   Recommended: claude-code, opus, high
 
 ## Blockers
@@ -118,6 +130,7 @@ links:
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-24: local models run as one detached `llama-server` per model from `~/.baton/models.json`, not router mode: each keeps its tuned options, a 16 GB card fits one large model anyway, and models survive Baton restarts (docs/models.md).
 - 2026-11-24: a Codex cloud form option needs a live implementation task and a
   retrievable result from the intended trigger ([test plan](docs/codex-cloud-tasks.md)).
 - 2026-11-24: a Next item can run in another repository with a `Repo:` line; the origin project keeps the checklist item, ticked from the finished task's page.
@@ -149,6 +162,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude-code): Models page (`/models`, nav tab): this PC's CPU/RAM/disk/GPU readings, VRAM budget, Start/Stop for the llama-server models in `~/.baton/models.json`, live speed and tokens served from `--metrics`; detects servers started outside Baton; new dependency psutil 7.2.2; 130 tests passed on Windows (the two cancellation tests passed too); checked at 800 px dark and 375 px light.
 - 2026-11-24 (codex): Checked the saved report and merged [PR #29](https://github.com/Marcobm1/baton/pull/29) link in Tasks. This running review showed the Codex step and the cancel button with confirmation. Windows suite: 117 passed, two known cancellation cleanup failures.
 - 2026-11-24 (claude): Ranking "Reviewed scores only" toggle and rating from the list; Tasks filter by repository; project page split into Next / Done / Notes tabs with a compact header, Markdown descriptions with GitHub links; 119 tests passed; screenshots checked at 1440 and 390 px.
 - 2026-11-24 (claude): Ranking redesign (summary tiles, one leaderboard with agent/you/average per model and readable names, sample counts and a few-scores warning, filter by model, 8 jobs per page with All/To rate tabs, origin chips); Tasks page keeps running and queued tasks on top and pages the history (10 per page) with status filters; 117 tests passed; checked with screenshots at 1440 and 390 px in both themes.

@@ -29,6 +29,7 @@ from .project_detail import finished_items
 from .task_models import catalog
 from . import task_defaults, ranking_view
 from .task_report import task_report
+from .models import LocalModels, ModelError
 from .self_update import SelfUpdate
 from .runner import UpdateInProgress
 from .runner import (AGENTS, PRIORITIES, NEXT_TASK_REQUEST, SUMMARY_REQUEST, next_task_request, LocalRepos, Runner, Task, TaskStore,
@@ -74,6 +75,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                           settings.ping_codex_minutes, settings.ping_hours, settings.ping_model,
                           codex_home=settings.codex_home)
     store = TaskStore(settings.data_dir)
+    models = LocalModels(settings.data_dir)
     ranking = store.ranking
 
     def quota_left(agent: str) -> float | None:
@@ -556,6 +558,23 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             raise HTTPException(503, t["update_testing"])
         return RedirectResponse(f"/tasks/{task.id}", status_code=303)
 
+    # --------------------------------------------------------------- models
+    @app.get("/models", response_class=HTMLResponse)
+    async def models_page(request: Request, error: str = ""):
+        view = await asyncio.to_thread(models.overview, settings.lang)
+        return page(request, "models.html", "models", view=view, error=error[:300])
+
+    @app.post("/models/{model_id}/{action}")
+    async def model_action(request: Request, model_id: str, action: Literal["start", "stop"],
+                           csrf: str = Form("")):
+        check_post(request, csrf)
+        try:
+            # Stopping waits for the process to exit: keep the other pages answering.
+            await asyncio.to_thread(models.start if action == "start" else models.stop, model_id)
+        except ModelError as exc:
+            return RedirectResponse(f"/models?error={quote(exc.text(t))}", status_code=303)
+        return RedirectResponse("/models", status_code=303)
+
     # ------------------------------------------------------------------ api
     @app.get("/api/projects")
     async def api_projects(refresh: int = 0):
@@ -566,6 +585,10 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     async def api_quotas():
         await asyncio.to_thread(refresh_go)
         return JSONResponse({"windows": quotas.all_windows(settings.data_dir, settings.codex_home)})
+
+    @app.get("/api/models")
+    async def api_models():
+        return JSONResponse(await asyncio.to_thread(models.overview, settings.lang))
 
     @app.get("/healthz")
     async def healthz():

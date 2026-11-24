@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}{{ t.models_nav }} · {{ title }}{% endblock %}
+{# The page updates itself with models.js; without JavaScript it reloads. #}
+{% block refresh %}<noscript><meta http-equiv="refresh" content="30"></noscript>{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/models.css?v={{ css_v }}">{% endblock %}
+{% block main %}
+{% macro meter(label, key) -%}
+<div class="m-row lv-{{ view.levels.get(key, 'ok') }}" data-lv="{{ key }}">
+  <div class="q-line"><span class="label">{{ label }}</span><b data-k="{{ key }}">{{ view.show[key] }}</b></div>
+  {% if (key ~ '_w') in view.show %}
+  <div class="bar thin"><span class="fill" data-w="{{ key }}_w" style="width: {{ [view.show[key ~ '_w'], 100]|min|round(1) }}%"></span></div>
+  {% endif %}
+</div>
+{%- endmacro %}
+<section class="models-page" data-models>
+<h2>{{ t.models_nav }}</h2>
+<p class="muted small">{{ t.models_help }}</p>
+{% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
+
+<div class="m-grid">
+  <article class="quota m-card">
+    <div class="q-head"><strong>{{ t.m_machine }}</strong>
+      <span class="q-kind">{{ view.machine.host }} · {{ view.machine.cores }} {{ t.m_cores }}</span></div>
+    {{ meter(t.m_cpu, 'cpu') }}
+    {{ meter(t.m_ram, 'ram') }}
+    {{ meter(t.m_disk_free, 'disk') }}
+    <p class="muted small">{{ t.m_uptime }}: <span data-k="uptime">{{ view.show.uptime }}</span></p>
+  </article>
+
+  <article class="quota m-card">
+    {% if view.gpu %}
+    <div class="q-head"><strong>{{ t.m_gpu }}</strong><span class="q-kind">{{ view.gpu.name }}</span></div>
+    {{ meter(t.m_gpu_load, 'gpu_load') }}
+    {{ meter(t.m_vram, 'vram') }}
+    {{ meter(t.m_temp, 'temp') }}
+    {{ meter(t.m_power, 'power') }}
+    {% else %}
+    <div class="q-head"><strong>{{ t.m_gpu }}</strong></div>
+    <p class="muted">{{ t.m_no_gpu }}</p>
+    {% endif %}
+  </article>
+
+  {% if view.gpu %}
+  <article class="quota m-card">
+    <div class="q-head"><strong>{{ t.m_budget }}</strong><span class="q-kind" data-k="vram">{{ view.show.vram }}</span></div>
+    <div class="bar m-budget"><span class="fill" data-w="vram_w" style="width: {{ [view.show.vram_w, 100]|min|round(1) }}%"></span></div>
+    {% if view.budget.parts %}
+    <ul class="m-parts">
+      {% for part in view.budget.parts %}<li><span>{{ part.name }}</span><b>{{ part.gb }} GiB</b></li>{% endfor %}
+    </ul>
+    {% else %}<p class="muted small">{{ t.m_budget_none }}</p>{% endif %}
+    <p class="muted small">{{ t.m_budget_help }}</p>
+  </article>
+  {% endif %}
+</div>
+
+<h2 class="m-title">{{ t.m_models }}</h2>
+{% if not view.config.found %}<p class="muted">{{ t.m_no_config.format(path=view.config.path) }}</p>{% endif %}
+{% if view.config.problems %}
+<div class="warn"><b>{{ t.m_problems }}</b>
+  <ul>{% for problem in view.config.problems %}<li>{{ problem }}</li>{% endfor %}</ul></div>
+{% endif %}
+<div class="cards">
+  {% for m in view.models %}{% set p = 'm.' ~ m.id ~ '.' %}
+  <article class="card m-model" data-model="{{ m.id }}" data-state="{{ m.status }}">
+    <div class="c-head"><span class="c-name">{{ m.name }}</span>
+      <span class="pill m-{{ m.status }}">{{ t['m_status_' ~ m.status] }}</span></div>
+    {% if m.description %}<p class="c-summary">{{ m.description }}</p>{% endif %}
+    <dl class="m-facts">
+      <div><dt class="label">{{ t.m_port }}</dt><dd>{{ m.port }}</dd></div>
+      <div><dt class="label">{{ t.m_vram_est }}</dt><dd>{{ view.show[p ~ 'vram'] }}</dd></div>
+      <div class="wide"><dt class="label">{{ t.m_file }}</dt>
+        <dd><code>{{ m.file_name }}</code>{% if not m.file_ok %} <span class="stale">{{ t.m_file_missing }}</span>{% endif %}</dd></div>
+    </dl>
+    {% if m.uses_gpu %}
+    <dl class="m-stats">
+      <div><dt class="label">{{ t.m_gen }}</dt><dd data-k="{{ p }}gen">{{ view.show[p ~ 'gen'] }}</dd></div>
+      <div><dt class="label">{{ t.m_prompt }}</dt><dd data-k="{{ p }}prompt">{{ view.show[p ~ 'prompt'] }}</dd></div>
+      <div><dt class="label">{{ t.m_served }}</dt><dd data-k="{{ p }}served">{{ view.show[p ~ 'served'] }}</dd></div>
+      <div><dt class="label">{{ t.m_served_prompt }}</dt><dd data-k="{{ p }}served_prompt">{{ view.show[p ~ 'served_prompt'] }}</dd></div>
+      <div><dt class="label">{{ t.m_busy }}</dt><dd data-k="{{ p }}busy">{{ view.show[p ~ 'busy'] }}</dd></div>
+      <div><dt class="label">{{ t.m_model_uptime }}</dt><dd data-k="{{ p }}uptime">{{ view.show[p ~ 'uptime'] }}</dd></div>
+    </dl>
+    <p class="muted small">{{ t.m_served_help }}</p>
+    {% elif m.served.generated %}
+    <p class="muted small">{{ t.m_served }}: {{ view.show[p ~ 'served'] }} · {{ t.m_served_prompt }}: {{ view.show[p ~ 'served_prompt'] }}</p>
+    {% endif %}
+    {% if m.crashed %}
+    <details class="m-crash"><summary class="stale">{{ t.m_crashed }}</summary><pre class="log">{{ m.crashed }}</pre></details>
+    {% endif %}
+    <div class="c-actions">
+      {% if m.status in ('running', 'external') %}
+      <a class="btn small" href="http://127.0.0.1:{{ m.port }}" target="_blank" rel="noopener"
+         title="{{ t.m_chat_local }}">{{ t.m_open_chat }}</a>
+      {% endif %}
+      <form method="post" action="/models/{{ m.id }}/{{ 'stop' if m.uses_gpu else 'start' }}"
+            {% if m.uses_gpu %}data-confirm="{{ t.m_stop_confirm }}"{% endif %}>
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" {% if m.uses_gpu %}class="btn ghost"{% endif %}
+                {% if not m.uses_gpu and (not m.file_ok or m.status == 'port_busy') %}disabled{% endif %}>
+          {{ t.m_stop if m.uses_gpu else t.m_start }}</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+</section>
+<script src="/static/models.js?v={{ css_v }}" defer></script>
+{% endblock %}

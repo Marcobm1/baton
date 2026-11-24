@@ -23,7 +23,7 @@ from .config import Settings
 from .github import GitHubError, Hub
 from .i18n import ordinal, strings
 from .ping import Scheduler
-from .ranking import CRITERIA
+from .ranking import CRITERIA, historical_score
 from .project_detail import finished_items, sections
 from .task_models import catalog
 from . import task_defaults
@@ -238,9 +238,10 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         return RedirectResponse("/quotas#self-update", status_code=303)
 
     @app.get("/ranking", response_class=HTMLResponse)
-    def ranking_page(request: Request, origin: Literal["all", "delegation", "task"] = "all"):
+    def ranking_page(request: Request, origin: Literal["all", "delegation", "task"] = "all",
+                     view: Literal["agent", "human", "combined"] = "agent"):
         models, jobs = ranking.overview(origin)
-        return page(request, "ranking.html", "ranking", models=models, jobs=jobs, origin=origin)
+        return page(request, "ranking.html", "ranking", models=models, jobs=jobs, origin=origin, view=view)
 
     @app.get("/ranking/{job}", response_class=HTMLResponse)
     def delegation_page(request: Request, job: int):
@@ -248,7 +249,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         if details is None:
             raise HTTPException(404, "Unknown delegation")
         return page(request, "delegation.html", "ranking", job=details, reviews=reviews,
-                    criteria=CRITERIA)
+                    criteria=CRITERIA, estimate=historical_score(details))
 
     @app.post("/ranking/{job}")
     def human_review(request: Request, job: int, csrf: str = Form(""),

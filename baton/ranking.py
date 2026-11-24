@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import secrets
 import sqlite3
 import tempfile
@@ -12,6 +13,30 @@ from pathlib import Path
 from .config import configured_data_dir
 
 CRITERIA = ("fulfillment", "correctness", "rework")
+
+
+def review_verdict(report: str) -> str:
+    """"APPROVE", "FIXED" or "BLOCK" from the review's first Verdict line, else ""."""
+    for line in report.splitlines():
+        m = re.match(r"\s*\**\s*verdict\s*:?\s*\**\s*:?\s*([a-z]+)", line, re.I)
+        if m:
+            word = m.group(1).upper()
+            return word if word in ("APPROVE", "FIXED", "BLOCK") else ""
+    return ""
+
+
+def historical_score(job):
+    """A delivery estimate when the original reviewer supplied no scores."""
+    verdict = review_verdict(job["report"] or "")
+    if verdict:
+        return {"APPROVE": 9, "FIXED": 7, "BLOCK": 3}[verdict], "score_" + verdict.lower()
+    if job["merged"]:
+        return 8, "score_merged"
+    if job["outcome"] == "done":
+        return 6, "score_done"
+    if job["outcome"] in ("failed", "timeout"):
+        return 2, "score_failed"
+    return None, "insufficient"
 
 
 def parse_rating(block):
@@ -91,8 +116,10 @@ class Ranking:
                        (job, role, reviewer, fulfillment, correctness, rework, comment.strip()))
 
     def record_task(self, task):
-        if (task.where != "local" or task.agent not in ("opencode", "local")
-                or task.status not in ("done", "no-changes", "failed", "cancelled")):
+        outcome = task.status
+        if task.where == "cloud" and outcome == "sent" and task.summary:
+            outcome = "done"
+        if outcome not in ("done", "no-changes", "failed", "cancelled"):
             return None
         with self.database() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -103,7 +130,7 @@ class Ranking:
             result = "\n\n".join(filter(None, (task.message, task.summary)))
             job = db.execute("""INSERT INTO jobs(model, started, kind, prompt, outcome, result)
                 VALUES (?, ?, 'Baton task', ?, ?, ?)""",
-                (task.model, task.started_at or task.created_at, prompt, task.status, result)).lastrowid
+                (task.model, task.started_at or task.created_at, prompt, outcome, result)).lastrowid
             db.execute("INSERT INTO task_jobs VALUES (?, ?, ?, ?, ?)",
                        (task.id, job, task.title, task.merged, task.review))
             rating = task.review_rating
@@ -119,15 +146,29 @@ class Ranking:
             LEFT JOIN reviews ON jobs.id=reviews.job WHERE """ + origins[origin]
 
         with self.database() as db:
-            models = db.execute("""SELECT model, COUNT(DISTINCT reviews.job) AS evaluated,
-                AVG(fulfillment) AS fulfillment, AVG(correctness) AS correctness, AVG(rework) AS rework,
-                AVG(CASE WHEN role='human' THEN (fulfillment+correctness+rework)/3.0 END) AS human,
-                AVG(CASE WHEN role='agent' THEN (fulfillment+correctness+rework)/3.0 END) AS agent
-                """ + source + """ GROUP BY model
-                ORDER BY human DESC, agent DESC, model""").fetchall()
-            jobs = db.execute("""SELECT jobs.id, started, model, kind, outcome, task_id, title,
-                MAX(role='human') AS human, MAX(role='agent') AS agent
-                """ + source + """ GROUP BY jobs.id ORDER BY started DESC, jobs.id DESC""").fetchall()
+            models = [dict(row) for row in db.execute("""SELECT model,
+                AVG(fulfillment) AS fulfillment, AVG(correctness) AS correctness, AVG(rework) AS rework
+                """ + source + " GROUP BY model")]
+            jobs = [dict(row) for row in db.execute("""SELECT jobs.id, started, model, kind, outcome,
+                task_id, title, merged, report,
+                MAX(CASE WHEN role='human' THEN (fulfillment+correctness+rework)/3.0 END) AS human,
+                MAX(CASE WHEN role='agent' THEN (fulfillment+correctness+rework)/3.0 END) AS agent
+                """ + source + " GROUP BY jobs.id ORDER BY started DESC, jobs.id DESC")]
+        by_model = {}
+        for job in jobs:
+            if job["agent"] is None:
+                job["agent"], job["estimate"] = historical_score(job)
+            by_model.setdefault(job["model"], []).append(job)
+        for model in models:
+            entries = by_model[model["model"]]
+            model["evaluated"] = sum(j["agent"] is not None or j["human"] is not None for j in entries)
+            for role in ("agent", "human"):
+                scores = [j[role] for j in entries if j[role] is not None]
+                model[role] = sum(scores) / len(scores) if scores else None
+            pairs = [(j["agent"] + j["human"]) / 2 for j in entries
+                     if j["agent"] is not None and j["human"] is not None]
+            model["combined"] = sum(pairs) / len(pairs) if pairs else None
+        models.sort(key=lambda m: (-(m["human"] or 0), -(m["agent"] or 0), m["model"]))
         return models, jobs
 
     def detail(self, job):

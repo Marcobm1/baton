@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import Callable
 
 from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
-from .ranking import Ranking, parse_rating
+from .ranking import Ranking, parse_rating, review_verdict
 from .task_models import catalog
 
 AGENTS = {
@@ -225,16 +225,6 @@ Task: {title}
 
 {details}
 """
-
-
-def review_verdict(report: str) -> str:
-    """"APPROVE", "FIXED" or "BLOCK" from the review's first Verdict line, else ""."""
-    for line in report.splitlines():
-        m = re.match(r"\s*\**\s*verdict\s*:?\s*\**\s*:?\s*([a-z]+)", line, re.I)
-        if m:
-            word = m.group(1).upper()
-            return word if word in ("APPROVE", "FIXED", "BLOCK") else ""
-    return ""
 
 
 def pr_number(url: str) -> int:

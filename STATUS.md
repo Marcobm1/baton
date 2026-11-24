@@ -24,9 +24,11 @@ links:
   and check the agent, model and effort; then open New task from Tasks and check
   it starts with the last task's choice.
   Recommended: codex, gpt-6.2-astra, low
+- [x] 2026-11-24 Include OpenCode and local-AI tasks and their reviews in Ranking
 - [ ] Watch the first OpenCode task go through review and auto-merge
   Follow a real OpenCode task through review and CI. Check that Baton records
   the verdict on the task page and merges the reviewed commit after tests pass.
+  Follow Rate to verify the model, merge outcome and reviewer scores in Ranking.
   Recommended: codex, gpt-6.2-sol, medium
 - [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
 - [x] 2026-11-24 Check the project detail on a phone
@@ -105,6 +107,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): Ranking includes finished OpenCode/local tasks, structured reviewer scores, historical reports and origin filters. Suite: 104 passed; both Windows cancellation cleanup failures also reproduced on the unchanged base. Live review check remains next.
 - 2026-11-24 (codex): In live Edge, Launch next task matched the Baton recommendation and Tasks > New task matched the latest local task. Both selected Codex, gpt-6.2-astra, low.
 - 2026-11-24 (claude): the self-update rolled back #22 because the new test read templates with Windows' default encoding (cp1252); it now reads UTF-8. Suite checked on Windows before merging.
 - 2026-11-24 (claude): phones kept the old task-form.js after the update (only style.css and theme.js had a version in their URL), so the recommended model was not preselected there; every script and stylesheet URL now carries a version that changes with any of them; test added; 97 tests passed.

@@ -1,3 +1,4 @@
+import json
 import re
 import subprocess
 from unittest.mock import Mock
@@ -8,7 +9,8 @@ from fastapi.testclient import TestClient
 from baton import delegate
 from baton.__main__ import main
 from baton.config import Settings
-from baton.ranking import Ranking
+from baton.ranking import Ranking, parse_rating
+from baton.runner import Task, TaskStore
 from baton.web import create_app
 
 
@@ -84,3 +86,63 @@ def test_failed_delegations(tmp_path, monkeypatch, completed, code, outcome):
     assert delegate.run("provider/model", "prompt", ".", check_model=False) == code
     models, jobs = Ranking(tmp_path).overview()
     assert jobs[0]["outcome"] == outcome and models[0]["evaluated"] == 0
+
+@pytest.mark.parametrize("field,value", [("fulfillment", 0), ("correctness", 11), ("rework", True),
+                                         ("comment", " "), ("comment", "x" * 501), ("rework", "8")])
+def test_invalid_rating(field, value):
+    rating = dict(fulfillment=10, correctness=9, rework=8, comment="Checked")
+    rating[field] = value
+    assert parse_rating(json.dumps(rating)) is None
+    assert parse_rating("") is None
+
+
+def test_echoed_rating_before_final_review_is_ignored():
+    from baton.runner import extract_summary
+
+    output = ('BATON_RATING_BEGIN\n{"fulfillment":10,"correctness":10,"rework":10,"comment":"Echo"}'
+              '\nBATON_RATING_END\nBATON_REVIEW_BEGIN\nVerdict: APPROVE\nBATON_REVIEW_END')
+    assert extract_summary(output, "BATON_RATING", after="BATON_REVIEW_END") == ""
+
+
+def test_import_filter_and_restart(tmp_path):
+    settings = Settings(data_dir=tmp_path, lang="es")
+    rows = [dict(id=status, repo="x/demo", title=f"Task {status}", details="The assignment",
+                 agent="local" if status == "cancelled" else "opencode", where="local",
+                 status=status, model="provider/model", created_at=123, review="<old report>")
+            for status in ("done", "no-changes", "failed", "cancelled")]
+    (tmp_path / "tasks.json").write_text(json.dumps(rows), encoding="utf8")
+    ranking = Ranking(tmp_path)
+    sub = ranking.start("provider/model", "test draft", "Assignment")
+    ranking.review(sub, "human", 2, 2, 2, "")
+    web = TestClient(create_app(settings))
+    jobs = ranking.overview("task")[1]
+    assert {j["task_id"] for j in jobs} == {r["id"] for r in rows}
+    assert all(not j["agent"] and not j["human"] for j in jobs)
+    job = jobs[0]
+    link = f"/ranking/{job['id']}"
+    assert f'href="{link}">Valorar' in web.get(f"/tasks/{job['task_id']}").text
+    detail = web.get(link).text
+    assert "The assignment" in detail and "Sin fusionar" in detail and "&lt;old report&gt;" in detail
+    ranking.review(job["id"], "human", 8, 8, 8, "Keep this")
+    restarted = TestClient(create_app(settings))
+    assert "Keep this" in restarted.get(link).text
+    assert len(ranking.overview("task")[1]) == len(rows)
+    for origin, average in [("all", 5), ("delegation", 2), ("task", 8)]:
+        page = restarted.get(f"/ranking?origin={origin}").text
+        assert ("test draft" in page) == (origin != "task")
+        assert ("Task cancelled" in page) == (origin != "delegation")
+        assert f"<td>{average}.0</td>" in page
+
+
+def test_only_finished_local_model_tasks_count(tmp_path):
+    store = TaskStore(tmp_path)
+    task = Task("x", "owner/repo", "Example", "", "opencode", "local", 123)
+    for where, agent, status in [("local", "opencode", "queued"), ("local", "local", "running"),
+                                 ("cloud", "opencode", "done"), ("local", "codex", "done")]:
+        task.where, task.agent, task.status = where, agent, status
+        store.save(task)
+    assert not store.ranking.overview()[1]
+    task.agent = "opencode"
+    store.save(task)
+    store.save(task)
+    assert len(store.ranking.overview()[1]) == 1

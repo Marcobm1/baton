@@ -36,9 +36,11 @@ from __future__ import annotations
 import datetime as dt
 import glob
 import json
+import logging
 import os
 import re
 import shutil
+import sqlite3
 import signal
 import subprocess
 import threading
@@ -48,7 +50,7 @@ from pathlib import Path
 from typing import Callable
 
 from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
-from .ranking import Ranking
+from .ranking import Ranking, parse_rating
 from .task_models import catalog
 
 AGENTS = {
@@ -171,9 +173,15 @@ SUMMARY_REQUEST = (
 )
 
 
-def extract_summary(output: str, marker: str = "BATON_SUMMARY") -> str:
+def extract_summary(output: str, marker: str = "BATON_SUMMARY", *, after: str = "") -> str:
     # Some CLIs colour their output. Ignore incomplete reports and echoed instructions.
     output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+    if after:
+        # A CLI can echo the task prompt. Only the rating after the final report counts.
+        sections = re.split(rf"(?m)^[^\S\n]*{re.escape(after)}[^\S\n]*$", output)
+        if len(sections) < 2:
+            return ""
+        output = sections[-1]
     report = None
     last = ""
     for line in output.splitlines():
@@ -287,6 +295,7 @@ class Task:
     merged: bool = False
     priority: str = "normal"        # high | normal | low: order in the queue
     started_at: float | None = None  # when it left the queue
+    review_rating: dict | None = None
 
 
 # Queue order: higher priority first, then the oldest. The id breaks the
@@ -358,6 +367,7 @@ class TaskStore:
     def __init__(self, data_dir: Path):
         self.dir = data_dir
         self.file = data_dir / "tasks.json"
+        self.ranking = Ranking(data_dir)
         self.logs = data_dir / "tasks"
         self.lock = threading.Lock()
 
@@ -398,6 +408,15 @@ class TaskStore:
                     if attempt == 19:
                         raise
                     time.sleep(0.05)
+            self.record_task(task)
+
+    def record_task(self, task: Task):
+        try:
+            return self.ranking.record_task(task)
+        except sqlite3.Error as exc:
+            # tasks.json is durable. Recovery retries without holding up the queue.
+            logging.getLogger(__name__).warning("Could not index task %s: %s", task.id, exc)
+            return None
 
     def log_path(self, task_id: str) -> Path:
         self.logs.mkdir(parents=True, exist_ok=True)
@@ -546,6 +565,8 @@ class Runner:
                     break
                 if task.repo in busy:       # one task at a time per repository
                     continue
+                if task.agent == "local" and not task.model:
+                    task.model = self.local_model
                 task.status, task.started_at = "running", time.time()
                 self.store.save(task)
                 thread = threading.Thread(target=self._run, args=(task,), daemon=True)
@@ -576,6 +597,8 @@ class Runner:
                     old.status, old.message = "failed", "Baton stopped while this task was running."
                     old.finished_at = old.finished_at or time.time()
                     self.store.save(old)
+                else:
+                    self.store.record_task(old)
 
     def queue_info(self) -> dict[str, dict]:
         """For each queued task: its place in its repository's queue (1 = next)
@@ -682,13 +705,13 @@ class Runner:
             f.write(text if text.endswith("\n") else text + "\n")
 
     @staticmethod
-    def _read_summary(log_path: Path, start: int, marker: str = "BATON_SUMMARY") -> str:
-        """The agent's final report, from the part of the log this run wrote."""
+    def _read_output(log_path: Path, start: int) -> str:
+        """The tail of the output written by this agent run."""
         try:
             with open(log_path, "rb") as log:
                 end = log.seek(0, 2)
                 log.seek(max(start, end - 65536))
-                return extract_summary(log.read().decode("utf-8", errors="replace"), marker)
+                return log.read().decode("utf-8", errors="replace")
         except OSError:
             return ""
 
@@ -758,6 +781,15 @@ class Runner:
         prompt = REVIEW_PROMPT.format(author=AGENTS.get(task.agent, task.agent), repo=task.repo,
                                       branch=task.branch, base=task.base, title=task.title,
                                       details=task.details or "(no more details)")
+        if task.agent in ("opencode", "local"):
+            prompt += (
+                "\nAfter the marked review, rate the original delivery before your fixes. "
+                "Put BATON_RATING_BEGIN and BATON_RATING_END on separate lines around one JSON "
+                "object. Use integer scores from 1 to 10 for fulfillment (request covered), "
+                "correctness (as delivered), and rework (10 means no fixes needed). "
+                "Include a brief nonempty comment (at most 500 characters). "
+                "Use exactly the keys fulfillment, correctness, rework and comment.\n"
+            )
         log_path = self.store.log_path(task.id)
         start = log_path.stat().st_size if log_path.exists() else 0
         group = {} if os.name == "nt" else {"start_new_session": True}
@@ -772,7 +804,10 @@ class Runner:
             except subprocess.TimeoutExpired:
                 kill_tree(proc)
                 raise LeftOpen(f"the review took longer than {self.timeout // 60} minutes")
-        task.review = self._read_summary(log_path, start, "BATON_REVIEW")
+        output = self._read_output(log_path, start)
+        task.review = extract_summary(output, "BATON_REVIEW")
+        if task.agent in ("opencode", "local"):
+            task.review_rating = parse_rating(extract_summary(output, "BATON_RATING", after="BATON_REVIEW_END"))
         verdict = review_verdict(task.review)
         step(f"Review finished (exit code {proc.returncode}, verdict {verdict or 'none'})")
         changed = bool(self._git(wt, "status", "--porcelain"))
@@ -817,7 +852,7 @@ class Runner:
         codex = find_codex() or "codex"
         cmd = [codex, "exec", "-s", "workspace-write", "--color", "never", "-C", str(wt)]
         if task.agent == "local":
-            cmd[2:2] = ["--oss", "--local-provider", self.local_provider, "-m", self.local_model]
+            cmd[2:2] = ["--oss", "--local-provider", self.local_provider, "-m", task.model]
         elif task.agent == "codex":
             if task.model:
                 cmd.extend(["-m", task.model])
@@ -910,7 +945,7 @@ class Runner:
                     with self._lock:
                         self._procs.pop(task.id, None)
             # Only the end of this agent run can contain its final report.
-            task.summary = self._read_summary(log_path, start)
+            task.summary = extract_summary(self._read_output(log_path, start))
             self._check_cancelled(task)
             step(f"Agent finished (exit code {proc.returncode})")
             if proc.returncode != 0:

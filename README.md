@@ -15,8 +15,9 @@ where the previous one left it:
   account and shows them together (next task, progress, out-of-date warnings);
   **Tasks** sends work to an AI agent with one form; **Quotas** shows your
   Claude and Codex 5-hour and weekly windows, so you can see what is left to
-  spend before it resets. **Ranking** compares the OpenCode models used by
-  `baton delegate` using independent agent and human evaluations.
+  spend before it resets. **Ranking** compares models across OpenCode delegations and
+  completed Baton tasks run by OpenCode or local AI. Filter by origin to see
+  separate averages.
 
 ```
  repo A ── STATUS.md ─┐
@@ -360,8 +361,10 @@ baton delegate -m <model> --write "Fix the typos in docs/"      may edit
 Add `--type test-draft` (or another assignment type) to classify the work.
 After checking the result, Claude Code or Codex uses the delegation ID printed
 on stderr to record its three scores. Open **Ranking** and select the same job
-to add your evaluation later. See [Recording and reading reviews](docs/ranking.md)
-for commands, scoring and storage.
+to add your evaluation later. For OpenCode and local-AI tasks, **Rate** on the
+finished task opens its Ranking entry. Pre-merge reviewers supply the agent
+scores. Older tasks appear automatically with their original review text.
+See [Recording and reading reviews](docs/ranking.md) for commands, scoring and storage.
 
 ## Seeing Baton from your phone without putting it on the internet
 

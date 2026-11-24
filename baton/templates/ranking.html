@@ -1,7 +1,17 @@
 {% extends "base.html" %}
 {% block title %}{{ t.ranking }} · {{ title }}{% endblock %}
 {% block main %}
-<h1>{{ t.ranking }} · OpenCode</h1>
+<h1>{{ t.ranking }}</h1>
+<form method="get" action="/ranking">
+  <label>{{ t.origin }}
+    <select name="origin">
+      {% for value, label in [('all', t.all_origins), ('delegation', t.delegation), ('task', t.baton_task)] %}
+      <option value="{{ value }}" {% if value == origin %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">{{ t.filter_origin }}</button>
+</form>
 {% if models %}
 <p>{{ t.rank_order }}</p>
 <div class="ranking-table">
@@ -12,7 +22,7 @@
       {% endfor %}
     </tr></thead>
     <tbody>{% for row in models %}
-      <tr><th scope="row">{{ row.model }}</th><td>{{ row.evaluated }}</td>
+      <tr><th scope="row">{{ row.model or t.unknown_model }}</th><td>{{ row.evaluated }}</td>
         {% for key in ('fulfillment', 'correctness', 'rework', 'human', 'agent') %}
         <td>{{ '%.1f'|format(row[key]) if row[key] is not none else '' }}</td>
         {% endfor %}
@@ -20,11 +30,11 @@
     {% endfor %}</tbody>
   </table>
 </div>
-<h2>{{ t.delegations }}</h2>
+<h2>{{ t.rank_entries }}</h2>
 <ul class="task-list">
   {% for job in jobs %}
   <li class="task-row">
-    <a href="/ranking/{{ job.id }}">#{{ job.id }} · {{ job.model }} · {{ job.kind }}</a>
+    <a href="/ranking/{{ job.id }}">#{{ job.id }} · {{ job.model or t.unknown_model }} · {{ t.baton_task if job.task_id else t.delegation }} · {{ job.title if job.task_id else job.kind }}</a>
     <span>{{ job.started|when }}</span>
     <span>{{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</span>
     <span class="muted">{{ t.human_review }} · {{ t.st_done if job.human else t.review_pending }}</span>
@@ -32,5 +42,5 @@
   </li>
   {% endfor %}
 </ul>
-{% else %}<p>{{ t.no_delegations }}</p>{% endif %}
+{% else %}<p>{{ t.no_rank_entries }}</p>{% endif %}
 {% endblock %}

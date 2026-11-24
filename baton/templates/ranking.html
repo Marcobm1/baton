@@ -1,6 +1,31 @@
 {% extends "base.html" %}
 {% block title %}{{ t.ranking }} · {{ title }}{% endblock %}
 {% block main %}
+{% if saved %}
+{# One-time confirmation after saving an evaluation: floats above the tab bar
+   and hides by itself. Without JavaScript it simply stays as a notice. #}
+<div class="toast" role="status" data-toast>
+  <svg class="icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none"
+       stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4.5 12.5l5 5 10-11"/></svg>
+  <span>{{ t.rating_saved }}</span>
+</div>
+<script>
+  // The confirmation is one-time: remove ?saved=1 from the address (so the
+  // page's own 5-minute reload doesn't show it again) and hide the toast.
+  (function () {
+    var toast = document.querySelector("[data-toast]");
+    if (!toast) return;
+    try {
+      var url = new URL(location.href);
+      url.searchParams.delete("saved");
+      history.replaceState(null, "", url);
+    } catch (e) {}
+    setTimeout(function () { toast.classList.add("hide"); }, 4500);
+    toast.addEventListener("click", function () { toast.remove(); });
+  })();
+</script>
+{% endif %}
 <div class="page-head ranking-head"><h1>{{ t.ranking }}</h1>
 <form method="get" action="/ranking">
   <input type="hidden" name="view" value="{{ view }}">
@@ -60,7 +85,7 @@
       {% if job.estimate and job.agent is not none %}<small>({{ t.estimated }})</small>{% endif %}
       <div class="muted">{{ t.your_score }} · {{ '%.1f'|format(job.human) if job.human is not none else t.review_pending }}</div>
     </div>
-    <a class="btn ghost small" href="/ranking/{{ job.id }}#your-score">{{ t.edit_score if job.human is not none else t.rate_job }}</a>
+    <a class="btn ghost small" href="/ranking/{{ job.id }}?origin={{ origin }}&amp;view={{ view }}#your-score">{{ t.edit_score if job.human is not none else t.rate_job }}</a>
   </li>
   {% endfor %}
 </ul>

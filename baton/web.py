@@ -239,29 +239,35 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     @app.get("/ranking", response_class=HTMLResponse)
     def ranking_page(request: Request, origin: Literal["all", "delegation", "task"] = "all",
-                     view: Literal["agent", "human", "combined"] = "agent"):
+                     view: Literal["agent", "human", "combined"] = "agent", saved: int = 0):
         models, jobs = ranking.overview(origin)
-        return page(request, "ranking.html", "ranking", models=models, jobs=jobs, origin=origin, view=view)
+        return page(request, "ranking.html", "ranking", models=models, jobs=jobs, origin=origin,
+                    view=view, saved=bool(saved))
 
     @app.get("/ranking/{job}", response_class=HTMLResponse)
-    def delegation_page(request: Request, job: int):
+    def delegation_page(request: Request, job: int,
+                        origin: Literal["all", "delegation", "task"] = "all",
+                        view: Literal["agent", "human", "combined"] = "agent"):
         details, reviews = ranking.detail(job)
         if details is None:
             raise HTTPException(404, "Unknown delegation")
         return page(request, "delegation.html", "ranking", job=details, reviews=reviews,
-                    criteria=CRITERIA, estimate=historical_score(details))
+                    criteria=CRITERIA, estimate=historical_score(details), origin=origin, view=view)
 
     @app.post("/ranking/{job}")
     def human_review(request: Request, job: int, csrf: str = Form(""),
                      fulfillment: int = Form(..., ge=1, le=10),
                      correctness: int = Form(..., ge=1, le=10), rework: int = Form(..., ge=1, le=10),
-                     comment: str = Form("", max_length=500)):
+                     comment: str = Form("", max_length=500),
+                     origin: Literal["all", "delegation", "task"] = Form("all"),
+                     view: Literal["agent", "human", "combined"] = Form("agent")):
         check_post(request, csrf)
         try:
             ranking.review(job, "human", fulfillment, correctness, rework, comment)
         except KeyError:
             raise HTTPException(404, "Unknown delegation")
-        return RedirectResponse(f"/ranking/{job}", status_code=303)
+        # Back to the list (same filter and view), with a one-time confirmation.
+        return RedirectResponse(f"/ranking?origin={origin}&view={view}&saved=1", status_code=303)
 
     # ---------------------------------------------------------------- tasks
     @app.get("/tasks", response_class=HTMLResponse)

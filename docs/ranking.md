@@ -9,7 +9,8 @@ name, or select **Delegation** or **Baton task** to compare one workload.
 Every finished local task gets one entry, including
 failures, cancellations and runs with no changes. A cloud task sent to GitHub
 qualifies once Baton has stored its completion summary. Open **Rate** on the task
-to add your evaluation. The entry links back to the task and shows its model,
+to add your evaluation; saving returns you to the Ranking list with a one-time
+confirmation (your origin filter and chart view are kept). The entry links back to the task and shows its model,
 start date (creation date if it never started), assignment, outcome, whether
 Baton merged it, and the review report when present.
 

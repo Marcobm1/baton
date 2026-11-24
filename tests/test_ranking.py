@@ -46,7 +46,10 @@ def test_reviews_survive_restart(tmp_path, monkeypatch, capsys):
         assert web.post(url, data=form).status_code == 403
         form["csrf"] = token
         assert web.post(url, data=dict(form, rework=0)).status_code == 422
-        assert web.post(url, data=form, follow_redirects=False).status_code == 303
+        saved = web.post(url, data=form, follow_redirects=False)
+        assert saved.status_code == 303
+        # Saving returns to the Ranking list, not the job page.
+        assert saved.headers["location"] == "/ranking?origin=all&view=agent&saved=1"
     with TestClient(create_app(settings)) as restarted:
         page = restarted.get(url).text
         assert "Checked the cases" in page and "Needs fixes" in page
@@ -170,4 +173,27 @@ def test_chart_and_old_task_reviews(tmp_path, view):
     score = {"agent": 7, "human": 9, "combined": 8}[view]
     assert f'<strong>{score:.1f}<small>/10</small>' in page
     assert f'view={view}" aria-current="page"' in page
-    assert f'href="/ranking/{job}#your-score">Edit score' in page
+    assert f'href="/ranking/{job}?origin=task&amp;view={view}#your-score">Edit score' in page
+
+
+def test_saved_review_returns_to_ranking_with_a_confirmation(tmp_path):
+    settings = Settings(data_dir=tmp_path, lang="es")
+    ranking = Ranking(tmp_path)
+    job = ranking.start("provider/model", "test draft", "Assignment")
+    ranking.finish(job, "done", "Result")
+    web = TestClient(create_app(settings))
+    # The rate link keeps the list's filter and view; the form echoes them back.
+    page = web.get(f"/ranking/{job}?origin=task&view=human").text
+    assert 'name="origin" value="task"' in page and 'name="view" value="human"' in page
+    token = re.search(r'name="csrf" value="([^"]+)"', page)[1]
+    saved = web.post(f"/ranking/{job}", follow_redirects=False, data=dict(
+        csrf=token, fulfillment=7, correctness=8, rework=9, comment="",
+        origin="task", view="human"))
+    assert saved.status_code == 303
+    assert saved.headers["location"] == "/ranking?origin=task&view=human&saved=1"
+    # The list shows a one-time confirmation; a normal visit doesn't.
+    back = web.get(saved.headers["location"]).text
+    assert "Valoración guardada" in back and "data-toast" in back
+    assert "history.replaceState" in back          # the toast never repeats on reload
+    assert "Valoración guardada" not in web.get("/ranking").text
+    assert ranking.overview("delegation")[0][0]["human"] == 8

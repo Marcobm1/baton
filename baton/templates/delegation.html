@@ -2,7 +2,7 @@
 {% block refresh %}{% endblock %}
 {% block title %}{{ t.baton_task if job.task_id else t.delegation }} #{{ job.id }} · {{ title }}{% endblock %}
 {% block main %}
-<a href="/ranking">{{ t.ranking }}</a>
+<a href="/ranking?origin={{ origin }}&amp;view={{ view }}">{{ t.ranking }}</a>
 <h1>{{ t.baton_task if job.task_id else t.delegation }} #{{ job.id }} · {{ job.model or t.unknown_model }}</h1>
 <p>{{ job.started|when }} · {{ t.baton_task if job.task_id else job.kind }} · {{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</p>
 {% if job.task_id %}<p><a href="/tasks/{{ job.task_id }}">{{ job.title }}</a> · {{ t.merged if job.merged else t.not_merged }}</p>{% endif %}
@@ -24,6 +24,8 @@
 <p>{{ t.scale }}</p>
 <form class="task-form" method="post" action="/ranking/{{ job.id }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="origin" value="{{ origin }}">
+  <input type="hidden" name="view" value="{{ view }}">
   {% for key in criteria %}
   <label>{{ t[key] }}
     <input type="number" min="1" max="10" required name="{{ key }}" value="{{ reviews.human[key] if reviews.human else '' }}">

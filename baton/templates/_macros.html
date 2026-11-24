@@ -1,0 +1,15 @@
+{# Link to the New task form, prefilled with a drafted task from STATUS.md:
+   title, description and, if the draft names one, the recommended agent/model. #}
+{% macro draft_href(p, title, detail, rec) -%}
+  {%- set description = detail or t.provisional_details|format(title) -%}
+  {%- if p.path != 'STATUS.md' %}{% set description = p.path ~ '\n\n' ~ description %}{% endif -%}
+  {%- set query = {'repo': p.repo, 'title': title, 'details': description} -%}
+  {%- if rec and rec.agent %}{% set _ = query.update({'agent': rec.agent, 'model': rec.model, 'effort': rec.effort}) %}{% endif -%}
+  /tasks/new?{{ query|urlencode }}
+{%- endmacro %}
+
+{% macro rec_badge(rec) -%}
+  {%- if rec and rec.agent -%}
+  <span class="badge rec" title="{{ t.recommended }}">★ {{ agents.get(rec.agent, rec.agent) }}{% if rec.model %} · {{ rec.model }}{% endif %}{% if rec.effort %} · {{ rec.effort }}{% endif %}</span>
+  {%- endif -%}
+{%- endmacro %}

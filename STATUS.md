@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Watch the first OpenCode task go through review and auto-merge
 updated: 2026-11-24
-updated_by: codex
+updated_by: claude
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -18,6 +18,12 @@ links:
 
 ## Next
 - [x] 2026-11-24 Prepare the next editable task from the project page
+- [x] 2026-11-24 Recommended agent/model/effort for drafted tasks, last choice remembered, Spanish STATUS headings, project cards and page redesign
+- [ ] Check on the live page that "Launch next task" preselects the recommended model
+  Open a project whose next item has a `Recommended:` line, press Launch next task
+  and check the agent, model and effort; then open New task from Tasks and check
+  it starts with the last task's choice.
+  Recommended: codex, gpt-6.2-astra, low
 - [ ] Watch the first OpenCode task go through review and auto-merge
   Follow a real OpenCode task through review and CI. Check that Baton records
   the verdict on the task page and merges the reviewed commit after tests pass.
@@ -67,11 +73,13 @@ links:
   Alerts for high temperatures, RAM or disk almost full, and unusual use (unknown processes using the GPU or the network, logins at odd hours).
   Start with this Windows PC; design the data source so a small agent on each extra machine can report to Baton later.
   Prerequisite for a "Models" tab: start/stop local models (llama-server router mode), VRAM budget, tokens/s and tokens served (see the hub project "Cuantización").
+  Recommended: claude-code, opus, high
 
 ## Blockers
 - None.
 
 ## Decisions
+- 2026-11-24: the New task form starts with the draft's `Recommended:` line, else the last local task's agent/model/effort (from tasks.json, so the same on PC and phone); unavailable recommendations fall back and are named (docs/task-defaults.md).
 - 2026-11-24: "blocked" is computed from `depends_on` each time projects load instead of being a status value, so it clears itself when the dependency is marked done; unknown names keep the project blocked so typos are visible (docs/dependencies.md).
 - 2026-11-24: a scheduled quota check is skipped when a stored reading is fresher than the interval (the CLI just reported usage through its status line or logs), so 5-10 minute intervals cost little extra quota; OpenCode Go is asked at most every 5 minutes while the server runs, not only when the page is open (README "Quota panel").
 - 2026-11-24: one design system with colour tokens for light and dark; theme Auto/Light/Dark stored per browser and applied before the first paint; phone tab bar, desktop sidebar (docs/design.md).
@@ -95,6 +103,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude): drafted tasks carry a recommended agent/model/effort that the form preselects; the form remembers the last local choice; prompts list this computer's models; Spanish section headings parsed; cards open the project and launch the next task, project page features the next task; 96 tests passed, checked with screenshots (1440 px and 390 px, light and dark).
 - 2026-11-24 (codex): Project pages open an editable next-task draft and include Done recently in history. Local and cloud prompts request the next title and description. Project detail tests passed. The Windows suite still reports two cancellation cleanup failures.
 - 2026-11-24 (claude): `depends_on` and `parent` in STATUS.md; red blocked cards and detail note, blocked note in INDEX.md, en/es strings, README section and docs/dependencies.md; monitoring section added to Next; 90 tests passed.
 - 2026-11-24 (opencode): quota update review: scheduled checks now skip when a fresher reading exists (5-10 minute intervals barely spend extra quota), the OpenCode Go card refreshes every 5 minutes in the background, README/.env.example recommend 5-10 minutes; 87 tests passed plus an end-to-end smoke run of the loop.

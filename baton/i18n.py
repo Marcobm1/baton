@@ -3,6 +3,12 @@
 STRINGS = {
     "en": {
         "create_next": "Create next task",
+        "preset_recommended": "Recommended agent and model for this task",
+        "preset_last": "Your last choice",
+        "preset_missing": "recommended %s is not available here",
+        "recommended": "Recommended",
+        "next_up": "Next task", "launch_next": "Launch next task",
+        "open_project": "Open project",
         "provisional_details": "Complete the planned task “%s” and describe how you verified the result.",
         "right_now": "Right now", "open_pulls": "Open pull requests",
         "upcoming": "Upcoming tasks", "launch_task": "Launch as task", "finished_work": "Done",
@@ -176,6 +182,12 @@ STRINGS = {
     },
     "es": {
         "create_next": "Crear siguiente tarea",
+        "preset_recommended": "Agente y modelo recomendados para esta tarea",
+        "preset_last": "Tu última elección",
+        "preset_missing": "el recomendado (%s) no está disponible aquí",
+        "recommended": "Recomendado",
+        "next_up": "Siguiente tarea", "launch_next": "Lanzar siguiente tarea",
+        "open_project": "Ver proyecto",
         "provisional_details": "Completa la tarea prevista «%s» y explica cómo comprobaste el resultado.",
         "right_now": "Ahora mismo", "open_pulls": "PR abiertos",
         "upcoming": "Próximas tareas", "launch_task": "Lanzar como tarea", "finished_work": "Hecho",

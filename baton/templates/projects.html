@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block main %}
+{% import "_macros.html" as m with context %}
 
 <section id="projects">
   <div class="page-head">
@@ -19,7 +20,7 @@
     {% set s = p.status %}
     <article class="card prio-{{ s.priority }}{% if p.blocked %} blocked{% endif %}">
       <div class="c-head">
-        <a class="c-name" href="/p/{{ p.id }}">{{ s.name }}</a>
+        <a class="c-name" href="/p/{{ p.id }}" title="{{ t.open_project }}">{{ s.name }}</a>
         <span class="badge prio">{{ t[s.priority] }}</span>
       </div>
       {% if p.blocked %}<p class="blocked-note small">🔒 {{ t.blocked_by }}: {{ p.blocked_by|join(', ') }}</p>{% endif %}
@@ -27,7 +28,10 @@
       {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
       {% if s.next_task %}<p class="c-next" title="{{ s.next }}"><span class="label">{{ t.next_task }}</span> {{ s.next_task|truncate(90, True, '…') }}</p>{% endif %}
       {% if s.progress is not none %}
-      <div class="bar thin" title="{{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}"><span class="fill" style="width: {{ s.progress }}%"></span></div>
+      <div class="progress-line">
+        <div class="bar thin" title="{{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}"><span class="fill" style="width: {{ s.progress }}%"></span></div>
+        <span class="small">{{ s.progress|round|int }} %</span>
+      </div>
       <p class="muted small">{{ s.tasks_left }} {{ t.pending }} · {{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}</p>
       {% endif %}
       <p class="c-meta small">
@@ -40,7 +44,14 @@
       {% if s.problems %}<p class="warn small">{{ t.problems }}: {{ s.problems|join('; ') }}</p>{% endif %}
       <div class="c-actions">
         {% if p.repo in running %}<a class="pill running" href="/tasks">{{ t.task_running }}</a>{% endif %}
+        {% set d = drafts.get(p.id) %}
+        {% if d %}
+        <a class="btn ghost small icon" href="/tasks/new?repo={{ p.repo|urlencode }}" title="{{ t.task_button }}" aria-label="{{ t.task_button }}">＋</a>
+        <a class="btn small" href="{{ m.draft_href(p, d.title, d.detail, d.recommended) }}"
+           title="{{ d.title }}{% if d.recommended.agent %} · ★ {{ agents.get(d.recommended.agent, d.recommended.agent) }}{% endif %}">▶ {{ t.launch_next }}</a>
+        {% else %}
         <a class="btn small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
+        {% endif %}
       </div>
     </article>
     {% endfor %}

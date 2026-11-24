@@ -24,14 +24,19 @@
       {% set first = namespace(done=false) %}
       {% for key in ['claude-code', 'codex', 'opencode', 'local'] %}
       {% set why = available[key] %}
+      {% set pick = (key == initial.agent) if initial.agent else not first.done %}
       <label class="choice {% if why %}off{% endif %}">
-        <input type="radio" name="where" value="local:{{ key }}" {% if why %}disabled{% elif not first.done %}checked{% set first.done = true %}{% endif %}>
+        <input type="radio" name="where" value="local:{{ key }}" {% if why %}disabled{% elif pick and not first.done %}checked{% set first.done = true %}{% endif %}>
         <span class="c-title">{{ agents[key] }}</span>
         <span class="small muted">{% if why %}{{ why }}{% else %}{{ t['agent_help_' ~ key|replace('-', '_')] }}{% endif %}</span>
 
       </label>
       {% endfor %}
     </div>
+    {% if initial.source %}
+    <p class="preset-note small {{ initial.source }}">{{ '★ ' ~ t.preset_recommended if initial.source == 'recommended' else '↺ ' ~ t.preset_last }}
+      {% if initial.missing %}<span class="muted">· {{ t.preset_missing|format(initial.missing) }}</span>{% endif %}</p>
+    {% elif initial.missing %}<p class="preset-note small muted">{{ t.preset_missing|format(initial.missing) }}</p>{% endif %}
     <div class="task-settings" id="task-settings" hidden>
       <label>{{ t.model }}
         <select name="model" disabled><option value="">{{ t.cli_default }}</option></select>
@@ -67,5 +72,6 @@
   <button type="submit">{{ t.task_send }}</button>
 </form>
 <script type="application/json" id="task-catalogs">{{ catalogs|tojson }}</script>
+<script type="application/json" id="task-initial">{{ initial|tojson }}</script>
 <script src="/static/task-form.js" defer></script>
 {% endblock %}

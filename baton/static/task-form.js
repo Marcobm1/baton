@@ -34,3 +34,16 @@ form.addEventListener("change", event => {
   if (event.target === model) setEfforts();
 });
 setAgent();
+
+// Start with the recommended (or last used) model and effort. The server has
+// already checked that they exist on this computer.
+const initial = JSON.parse(document.querySelector("#task-initial").textContent);
+if (initial.agent && initial.agent === selectedAgent()) {
+  if (initial.agent === "opencode" && openCode && initial.model) {
+    openCode.querySelector("select").value = initial.model;
+  } else if (initial.model && [...model.options].some(o => o.value === initial.model)) {
+    model.value = initial.model;
+    setEfforts();
+    if ([...effort.options].some(o => o.value === initial.effort)) effort.value = initial.effort;
+  }
+}

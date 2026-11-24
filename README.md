@@ -136,9 +136,22 @@ That's all: the next time the page refreshes (every 5 minutes, or with the
 
 Open a project's name to see its current queue, open PRs and test results,
 upcoming tasks, completed work, blockers, decisions and recent log entries.
-Use **Create next task** to review the first pending item's title and description,
-or **Launch as task** to choose another item. At completion, Baton asks the
-agent to prepare the next draft in the project's STATUS.md.
+Use **Launch next task** (on the card or the project page) to review the first
+pending item's title and description, or **Launch as task** to choose another
+item. At completion, Baton asks the agent to prepare the next draft in the
+project's STATUS.md, including which agent, model and reasoning effort it
+recommends for it:
+
+```markdown
+- [ ] Add a CSV export
+  Include the filtered rows and column names.
+  Recommended: codex, gpt-6.2-astra, high
+```
+
+The New task form starts with that recommendation. Without one, it starts with
+the agent, model and effort of your last local task. Sections can be written in
+English or Spanish (`## Next` / `## Siguiente`, `## Blockers` / `## Bloqueos`...).
+See [task defaults](docs/task-defaults.md).
 The full file is available at the bottom. See the [project detail guide](docs/project-detail.md).
 
 ### Projects without a repository: the hub repo

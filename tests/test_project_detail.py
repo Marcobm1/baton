@@ -98,7 +98,7 @@ def test_dashboard_without_token(tmp_path, monkeypatch, lang):
     assert "Use <script> & check" not in page
     assert 'href="https://github.com/u/demo/pull/7"' in page
     assert '<details class="full-status">' in page and "---\nname: Project" in page
-    label = "Crear siguiente tarea" if lang == "es" else "Create next task"
+    label = "Lanzar siguiente tarea →" if lang == "es" else "Launch next task →"
     url = re.search(r'href="(/tasks/new\?[^"]+)">' + label + r'</a>', page)[1]
     form = client.get(html.unescape(url))
     assert form.status_code == 200
@@ -124,7 +124,7 @@ def test_hub_project_with_only_front_matter_next(tmp_path, monkeypatch):
     client = TestClient(create_app(Settings(data_dir=tmp_path)))
     assert 'href="/p/u/hub/report"' in client.get("/").text
     page = client.get("/p/u/hub/report").text
-    url = re.search(r'href="(/tasks/new\?[^"]+)">Create next task</a>', page)[1]
+    url = re.search(r'href="(/tasks/new\?[^"]+)">Launch next task →</a>', page)[1]
     form = client.get(html.unescape(url)).text
     assert '<option value="u/hub" selected>' in form and 'value="Export CSV"' in form
     assert path in form and "Export CSV" in form.split("<textarea", 1)[1]

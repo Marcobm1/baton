@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Check a model survives a Baton restart
+next: Diagnose Windows cancellation cleanup failures
 updated: 2026-11-24
 updated_by: claude-code
 open_source: true
@@ -17,7 +17,7 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
-- [ ] Check a model survives a Baton restart
+- [x] 2026-11-24 Check a model survives a Baton restart
   With a model started from Baton's Models page, restart Baton (scheduled task
   or a self-update) and check the model is still running, still shown as
   started by Baton (not "outside Baton"), and Stop still works. Record the

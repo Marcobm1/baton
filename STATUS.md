@@ -47,7 +47,7 @@ links:
 - [x] 2026-11-24 Confirm the first live self-update and scheduled restart on Windows
 - [x] OpenCode delegation ranking with separate agent and human reviews
 - [x] 2026-11-24 Visual redesign: sidebar / phone tab bar, Auto-Light-Dark theme, WCAG AA colour tokens
-- [ ] (Marco) Rate a real delegation from the CLI and web
+- [x] (Marco) Rate a real delegation from the CLI and web
 - [ ] Future phase for native ChatGPT and Claude model rankings
 - [x] STATUS.md format and parser
 - [x] Web page with projects and quota panel

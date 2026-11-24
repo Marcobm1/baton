@@ -14,7 +14,7 @@ from urllib.parse import quote, urlparse
 
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
@@ -29,7 +29,7 @@ from .project_detail import finished_items
 from .task_models import catalog
 from . import task_defaults, ranking_view
 from .task_report import task_report
-from .models import LocalModels, ModelError
+from .models import LocalModels, ModelError, chat_payload
 from .self_update import SelfUpdate
 from .runner import UpdateInProgress
 from .runner import (AGENTS, PRIORITIES, NEXT_TASK_REQUEST, SUMMARY_REQUEST, next_task_request, LocalRepos, Runner, Task, TaskStore,
@@ -566,14 +566,60 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     @app.post("/models/{model_id}/{action}")
     async def model_action(request: Request, model_id: str, action: Literal["start", "stop"],
-                           csrf: str = Form("")):
+                           csrf: str = Form(""), back: str = Form("")):
         check_post(request, csrf)
+        # Started from the chat page: go back there with that model selected.
+        target = f"/chat?model={quote(model_id)}" if back == "/chat" else "/models"
+        sep = "&" if "?" in target else "?"
         try:
             # Stopping waits for the process to exit: keep the other pages answering.
             await asyncio.to_thread(models.start if action == "start" else models.stop, model_id)
         except ModelError as exc:
-            return RedirectResponse(f"/models?error={quote(exc.text(t))}", status_code=303)
-        return RedirectResponse("/models", status_code=303)
+            return RedirectResponse(f"{target}{sep}error={quote(exc.text(t))}", status_code=303)
+        return RedirectResponse(target, status_code=303)
+
+    # ----------------------------------------------------------------- chat
+    @app.get("/chat", response_class=HTMLResponse)
+    async def chat_page(request: Request, model: str = "", error: str = ""):
+        view = await asyncio.to_thread(models.overview, settings.lang)
+        ids = [m["id"] for m in view["models"]]
+        running = [m["id"] for m in view["models"] if m["status"] in ("running", "external")]
+        selected = model if model in ids else (running[0] if running else (ids[0] if ids else ""))
+        return page(request, "chat.html", "chat", view=view, selected=selected, error=error[:300])
+
+    @app.post("/api/chat/{model_id}")
+    async def chat_api(request: Request, model_id: str):
+        """Relay a chat to a local model and stream its answer back (server-sent
+        events), so the chat works from any device that can open Baton."""
+        check_post(request, request.headers.get("x-baton-csrf", ""))
+        try:
+            payload = chat_payload(await request.json())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        try:
+            port = await asyncio.to_thread(models.chat_port, model_id)
+        except ModelError as exc:
+            raise HTTPException(404 if exc.key == "m_err_unknown" else 409, exc.text(t)) from exc
+        # No read timeout: a long answer can take minutes. Closing the browser's
+        # request (Stop) closes this stream, and llama-server stops generating.
+        client = httpx.AsyncClient(timeout=httpx.Timeout(None, connect=5.0))
+        try:
+            upstream = await client.send(client.build_request(
+                "POST", f"http://127.0.0.1:{port}/v1/chat/completions", json=payload), stream=True)
+        except httpx.HTTPError as exc:
+            await client.aclose()
+            raise HTTPException(502, f"The model did not answer: {exc}") from exc
+
+        async def relay():
+            try:
+                async for chunk in upstream.aiter_raw():
+                    yield chunk
+            finally:
+                await upstream.aclose()
+                await client.aclose()
+
+        return StreamingResponse(relay(), status_code=upstream.status_code, media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     # ------------------------------------------------------------------ api
     @app.get("/api/projects")

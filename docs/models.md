@@ -40,6 +40,27 @@ write on the computer itself (`BATON_DATA_DIR` changes the folder).
 
 Problems in the file are listed on the page instead of breaking it.
 
+## Chat page
+
+`/chat` talks to any model in `models.json` from any device that can open
+Baton (also the phone through Tailscale), because the browser never calls the
+model's port: it posts to `/api/chat/<id>`, and Baton relays the request to
+`127.0.0.1:<port>/v1/chat/completions` and streams the answer back as
+server-sent events. The model keeps listening only on `127.0.0.1`.
+
+- Only text messages (system/user/assistant) and a reasoning effort
+  (`none`, `low`, `medium`, `high`) are forwarded; sampling and everything else
+  come from the model's `args`, so each model keeps its own settings.
+- The request needs the page's form token in an `X-Baton-CSRF` header, like
+  every other change Baton makes; a stopped model answers 409.
+- Stop closes the request; llama-server notices and stops generating.
+- The conversation lives only in that browser (`localStorage`, one per model);
+  "New chat" clears it. The page has no automatic reload, so nothing is lost.
+- Answers are shown with a small built-in Markdown renderer that escapes
+  everything first (no external libraries, no HTML from the model).
+- A stopped model can be started from the chat; Baton comes back to the chat
+  with that model selected and the page waits until it answers.
+
 ## Decisions
 
 - **One `llama-server` process per model**, not llama-server's router mode.
@@ -65,5 +86,9 @@ Problems in the file are listed on the page instead of breaking it.
   `nvidia-smi` (GPU). CPU temperature is not shown: Windows only exposes it to
   administrator tools. Per-process VRAM isn't reported by Windows drivers, so
   the budget shows the measured total plus each model's `vram_gb` estimate.
+- **Start button bug (fixed):** project cards make the whole card clickable
+  with `.c-name::after`; on model cards that layer covered the Start button,
+  so clicks never reached Baton (Stop worked because it had the `.btn` class,
+  which sits above that layer). Model cards don't use it now.
 - Levels turn amber/red at: CPU 85/97 %, RAM 85/95 %, disk 90/97 % used,
   GPU 75/85 °C, VRAM 90/98 %.

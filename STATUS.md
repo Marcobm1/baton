@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Start and stop a model from the live Models page
+next: Check a model survives a Baton restart
 updated: 2026-11-24
 updated_by: claude-code
 open_source: true
@@ -17,14 +17,15 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
-- [ ] Start and stop a model from the live Models page
-  On Marco's PC, with no llama-server running, press Start on Inkling 2 Mini in
-  Baton's Models page: the card should go Loading -> Running in about 25 s,
-  `nvidia-smi` should show ~15.6 GiB used, and a chat request should raise
-  "Tokens generated". Then restart Baton (scheduled task) and check the model
-  is still running and still shown as started by Baton; press Stop and check
-  VRAM drops back. Record the result in the Log.
+- [ ] Check a model survives a Baton restart
+  With a model started from Baton's Models page, restart Baton (scheduled task
+  or a self-update) and check the model is still running, still shown as
+  started by Baton (not "outside Baton"), and Stop still works. Record the
+  result in the Log.
   Recommended: claude-code, opus, medium
+- [x] 2026-11-24 Chat page for local models (`/chat`), relayed and streamed by Baton
+- [x] 2026-11-24 Fix: the Start button on model cards didn't react (covered by the card's click layer)
+- [x] 2026-11-24 Start and stop a model from the live Models page (start, stop, VRAM refusal checked on Marco's PC)
 - [x] 2026-11-24 Models page: this computer, VRAM budget and local models with Start/Stop
   `/models`: CPU, RAM, disk, GPU load, VRAM, temperature, power; one card per
   model in `~/.baton/models.json` with live speed and tokens served (docs/models.md).
@@ -130,6 +131,7 @@ links:
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-24: the chat goes through Baton (`/api/chat/<id>`, streamed) instead of opening the model's port: works from the phone, the model stays on 127.0.0.1, and only text plus reasoning effort is forwarded (docs/models.md).
 - 2026-11-24: local models run as one detached `llama-server` per model from `~/.baton/models.json`, not router mode: each keeps its tuned options, a 16 GB card fits one large model anyway, and models survive Baton restarts (docs/models.md).
 - 2026-11-24: a Codex cloud form option needs a live implementation task and a
   retrievable result from the intended trigger ([test plan](docs/codex-cloud-tasks.md)).
@@ -162,6 +164,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude-code): Chat page (nav tab) relaying /v1/chat/completions with streaming, reasoning shown apart, safe Markdown, per-model history in the browser, start a model from the chat; fixed the dead Start button; checked live with Inkling 2 Mini (~57 tok/s through Baton) at desktop and 375 px.
 - 2026-11-24 (claude-code): Models page (`/models`, nav tab): this PC's CPU/RAM/disk/GPU readings, VRAM budget, Start/Stop for the llama-server models in `~/.baton/models.json`, live speed and tokens served from `--metrics`; detects servers started outside Baton; new dependency psutil 7.2.2; 130 tests passed on Windows (the two cancellation tests passed too); checked at 800 px dark and 375 px light.
 - 2026-11-24 (codex): Checked the saved report and merged [PR #29](https://github.com/Marcobm1/baton/pull/29) link in Tasks. This running review showed the Codex step and the cancel button with confirmation. Windows suite: 117 passed, two known cancellation cleanup failures.
 - 2026-11-24 (claude): Ranking "Reviewed scores only" toggle and rating from the list; Tasks filter by repository; project page split into Next / Done / Notes tabs with a compact header, Markdown descriptions with GitHub links; 119 tests passed; screenshots checked at 1440 and 390 px.

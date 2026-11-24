@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ t.chat_nav }} · {{ title }}{% endblock %}
+{# No automatic reload here: it would wipe a conversation in progress. #}
+{% block refresh %}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/chat.css?v={{ css_v }}">{% endblock %}
+{% block main %}
+{% set js = {
+  'stop': t.chat_stop, 'send': t.chat_send, 'reasoning': t.chat_reasoning, 'thinking': t.chat_thinking,
+  'writing': t.chat_writing, 'stopped': t.chat_stopped, 'error': t.chat_error, 'copy': t.chat_copy,
+  'copied': t.chat_copied, 'off': t.chat_off, 'loading': t.chat_loading, 'busy': t.chat_busy,
+  'start': t.m_start, 'lang': lang} %}
+<section class="chat" data-chat data-csrf="{{ csrf }}">
+  <div class="chat-head">
+    <h2>{{ t.chat_nav }}</h2>
+    {% if view.models %}
+    <div class="chat-controls">
+      <label><span class="label">{{ t.chat_model }}</span>
+        <select data-model>
+          {% for m in view.models %}
+          <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
+                  {% if m.id == selected %}selected{% endif %}>{{ m.name }}</option>
+          {% endfor %}
+        </select></label>
+      <label><span class="label">{{ t.chat_effort }}</span>
+        <select data-effort>
+          {% for e in ['none', 'low', 'medium', 'high'] %}
+          <option value="{{ e }}" {% if e == 'low' %}selected{% endif %}>{{ t['chat_effort_' ~ e] }}</option>
+          {% endfor %}
+        </select></label>
+      <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
+    </div>
+    {% endif %}
+  </div>
+  {% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
+  {% if not view.models %}
+  <p class="muted">{{ t.m_no_config.format(path=view.config.path) }}</p>
+  {% else %}
+  <div class="warn chat-off" data-off hidden>
+    <span data-off-text></span>
+    <form method="post" data-start-form>
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="/chat">
+      <button type="submit" class="btn small" data-start>{{ t.m_start }}</button>
+    </form>
+  </div>
+  <div class="chat-log" data-log aria-live="polite">
+    <p class="muted chat-empty" data-empty>{{ t.chat_empty }}</p>
+  </div>
+  <form class="chat-input" data-form>
+    <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
+    <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
+  </form>
+  <p class="muted small chat-hint">{{ t.chat_hint }}</p>
+  {% endif %}
+</section>
+<script id="chat-strings" type="application/json">{{ js|tojson }}</script>
+<script src="/static/chat.js?v={{ css_v }}" defer></script>
+{% endblock %}

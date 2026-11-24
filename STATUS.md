@@ -79,6 +79,7 @@ links:
 - None.
 
 ## Decisions
+- 2026-11-24: every local script and stylesheet URL ends in `?v=` + a hash of all static CSS/JS, so a self-update never leaves a browser with an old file.
 - 2026-11-24: the New task form starts with the draft's `Recommended:` line, else the last local task's agent/model/effort (from tasks.json, so the same on PC and phone); unavailable recommendations fall back and are named (docs/task-defaults.md).
 - 2026-11-24: "blocked" is computed from `depends_on` each time projects load instead of being a status value, so it clears itself when the dependency is marked done; unknown names keep the project blocked so typos are visible (docs/dependencies.md).
 - 2026-11-24: a scheduled quota check is skipped when a stored reading is fresher than the interval (the CLI just reported usage through its status line or logs), so 5-10 minute intervals cost little extra quota; OpenCode Go is asked at most every 5 minutes while the server runs, not only when the page is open (README "Quota panel").
@@ -103,6 +104,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude): phones kept the old task-form.js after the update (only style.css and theme.js had a version in their URL), so the recommended model was not preselected there; every script and stylesheet URL now carries a version that changes with any of them; test added; 97 tests passed.
 - 2026-11-24 (claude): drafted tasks carry a recommended agent/model/effort that the form preselects; the form remembers the last local choice; prompts list this computer's models; Spanish section headings parsed; cards open the project and launch the next task, project page features the next task; 96 tests passed, checked with screenshots (1440 px and 390 px, light and dark).
 - 2026-11-24 (codex): Project pages open an editable next-task draft and include Done recently in history. Local and cloud prompts request the next title and description. Project detail tests passed. The Windows suite still reports two cancellation cleanup failures.
 - 2026-11-24 (claude): `depends_on` and `parent` in STATUS.md; red blocked cards and detail note, blocked note in INDEX.md, en/es strings, README section and docs/dependencies.md; monitoring section added to Next; 90 tests passed.

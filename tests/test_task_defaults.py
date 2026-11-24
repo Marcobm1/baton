@@ -96,3 +96,11 @@ def test_draft_link_preselects_the_recommended_model(tmp_path, monkeypatch):
 def test_spanish_headings():
     s = sections("## Siguiente\n- [ ] Uno\n  Detalle.\n## Bloqueos\n- Falta X\n## Registro\n- 2026-11-24 (claude): creado\n")
     assert [i.title for i in s.checklist] == ["Uno"] and s.blockers == ["Falta X"] and len(s.log) == 1
+
+
+def test_every_local_script_and_stylesheet_is_versioned():
+    from pathlib import Path
+    templates = Path(web.__file__).parent / "templates"
+    for page in templates.glob("*.html"):
+        for ref in re.findall(r'(?:src|href)="(/static/[^"]+\.(?:js|css)[^"]*)"', page.read_text()):
+            assert "?v={{ css_v }}" in ref, f"{page.name}: {ref} would stay cached after an update"

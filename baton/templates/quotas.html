@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ t.quotas }} · {{ title }}{% endblock %}
-{% block styles %}<link rel="stylesheet" href="/static/quotas.css?v=design-1">{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/quotas.css?v={{ css_v }}">{% endblock %}
 {% block main %}
 {% macro logo(provider) -%}
   {% set brand = {'claude': 'anthropic', 'claude-code': 'anthropic', 'codex': 'openai', 'opencode': 'opencode'}.get(provider) %}

@@ -158,8 +158,11 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     templates.env.globals.update(
         t=t, title=settings.title, version=__version__, lang=settings.lang, csrf=csrf_token,
         agents=AGENTS,
-        # Changes whenever style.css changes, so browsers never keep an old copy.
-        css_v=hashlib.sha256((HERE / "static" / "style.css").read_bytes()).hexdigest()[:10])
+        # Changes whenever any stylesheet or script changes, so browsers (and
+        # phones, which cache hard) never keep an old copy after an update.
+        css_v=hashlib.sha256(b"".join(
+            f.read_bytes() for f in sorted((HERE / "static").glob("*")) if f.suffix in (".css", ".js")
+        )).hexdigest()[:10])
     templates.env.filters["md"] = _render_md
     templates.env.filters["dur"] = _duration
     templates.env.filters["ordinal"] = lambda n: ordinal(n, settings.lang)

@@ -147,3 +147,44 @@ def test_continue_finished_task(tmp_path, monkeypatch):
     original.where, original.agent, original.status = "cloud", "claude-code", "sent"
     store.save(original)
     assert 'value="cloud" checked' in client.get(url).text
+
+
+def test_tasks_and_ranking_are_paged(tmp_path, monkeypatch):
+    from baton.ranking import Ranking
+    from baton.ranking_view import paginate
+    assert paginate(list(range(25)), 9, 10) == {"items": list(range(20, 25)), "page": 3, "pages": 3,
+                                                "total": 25, "first": 21, "last": 25}
+    assert paginate([], 1, 10)["pages"] == 1
+
+    async def load(self, force=False):
+        return [], []
+
+    monkeypatch.setattr(Hub, "load", load)
+    store = runner_mod.TaskStore(tmp_path)
+    for i in range(23):
+        store.save(Task(id=f"t{i:02}", repo="u/demo", title=f"Task {i:02}", details="", agent="codex",
+                        where="local", created_at=1000.0 + i, status="failed" if i % 5 == 0 else "done",
+                        finished_at=2000.0 + i, model="gpt-a"))
+    client = TestClient(web.create_app(Settings(data_dir=tmp_path, lang="en")))
+    # Saved after start-up: Baton marks tasks left running by a restart as failed.
+    store.save(Task(id="run", repo="u/demo", title="Running one", details="", agent="codex",
+                    where="local", created_at=5000.0, status="running"))
+
+    page = client.get("/tasks").text
+    assert "Running one" in page and page.count('class="task-row') == 1 + 10
+    assert "Page 1 of 3" in page and 'href="?page=2#history"' in page
+    last = client.get("/tasks?page=3").text
+    assert last.count('class="task-row') == 1 + 3
+    failed = client.get("/tasks?status=failed").text
+    assert failed.count('class="task-row st-failed') == 5 and "Page 1 of" not in failed
+
+    ranking = Ranking(tmp_path)
+    assert len(ranking.overview()[1]) == 23
+    board = client.get("/ranking").text
+    jobs = board.split('id="jobs"', 1)[1]
+    assert jobs.count('class="task-row ranking-entry"') == 8 and "Page 1 of 3" in jobs
+    assert "GPT-a" in board or "gpt-a" in board
+    pending = client.get("/ranking?tab=pending&page=3").text.split('id="jobs"', 1)[1]
+    assert pending.count('class="task-row ranking-entry"') == 7          # 23 jobs: 8 + 8 + 7
+    only = client.get("/ranking?model=gpt-a").text
+    assert "All models" in only

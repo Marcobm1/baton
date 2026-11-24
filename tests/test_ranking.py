@@ -133,10 +133,11 @@ def test_import_filter_and_restart(tmp_path):
     assert "Keep this" in restarted.get(link).text
     assert len(ranking.overview("task")[1]) == len(rows)
     for origin, average in [("all", 5), ("delegation", 2), ("task", 8)]:
-        page = restarted.get(f"/ranking?origin={origin}").text
+        page = restarted.get(f"/ranking?origin={origin}&view=human").text
         assert ("test draft" in page) == (origin != "task")
         assert ("Task cancelled" in page) == (origin != "delegation")
-        assert f"<td>{average}.0</td>" in page
+        top = re.search(r'class="metric main">.*?<span class="metric-value">([\d.]+)</span>', page, re.S)
+        assert top[1] == f"{average}.0"
 
 
 def test_only_finished_tasks_count(tmp_path):
@@ -171,7 +172,8 @@ def test_chart_and_old_task_reviews(tmp_path, view):
     store.ranking.review(job, "human", 9, 9, 9, "")
     page = web.get(f"/ranking?origin=task&view={view}").text
     score = {"agent": 7, "human": 9, "combined": 8}[view]
-    assert f'<strong>{score:.1f}<small>/10</small>' in page
+    top = re.search(r'class="metric main">.*?<span class="metric-value">([\d.]+)</span>', page, re.S)
+    assert top[1] == f"{score:.1f}"
     assert f'view={view}" aria-current="page"' in page
     assert f'href="/ranking/{job}?origin=task&amp;view={view}#your-score">Edit score' in page
 

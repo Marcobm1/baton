@@ -21,3 +21,16 @@
   <span class="badge" title="{{ t.runs_in }}">↗ {{ repo }}</span>
   {%- endif -%}
 {%- endmacro %}
+
+{# Pager for a paginate() result. `params` are the other query parameters to keep. #}
+{% macro pager(pg, params, anchor='') -%}
+  {%- if pg.pages > 1 -%}
+  <nav class="pager" aria-label="{{ t.pages }}">
+    {%- set keep = params|dictsort|selectattr(1)|list -%}
+    {%- macro href(n) -%}?{{ (keep + [('page', n)])|urlencode }}{{ anchor }}{%- endmacro -%}
+    {% if pg.page > 1 %}<a class="btn ghost small" href="{{ href(pg.page - 1) }}" rel="prev">‹ {{ t.prev_page }}</a>{% else %}<span class="btn ghost small" aria-disabled="true">‹ {{ t.prev_page }}</span>{% endif %}
+    <span class="small muted">{{ t.page_of|format(pg.page, pg.pages) }} · {{ t.showing|format(pg.first, pg.last, pg.total) }}</span>
+    {% if pg.page < pg.pages %}<a class="btn ghost small" href="{{ href(pg.page + 1) }}" rel="next">{{ t.next_page }} ›</a>{% else %}<span class="btn ghost small" aria-disabled="true">{{ t.next_page }} ›</span>{% endif %}
+  </nav>
+  {%- endif -%}
+{%- endmacro %}

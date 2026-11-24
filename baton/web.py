@@ -12,7 +12,7 @@ from typing import Literal
 from urllib.parse import quote, urlparse
 
 import httpx
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -26,7 +26,7 @@ from .ping import Scheduler
 from .ranking import CRITERIA, historical_score
 from .project_detail import finished_items
 from .task_models import catalog
-from . import task_defaults
+from . import task_defaults, ranking_view
 from .task_report import task_report
 from .self_update import SelfUpdate
 from .runner import UpdateInProgress
@@ -170,6 +170,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     templates.env.filters["dur"] = _duration
     templates.env.filters["ordinal"] = lambda n: ordinal(n, settings.lang)
     templates.env.filters["tok"] = usage.human
+    # {**a, **b} for query strings: a None value drops that parameter.
+    templates.env.filters["combine"] = lambda base, changes: {**base, **changes}
     templates.env.filters["when"] = lambda ts: time.strftime("%Y-%m-%d %H:%M", time.localtime(ts)) if ts else "—"
     usage_cache: dict = {}
 
@@ -271,10 +273,20 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     @app.get("/ranking", response_class=HTMLResponse)
     def ranking_page(request: Request, origin: Literal["all", "delegation", "task"] = "all",
-                     view: Literal["agent", "human", "combined"] = "agent", saved: int = 0):
+                     view: Literal["agent", "human", "combined"] = "agent", saved: int = 0,
+                     tab: Literal["all", "pending"] = "all", model: str | None = None,
+                     page_number: int = Query(1, alias="page")):
         models, jobs = ranking.overview(origin)
-        return page(request, "ranking.html", "ranking", models=models, jobs=jobs, origin=origin,
-                    view=view, saved=bool(saved))
+        rows = ranking_view.leaderboard(models, jobs, view)
+        if model is not None and model not in {r["model"] for r in rows}:
+            model = None
+        listed = ranking_view.job_list(jobs, tab, model)
+        return page(request, "ranking.html", "ranking", models=models, rows=rows, origin=origin,
+                    view=view, saved=bool(saved), tab=tab, model=model,
+                    selected_label=ranking_view.model_label(model or ""),
+                    stats=ranking_view.summary(rows, jobs, view),
+                    pending_count=len(ranking_view.job_list(jobs, "pending", model)),
+                    jobs=ranking_view.paginate(listed, page_number, ranking_view.PER_PAGE_JOBS))
 
     @app.get("/ranking/{job}", response_class=HTMLResponse)
     def delegation_page(request: Request, job: int,
@@ -303,10 +315,20 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     # ---------------------------------------------------------------- tasks
     @app.get("/tasks", response_class=HTMLResponse)
-    async def tasks_page(request: Request):
+    async def tasks_page(request: Request,
+                         status: Literal["all", "done", "no-changes", "failed", "cancelled", "sent"] = "all",
+                         page_number: int = Query(1, alias="page")):
         tasks = store.all()
-        return page(request, "tasks.html", "tasks", tasks=tasks, queue=runner.queue_info(),
-                    any_running=any(x.status in ("queued", "running") for x in tasks))
+        active = [x for x in tasks if x.status in ("queued", "running")]
+        history = [x for x in tasks if x.status not in ("queued", "running")]
+        counts = {key: sum(x.status == key for x in history)
+                  for key in ("done", "no-changes", "failed", "cancelled", "sent")}
+        if status != "all":
+            history = [x for x in history if x.status == status]
+        return page(request, "tasks.html", "tasks", tasks=tasks, active=active, status=status,
+                    counts={k: v for k, v in counts.items() if v}, total=sum(counts.values()),
+                    history=ranking_view.paginate(history, page_number, ranking_view.PER_PAGE_TASKS),
+                    queue=runner.queue_info(), any_running=bool(active))
 
     def followup_context(task: Task) -> str:
         summary = task.summary or task_report(task, store.read_log(task.id))["summary"]

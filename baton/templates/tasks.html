@@ -8,15 +8,33 @@
 </div>
 <p class="muted small">{{ t.tasks_help }}</p>
 {% if not tasks %}<p class="muted">{{ t.no_tasks }}</p>{% endif %}
-<ul class="task-list">
-  {% for x in tasks %}
+{% import "_macros.html" as m with context %}
+{% macro row(x) %}
   <li class="task-row st-{{ x.status }}">
     <span class="pill st">{{ t['st_' ~ x.status] }}</span>
     <a class="task-title" href="/tasks/{{ x.id }}">{{ x.title }}</a>
-    <span class="muted small">{{ x.repo }} · {% if x.where == 'cloud' %}☁ {{ t.where_cloud_short }}{% else %}🖥 {{ agents[x.agent] }}{% if x.model %} · {{ x.model }}{% if x.effort %} · {{ x.effort }}{% endif %}{% endif %}{% endif %}</span>
+    <span class="muted small">{{ x.repo }} · {% if x.where == 'cloud' %}☁ {{ t.where_cloud_short }}{% else %}🖥 {{ agents[x.agent] }}{% if x.model %} · {{ x.model }}{% if x.effort %} · {{ x.effort }}{% endif %}{% endif %}{% endif %}{% if x.finished_at %} · {{ x.finished_at|when }}{% endif %}</span>
     {% if x.id in queue %}{% set q = queue[x.id] %}<span class="small queue-info"><span class="pill prio-{{ x.priority }}">{{ t.priority }} · {{ t['prio_' ~ x.priority] }}</span> {{ t.queue_pos|format(q.position|ordinal) }} · {{ t.waiting_for }} {% if q.waiting_for %}<a href="/tasks/{{ q.waiting_for.id }}">{{ q.waiting_for.title }}</a>{% else %}{{ t.waiting_slot|format(q.running, q.max) }}{% endif %}</span>{% endif %}
     {% if x.pr_url %}<a class="small" href="{{ x.pr_url }}">PR ↗</a>{% elif x.issue_url %}<a class="small" href="{{ x.issue_url }}">Issue ↗</a>{% endif %}
   </li>
-  {% endfor %}
-</ul>
+{% endmacro %}
+{% if active %}
+<section><h3>{{ t.right_now }} <small class="muted">({{ active|length }})</small></h3>
+<ul class="task-list">{% for x in active %}{{ row(x) }}{% endfor %}</ul>
+</section>
+{% endif %}
+{% if total %}
+<section id="history">
+  <div class="jobs-head"><h3>{{ t.history }}</h3>
+    <nav class="chips" aria-label="{{ t.history }}">
+      <a class="chip" href="?status=all#history"{% if status == 'all' %} aria-current="true"{% endif %}>{{ t.all_jobs }} <span class="count">{{ total }}</span></a>
+      {% for key, n in counts.items() %}
+      <a class="chip" href="?status={{ key }}#history"{% if status == key %} aria-current="true"{% endif %}>{{ t['st_' ~ key]|capitalize }} <span class="count">{{ n }}</span></a>
+      {% endfor %}
+    </nav>
+  </div>
+  <ul class="task-list">{% for x in history['items'] %}{{ row(x) }}{% else %}<li class="muted">{{ t.no_tasks }}</li>{% endfor %}</ul>
+  {{ m.pager(history, {'status': status if status != 'all' else none}, '#history') }}
+</section>
+{% endif %}
 {% endblock %}

@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Verify live OpenCode reviewer scores and charts
+next: Future phase for native ChatGPT and Claude model rankings
 updated: 2026-11-24
-updated_by: codex
+updated_by: claude
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -35,7 +35,7 @@ links:
   Recommended: codex, gpt-6.2-astra, low
 - [x] 2026-11-24 Include OpenCode and local-AI tasks and their reviews in Ranking
 - [x] 2026-11-24 Confirm the first OpenCode review and auto-merge
-- [ ] Verify live OpenCode reviewer scores and charts
+- [x] 2026-11-24 Verify live OpenCode reviewer scores and charts
   Find a finished OpenCode delivery in tasks.json or GitHub and compare the
   recorded review and merge outcome with Ranking. Check chart calculations
   against existing ratings and document any missing sample.
@@ -121,6 +121,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude): verified live: OpenCode tasks #30 and #31 were reviewed by Claude Code (opus · medium) with structured scores 9/9/10 and 10/10/10, merged after CI, and Ranking shows them (9.3 and 10.0); GLM 5.3 human average 7.4 matches the five saved human scores.
 - 2026-11-24 (codex): added owner actions and editable task follow-ups. All 16 project-detail and task-default tests passed with simulated GitHub writes. Full suite: 112 passed; both Windows cancellation cleanup failures reproduced on the unchanged base.
 - 2026-11-24 (opencode): the task page shows the reviewer's model and effort
   (for example "opus · medium") next to "Review by Claude Code/Codex"; both are

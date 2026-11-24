@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Open the new project detail on a phone and review a prefilled task draft.
+next: Confirm the first live self-update and scheduled restart on Windows.
 updated: 2026-11-24
 updated_by: codex
 open_source: true
@@ -18,9 +18,7 @@ links:
 
 ## Next
 - [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
-- [ ] Check the project detail on a phone
-  Open a project with an active queue and a PR with tests.
-  Expand a checklist item and verify its draft before sending.
+- [x] 2026-11-24 Check the project detail on a phone
 - [x] Automatic idle-only self-update with validation, rollback and status on Quotas
 - [ ] Confirm the first live self-update and scheduled restart on Windows
 - [x] OpenCode delegation ranking with separate agent and human reviews
@@ -82,6 +80,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): the owner confirmed the project detail and prefilled task draft worked on mobile. The Windows self-update check is next.
 - 2026-11-24 (codex): added structured project details and editable checklist drafts. All six detail tests passed, including cached GitHub failure and token-free views. Full suite: 77 passed, two known Windows cancellation cleanup failures. Phone and live PR check pending.
 - 2026-11-24 (claude-code): installed #10-#12 on Windows by hand (73 tests passed there); this commit is the first one the self-updater should pull and restart on by itself.
 - 2026-11-24 (codex): added native self-update, a CSRF-protected Quotas control and update history. All 11 updater tests passed; two Windows cancellation failures also reproduced on the unchanged base. Live scheduler handoff pending.

@@ -2,6 +2,12 @@
 
 STRINGS = {
     "en": {
+        "right_now": "Right now", "open_pulls": "Open pull requests",
+        "upcoming": "Upcoming tasks", "launch_task": "Launch as task", "finished_work": "Done",
+        "blockers": "Blockers", "decisions": "Decisions", "see_more": "See more",
+        "full_status": "Full STATUS.md", "not_merged": "Not merged",
+        "checks_passed": "Tests passed", "checks_failed": "Tests failed",
+        "checks_pending": "Tests pending", "checks_none": "No reported tests",
         "update_title": "Baton updates",
         "update_now": "Update now",
         "update_running": "Running commit",
@@ -163,6 +169,12 @@ STRINGS = {
         "token_none": "No GitHub token: only public repositories are visible.",
     },
     "es": {
+        "right_now": "Ahora mismo", "open_pulls": "PR abiertos",
+        "upcoming": "Próximas tareas", "launch_task": "Lanzar como tarea", "finished_work": "Hecho",
+        "blockers": "Bloqueos", "decisions": "Decisiones", "see_more": "Ver más",
+        "full_status": "STATUS.md completo", "not_merged": "Sin fusionar",
+        "checks_passed": "Tests superados", "checks_failed": "Tests fallidos",
+        "checks_pending": "Tests pendientes", "checks_none": "Sin tests registrados",
         "update_title": "Actualizaciones de Baton",
         "update_now": "Actualizar ahora",
         "update_running": "Commit en ejecución",

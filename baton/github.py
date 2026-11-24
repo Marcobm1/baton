@@ -23,6 +23,18 @@ from .config import Settings
 
 API = "https://api.github.com"
 
+# One page includes the rollup of both check runs and legacy commit statuses.
+_OPEN_PULLS = """
+query($owner: String!, $name: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 100, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { number title commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"""
+
 
 @dataclass
 class Project:
@@ -75,6 +87,42 @@ class Hub:
         STALE_DAYS[0] = max(1, settings.stale_days)
         self._cache: tuple[float, list[Project], list[str]] | None = None
         self._lock = asyncio.Lock()
+        self._pulls: dict[str, tuple[float, list[dict]]] = {}
+        self._pull_locks: dict[str, asyncio.Lock] = {}
+
+    async def open_pulls(self, repo: str) -> list[dict]:
+        if not self.settings.github_token:
+            return []
+        async with self._pull_locks.setdefault(repo, asyncio.Lock()):
+            cached = self._pulls.get(repo)
+            if cached and time.monotonic() - cached[0] < self.settings.cache_seconds:
+                return cached[1]
+            owner, name = repo.split("/", 1)
+            variables = {"owner": owner, "name": name, "after": None}
+            pulls = []
+            try:
+                async with self._client() as client:
+                    while True:
+                        response = await client.post("/graphql", json={"query": _OPEN_PULLS, "variables": variables})
+                        response.raise_for_status()
+                        payload = response.json()
+                        if payload.get("errors"):
+                            raise GitHubError("Pull request information unavailable")
+                        page = payload["data"]["repository"]["pullRequests"]
+                        for pr in page["nodes"]:
+                            commits = pr["commits"]["nodes"]
+                            rollup = commits[-1]["commit"]["statusCheckRollup"] if commits else None
+                            state = (rollup or {}).get("state")
+                            checks = {"SUCCESS": "passed", "FAILURE": "failed", "ERROR": "failed",
+                                      "PENDING": "pending", "EXPECTED": "pending"}.get(state, "none")
+                            pulls.append({"number": pr["number"], "title": pr["title"], "checks": checks})
+                        if not page["pageInfo"]["hasNextPage"]:
+                            break
+                        variables["after"] = page["pageInfo"]["endCursor"]
+            except (httpx.HTTPError, GitHubError, ValueError, KeyError, TypeError):
+                pulls = []
+            self._pulls[repo] = (time.monotonic(), pulls)
+            return pulls
 
     def _client(self) -> httpx.AsyncClient:
         headers = {
@@ -88,6 +136,8 @@ class Hub:
 
     async def _get(self, client: httpx.AsyncClient, url: str, **kw) -> httpx.Response:
         r = await client.get(url, **kw)
+        if r.is_server_error:
+            r.raise_for_status()
         if r.status_code in (401, 403) and "rate limit" in r.text.lower():
             raise GitHubError("GitHub API rate limit reached; add a token or wait.")
         if r.status_code == 401:
@@ -297,10 +347,14 @@ class Hub:
                     for repo, res in zip(repos, results):
                         if isinstance(res, Exception):
                             errors.append(f"{repo['full_name']}: {res}")
+                            if self._cache:
+                                projects.extend(p for p in self._cache[1] if p.repo == repo["full_name"])
                         else:
                             projects.extend(res)
             except (GitHubError, httpx.HTTPError) as exc:
                 errors.append(str(exc) or exc.__class__.__name__)
+                if self._cache:
+                    projects = list(self._cache[1])
             order = {"high": 0, "medium": 1, "low": 2}
             projects.sort(key=lambda p: (order.get(p.status.priority, 1), p.status.name.lower()))
             self._cache = (now, projects, errors)

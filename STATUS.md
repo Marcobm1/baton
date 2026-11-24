@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Load the updater once on Windows and confirm the first scheduled restart in updates.jsonl.
+next: Open the new project detail on a phone and review a prefilled task draft.
 updated: 2026-11-24
-updated_by: claude-code
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,10 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
+- [ ] Check the project detail on a phone
+  Open a project with an active queue and a PR with tests.
+  Expand a checklist item and verify its draft before sending.
 - [x] Automatic idle-only self-update with validation, rollback and status on Quotas
 - [ ] Confirm the first live self-update and scheduled restart on Windows
 - [x] OpenCode delegation ranking with separate agent and human reviews
@@ -58,6 +62,7 @@ links:
 - None.
 
 ## Decisions
+- 2026-11-24: project detail combines repository activity with each project's own Next checklist. Undated completions keep their source order after dated history (docs/project-detail.md).
 - 2026-11-24: the updater reserves the idle queue until validation and restart finish; Windows relaunches the scheduled task after the server PID exits (docs/self-update.md).
 - 2026-11-23: the page reads STATUS.md from GitHub (not local folders), so it
   works the same for every agent and every computer.
@@ -77,6 +82,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): added structured project details and editable checklist drafts. All six detail tests passed, including cached GitHub failure and token-free views. Full suite: 77 passed, two known Windows cancellation cleanup failures. Phone and live PR check pending.
 - 2026-11-24 (claude-code): installed #10-#12 on Windows by hand (73 tests passed there); this commit is the first one the self-updater should pull and restart on by itself.
 - 2026-11-24 (codex): added native self-update, a CSRF-protected Quotas control and update history. All 11 updater tests passed; two Windows cancellation failures also reproduced on the unchanged base. Live scheduler handoff pending.
 - 2026-11-24 (claude-code): task queue with priority instead of refusing a second task per repository; global limit BATON_MAX_PARALLEL; change priority / cancel while queued; queue survives restarts; en/es texts; docs/task-queue.md; tasks.json reads now take the store lock and the replace retries (Windows "Access denied" race, seen once in 3 runs); 8 new tests, 62 passing 5 runs in a row.

@@ -23,12 +23,13 @@ from .github import GitHubError, Hub
 from .i18n import ordinal, strings
 from .ping import Scheduler
 from .ranking import CRITERIA, Ranking
+from .project_detail import finished_items, sections
 from .task_models import catalog
 from .task_report import task_report
 from .self_update import SelfUpdate
 from .runner import UpdateInProgress
 from .runner import (AGENTS, PRIORITIES, SUMMARY_REQUEST, LocalRepos, Runner, Task, TaskStore,
-                     extract_summary, new_id, opencode_models)
+                     extract_summary, new_id, opencode_models, queue_key)
 
 HERE = Path(__file__).parent
 _md = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table")
@@ -189,7 +190,15 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         projects, _ = await hub.load()
         for p in projects:
             if p.id == pid:
-                return page(request, "project.html", "projects", p=p)
+                content = sections(p.status.body)
+                tasks = [task for task in store.all() if task.repo.casefold() == p.repo.casefold()]
+                active = sorted((task for task in tasks if task.status in ("running", "queued")),
+                                key=lambda task: (task.status == "queued", queue_key(task)))
+                upcoming = [item for item in content.checklist if not item.checked]
+                return page(request, "project.html", "projects", p=p, content=content,
+                            upcoming=upcoming, checked=len(content.checklist) - len(upcoming),
+                            finished=finished_items(content.checklist, tasks), active=active,
+                            queue=runner.queue_info(), pulls=await hub.open_pulls(p.repo))
         raise HTTPException(404, "Unknown project")
 
     # --------------------------------------------------------------- quotas
@@ -242,7 +251,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                     any_running=any(x.status in ("queued", "running") for x in tasks))
 
     @app.get("/tasks/new", response_class=HTMLResponse)
-    async def task_new(request: Request, repo: str = "", error: str = ""):
+    async def task_new(request: Request, repo: str = "", error: str = "",
+                       title: str = "", details: str = ""):
         projects, _ = await hub.load()
         repos = sorted({p.repo for p in projects})
         local = {r: bool(runner.repos.get(r)) for r in repos}
@@ -255,7 +265,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                     local=local, available=available, oc_models=models, catalogs=dict(zip(agents, choices)),
                     cloud=settings.cloud_tasks, error=error[:300], auto_merge=settings.auto_merge,
                     has_token=bool(settings.github_token), priorities=PRIORITIES,
-                    max_parallel=settings.max_parallel)
+                    max_parallel=settings.max_parallel, draft_title=title, draft_details=details)
 
     @app.get("/tasks/{task_id}", response_class=HTMLResponse)
     async def task_detail(request: Request, task_id: str):

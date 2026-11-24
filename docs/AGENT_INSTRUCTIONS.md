@@ -24,6 +24,9 @@ dashboard and other AI agents read it to know what to do next.
     (`claude-code`, `codex`, `chatgpt`, `human`, ...), `next` = the next
     concrete step. Change `status` or `priority` only when the owner decides it;
   - tick finished tasks (`- [x]`) and add new ones (`- [ ]`) under "Next";
+    use a short task title, then indent optional lines by two spaces for the
+    instructions, prerequisites and acceptance checks used in the task form.
+    Prefix finished titles with YYYY-MM-DD when the completion date is known;
   - update "Blockers" and "Decisions" if they changed;
   - add one line at the top of "Log": `- YYYY-MM-DD (tool): what changed`.
 - Keep it short: `STATUS.md` is a dashboard, not a diary. Details belong in

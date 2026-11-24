@@ -11,10 +11,10 @@
     <select name="repo" required>{% for r in repos %}<option value="{{ r }}" {% if r == selected %}selected{% endif %}>{{ r }}{% if not local[r] %} ({{ t.no_clone }}){% endif %}</option>{% endfor %}</select>
   </label>
   <label class="wide">{{ t.task_name }}
-    <input name="title" required maxlength="200" autofocus>
+    <input name="title" required maxlength="200" autofocus value="{{ draft_title }}">
   </label>
   <label class="wide">{{ t.task_details }}
-    <textarea name="details" rows="5" maxlength="5000"></textarea>
+    <textarea name="details" rows="5" maxlength="5000">{{ draft_details }}</textarea>
   </label>
 
   <fieldset class="wide where">

@@ -8,7 +8,7 @@ There is no additional task or project database.
 ## Writing Next items
 
 Use one top-level checkbox per task. When finishing work on an ongoing project,
-mark the completed item and put the next task first among unchecked items.
+mark the completed item and put the next task first among unchecked agent items.
 Set the front matter `next` to its title and indent its description underneath
 the checkbox, including how to verify completion. A provisional draft is enough.
 
@@ -21,12 +21,21 @@ the checkbox, including how to verify completion. A provisional draft is enough.
 ```
 
 The project progress bar counts only these checkboxes. **Create next task**
-opens an editable draft for the first unchecked item. Older files can supply
+opens an editable draft for the first unchecked agent item. Older files can supply
 just the front matter `next`. A title without instructions gets a provisional
 description. Hub drafts include the project's STATUS.md path so the agent
 knows which folder to update. Submitting the form starts the usual task flow.
 Keep drafts within the task form limits (200 characters for the title and
 5,000 for the details).
+
+## Owner actions
+
+An unchecked title starting with `(Marco)` belongs in **Your turn**. It counts
+toward progress. Only an agent task can become a launch draft. **Done** posts
+the selected Markdown line and the Git blob ID of the displayed STATUS.md
+with the form's CSRF token. Baton verifies that line is still an open owner
+action and sends the file to GitHub with the expected blob ID. A stale form
+cannot overwrite a newer version, even for repeated titles or a hub subproject.
 
 ## Reading the history
 
@@ -36,6 +45,10 @@ agent summary also appears here. Each source keeps its own entry because a
 task title is not a reliable identifier. Prefix a checked title with an ISO
 completion date to place it chronologically. Entries with no recorded date
 follow dated entries in source order. Ten entries are initially visible.
+
+**Continue** on a finished task opens New task by record ID. The editable
+draft includes the original instructions, report, PR when recorded and room
+for a reply. Baton reuses the original execution settings when available.
 
 Write the newest Log entries first, as in the agent guide. The page shows the
 first five and folds the remainder. The complete original STATUS.md, including

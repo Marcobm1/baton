@@ -24,9 +24,10 @@
         <span class="badge prio">{{ t[s.priority] }}</span>
       </div>
       {% if p.blocked %}<p class="blocked-note small">🔒 {{ t.blocked_by }}: {{ p.blocked_by|join(', ') }}</p>{% endif %}
+      {% if s.sections.owner_actions %}<a class="badge" href="/p/{{ p.id }}#owner-actions">{{ t.your_turn }} ({{ s.sections.owner_actions|length }})</a>{% endif %}
       {% if s.parent %}<p class="muted small">{{ t.subproject_of }} {{ s.parent }}</p>{% endif %}
       {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
-      {% if s.next_task %}<p class="c-next" title="{{ s.next }}"><span class="label">{{ t.next_task }}</span> {{ s.next_task|truncate(90, True, '…') }}</p>{% endif %}
+      {% if s.next_task %}<p class="c-next" title="{{ s.next_task }}"><span class="label">{{ t.next_task }}</span> {{ s.next_task|truncate(90, True, '…') }}</p>{% endif %}
       {% if s.progress is not none %}
       <div class="progress-line">
         <div class="bar thin" title="{{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}"><span class="fill" style="width: {{ s.progress }}%"></span></div>
@@ -44,7 +45,7 @@
       {% if s.problems %}<p class="warn small">{{ t.problems }}: {{ s.problems|join('; ') }}</p>{% endif %}
       <div class="c-actions">
         {% if p.repo in running %}<a class="pill running" href="/tasks">{{ t.task_running }}</a>{% endif %}
-        {% set d = drafts.get(p.id) %}
+        {% set d = s.sections.upcoming|first %}
         {% if d %}
         <a class="btn ghost small icon" href="/tasks/new?repo={{ p.repo|urlencode }}" title="{{ t.task_button }}" aria-label="{{ t.task_button }}">＋</a>
         <a class="btn small" href="{{ m.draft_href(p, d.title, d.detail, d.recommended) }}"

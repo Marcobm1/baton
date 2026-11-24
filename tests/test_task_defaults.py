@@ -105,3 +105,45 @@ def test_every_local_script_and_stylesheet_is_versioned():
         text = page.read_text(encoding="utf-8")  # Windows would decode cp1252 by default
         for ref in re.findall(r'(?:src|href)="(/static/[^"]+\.(?:js|css)[^"]*)"', text):
             assert "?v={{ css_v }}" in ref, f"{page.name}: {ref} would stay cached after an update"
+
+
+def test_continue_finished_task(tmp_path, monkeypatch):
+    project = Project("u/demo", "u/demo", "STATUS.md", "main", False, "", None, parse(""))
+    async def load(self, force=False):
+        return [project], []
+
+    monkeypatch.setattr(Hub, "load", load)
+    monkeypatch.setattr(web.Runner, "agents_available", lambda self: AVAILABLE)
+    monkeypatch.setattr(web, "catalog", lambda agent: CATALOGS.get(agent, {}))
+    monkeypatch.setattr(web, "opencode_models", lambda: OC)
+    client = TestClient(web.create_app(Settings(data_dir=tmp_path, lang="es", github_token="test")))
+    store = runner_mod.TaskStore(tmp_path)
+    original = Task("first", "u/demo", "Export", "A" * 5000, "codex", "local", 1,
+                    status="done", model="gpt-a", effort="high", summary="Check <output>",
+                    pr_url="https://github.com/u/demo/pull/1")
+    store.save(original)
+    store.save(Task("later", "u/demo", "Other", "", "claude-code", "local", 2))
+    url = "/tasks/new?followup=first"
+    assert f'href="{url}">Continuar' in client.get("/tasks/first").text
+    assert "Continuar" not in client.get("/tasks/later").text
+    assert client.get("/tasks/new?followup=later").status_code == 404
+    form = client.get(url).text
+    assert 'value="Seguimiento: Export"' in form and 'value="u/demo" selected' in form
+    assert 'value="local:codex" checked' in form
+    assert '"model": "gpt-a"' in form and '"effort": "high"' in form
+    for fragment in (original.details, "Check &lt;output&gt;", original.pr_url, "Mi respuesta"):
+        assert fragment in form.split("<textarea")[1].split("</textarea>")[0]
+    monkeypatch.setattr(web.LocalRepos, "get", lambda self, repo: tmp_path)
+    monkeypatch.setattr(web.Runner, "submit", lambda self, task: store.save(task))
+    csrf = re.search(r'name="csrf" value="([^"]+)"', form)[1]
+    reply = html.unescape(form.split("</textarea>")[0].rsplit(">", 1)[1]) + "Please verify."
+    response = client.post("/tasks", data={"csrf": csrf, "followup": "first", "repo": original.repo,
+                           "where": "local:codex", "model": "gpt-a", "effort": "high", "title": "Follow up",
+                           "details": reply}, follow_redirects=False)
+    assert response.status_code == 303
+    saved = store.get(response.headers["location"].split("/")[-1])
+    assert saved.details == reply and len(saved.details) > 5000
+    assert (saved.agent, saved.model, saved.effort) == ("codex", "gpt-a", "high")
+    original.where, original.agent, original.status = "cloud", "claude-code", "sent"
+    store.save(original)
+    assert 'value="cloud" checked' in client.get(url).text

@@ -24,7 +24,7 @@ from .github import GitHubError, Hub
 from .i18n import ordinal, strings
 from .ping import Scheduler
 from .ranking import CRITERIA, historical_score
-from .project_detail import finished_items, sections
+from .project_detail import finished_items
 from .task_models import catalog
 from . import task_defaults
 from .task_report import task_report
@@ -199,9 +199,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         groups = {k: [p for p in projects if p.status.status == k]
                   for k in ("active", "planned", "paused", "done")}
         running = {x.repo for x in store.all() if x.status in ("queued", "running")}
-        drafts = {p.id: next((item for item in sections(p.status.body).checklist if not item.checked), None)
-                  for p in projects}
-        return page(request, "projects.html", "projects", groups=groups, count=len(projects), drafts=drafts,
+        return page(request, "projects.html", "projects", groups=groups, count=len(projects),
                     errors=errors, no_token=not settings.github_token, running=running)
 
     @app.get("/p/{pid:path}", response_class=HTMLResponse)
@@ -209,16 +207,31 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         projects, _ = await hub.load()
         for p in projects:
             if p.id == pid:
-                content = sections(p.status.body)
+                content = p.status.sections
                 tasks = [task for task in store.all() if task.repo.casefold() == p.repo.casefold()]
                 active = sorted((task for task in tasks if task.status in ("running", "queued")),
                                 key=lambda task: (task.status == "queued", queue_key(task)))
-                upcoming = [item for item in content.checklist if not item.checked]
                 return page(request, "project.html", "projects", p=p, content=content,
-                            upcoming=upcoming, checked=len(content.checklist) - len(upcoming),
+                            upcoming=content.upcoming, checked=sum(item.checked for item in content.checklist),
                             finished=finished_items(content, tasks), active=active,
                             queue=runner.queue_info(), pulls=await hub.open_pulls(p.repo))
         raise HTTPException(404, "Unknown project")
+
+    @app.post("/p/{pid:path}/done")
+    async def owner_done(request: Request, pid: str, line: int = Form(...), sha: str = Form(...),
+                         csrf: str = Form("")):
+        check_post(request, csrf)
+        projects, _ = await hub.load()
+        project = next((p for p in projects if p.id == pid), None)
+        if project is None:
+            raise HTTPException(404, "Unknown project")
+        try:
+            await hub.complete_owner_action(project, line, sha)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (GitHubError, httpx.RequestError) as exc:
+            raise HTTPException(502, str(exc)) from exc
+        return RedirectResponse(f"/p/{quote(pid)}", status_code=303)
 
     # --------------------------------------------------------------- quotas
     @app.get("/quotas", response_class=HTMLResponse)
@@ -276,10 +289,29 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         return page(request, "tasks.html", "tasks", tasks=tasks, queue=runner.queue_info(),
                     any_running=any(x.status in ("queued", "running") for x in tasks))
 
+    def followup_context(task: Task) -> str:
+        summary = task.summary or task_report(task, store.read_log(task.id))["summary"]
+        parts = [f"{t['original_task']}\n{task.title}\n{task.details}".rstrip(),
+                 f"{t['agent_summary']}\n{summary or t['no_summary']}"]
+        if task.pr_url:
+            parts.append(f"PR: {task.pr_url}")
+        parts.append(f"{t['your_reply']}\n")
+        return "\n\n".join(parts)
+
     @app.get("/tasks/new", response_class=HTMLResponse)
     async def task_new(request: Request, repo: str = "", error: str = "",
                        title: str = "", details: str = "",
-                       agent: str = "", model: str = "", effort: str = ""):
+                       agent: str = "", model: str = "", effort: str = "", followup: str = ""):
+        original = None
+        details_limit = 5000
+        if followup:
+            original = store.get(followup)
+            if not original or not original.finished:
+                raise HTTPException(404, "Unknown finished task")
+            repo, agent, model, effort = original.repo, original.agent, original.model, original.effort
+            title = f"{t['followup']}: {original.title}"[:200]
+            details = followup_context(original)
+            details_limit += len(details)
         projects, _ = await hub.load()
         repos = sorted({p.repo for p in projects})
         local = {r: bool(runner.repos.get(r)) for r in repos}
@@ -292,12 +324,20 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         initial = task_defaults.initial_choice(
             {"agent": agent, "model": model, "effort": effort}, store.all(),
             available, catalogs, models)
+        if original and original.repo not in repos:
+            raise HTTPException(409, "The original repository is unavailable. Refresh the projects list.")
+        if original and original.where == "cloud":
+            initial = {"agent": "cloud", "model": "", "effort": "", "source": "", "missing": ""}
+        elif original and original.agent == initial["agent"] == "local":
+            initial.update(model=original.model, source="", missing="")
+        elif original and initial["source"] == "recommended":
+            initial["source"] = ""
         return page(request, "task_new.html", "tasks", repos=repos, selected=repo,
                     local=local, available=available, oc_models=models, catalogs=catalogs,
                     cloud=settings.cloud_tasks, error=error[:300], auto_merge=settings.auto_merge,
                     has_token=bool(settings.github_token), priorities=PRIORITIES,
                     max_parallel=settings.max_parallel, draft_title=title, draft_details=details,
-                    initial=initial)
+                    initial=initial, followup=followup, details_limit=details_limit)
 
     @app.get("/tasks/{task_id}", response_class=HTMLResponse)
     async def task_detail(request: Request, task_id: str):
@@ -349,7 +389,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                           title: str = Form(...), details: str = Form(""),
                           oc_model: str = Form(""), csrf: str = Form(""),
                           model: str = Form(""), effort: str = Form(""),
-                          priority: str = Form("normal")):
+                          priority: str = Form("normal"), followup: str = Form("")):
         check_post(request, csrf)
         if priority not in PRIORITIES:
             raise HTTPException(400, "Unknown priority")
@@ -357,7 +397,15 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         by_repo = {p.repo: p for p in projects}
         if repo not in by_repo:
             raise HTTPException(400, "Unknown repository")
-        title, details = title.strip()[:200], details.strip()[:5000]
+        original = None
+        details_limit = 5000
+        if followup:
+            details = details.replace("\r\n", "\n")
+            original = store.get(followup)
+            if not original or not original.finished:
+                raise HTTPException(400, "Unknown finished task")
+            details_limit += len(followup_context(original))
+        title, details = title.strip()[:200], details.strip()[:details_limit]
         if not title:
             raise HTTPException(400, "A title is needed")
 
@@ -402,7 +450,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                 return back("Choose one of the models OpenCode lists.")
             model, effort = oc_model, ""
         else:
-            model, effort = "", ""
+            model = original.model if original and original.agent == agent == "local" else ""
+            effort = ""
         task_id = new_id(title)
         task = Task(id=task_id, repo=repo, title=title, details=details, agent=agent,
                     where="local", created_at=time.time(), branch=f"baton/{task_id}",

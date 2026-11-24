@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import html
 import json
 import re
@@ -182,3 +183,48 @@ def test_cached_project_survives_github_outage(tmp_path, monkeypatch):
     second = client.get("/p/u/demo")
     assert second.status_code == 200 and "Minimal" in second.text
     assert "<section>" not in second.text and "<progress" not in second.text
+
+
+@pytest.mark.parametrize("agent_task", [True, False])
+def test_owner_actions(tmp_path, monkeypatch, agent_task):
+    source = "---\nname: Hub\nstatus: active\nupdated: 2026-11-24\nnext: (Marco) Rate\n---\n"
+    source += "## Siguiente\n- [ ] (Marco) Rate\n  First\n* [ ] (Marco) Rate\n  Second\n"
+    if agent_task:
+        source += "- [ ] Export CSV\n"
+    source = source.replace("\n", "\r\n")
+    project = Project("u/hub/sub", "u/hub", "projects/sub/STATUS.md", "release", False, "", None,
+                      parse(source))
+    writes = []
+
+    async def load(self, force=False):
+        return [project], []
+
+    def github(request):
+        assert request.method == "PUT" and request.url.path == "/repos/u/hub/contents/projects/sub/STATUS.md"
+        writes.append(json.loads(request.content))
+        return httpx.Response(200 if len(writes) == 1 else 409)
+
+    monkeypatch.setattr(Hub, "load", load)
+    monkeypatch.setattr(Hub, "_client", lambda self: httpx.AsyncClient(
+        base_url="https://api.github.com", transport=httpx.MockTransport(github)))
+    client = TestClient(create_app(Settings(data_dir=tmp_path, lang="es")))
+    for page in (client.get("/").text, client.get("/p/u/hub/sub").text):
+        assert "Te toca" in page
+        links = re.findall(r'href="(/tasks/new[^"]*)"', page)
+        assert not any("Marco" in url for url in links)
+        assert any("Export+CSV" in url for url in links) == agent_task
+        assert ("Lanzar siguiente tarea" in page) == agent_task
+    assert project.status.next_task == ("Export CSV" if agent_task else "")
+    forms = re.findall(r'<form class="project-row".*?</form>', page, re.S)
+    assert len(forms) == 2
+    data = dict(re.findall(r'name="(\w+)" value="([^"]+)"', forms[1]))
+    endpoint = "/p/u/hub/sub/done"
+    assert client.post(endpoint, data={**data, "csrf": "wrong"}).status_code == 403
+    assert client.post(endpoint, data=data, headers={"origin": "https://other.org"}).status_code == 403
+    assert client.post(endpoint, data={**data, "line": 5}).status_code == 409
+    assert client.post(endpoint, data={**data, "sha": "stale"}).status_code == 409
+    assert not writes
+    assert client.post(endpoint, data=data, follow_redirects=False).status_code == 303
+    assert writes[0]["branch"] == "release" and writes[0]["sha"] == project.status_sha
+    assert base64.b64decode(writes[0]["content"]).decode() == source.replace("* [ ]", "* [x]")
+    assert client.post(endpoint, data=data).status_code == 409

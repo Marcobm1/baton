@@ -140,7 +140,8 @@ def opencode_models() -> list[str]:
 
 NEXT_TASK_REQUEST = (
     "When you finish a task, mark its checklist item complete in the project's STATUS.md. "
-    "For an ongoing project, prepare the first unchecked item under ## Next: reuse or add "
+    "Prefix owner-only actions with (Marco). Find links in tasks.json or on GitHub yourself. "
+    "Prepare the first unchecked agent task under ## Next so an agent can do it independently. Reuse or add "
     "a short title and an indented description of the work and how to check it. "
     "A provisional draft is fine. Set the front matter next field to that title."
 )
@@ -288,6 +289,11 @@ class Task:
     priority: str = "normal"        # high | normal | low: order in the queue
     started_at: float | None = None  # when it left the queue
     review_rating: dict | None = None
+
+    @property
+    def finished(self) -> bool:
+        return self.status in ("done", "no-changes", "failed", "cancelled") or (
+            self.status == "sent" and bool(self.summary))
 
 
 # Queue order: higher priority first, then the oldest. The id breaks the
@@ -539,7 +545,7 @@ class Runner:
     def submit(self, task: Task) -> None:
         """Put a local task in the queue; it starts as soon as its repository
         and one of the `max_parallel` slots are free (maybe right now)."""
-        if task.agent == "local":
+        if task.agent == "local" and not task.model:
             task.model = self.local_model
         task.status = "queued"
         with self._lock:

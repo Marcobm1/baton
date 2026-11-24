@@ -10,6 +10,21 @@
 <article class="detail project-detail prio-{{ s.priority }}{% if p.blocked %} blocked{% endif %}">
   <h2>{{ s.name }} <span class="badge prio">{{ t[s.priority] }}</span> <span class="badge">{{ t[s.status] }}</span>
     {% if s.open_source %}<span class="badge os">{{ t.open_source }}</span>{% endif %}</h2>
+  {% if content.owner_actions %}
+  <section class="next-up" id="owner-actions"><h3>{{ t.your_turn }}</h3>
+    {% set sha = p.status_sha %}
+    {% for item in content.owner_actions %}
+    <form class="project-row" method="post" action="/p/{{ p.id }}/done">
+      <strong>{{ item.title[7:]|trim }}</strong>
+      {% if item.detail %}<pre>{{ item.detail }}</pre>{% endif %}
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="line" value="{{ item.line }}">
+      <input type="hidden" name="sha" value="{{ sha }}">
+      <button type="submit">{{ t.mark_done }}</button>
+    </form>
+    {% endfor %}
+  </section>
+  {% endif %}
   {% if p.blocked %}<p class="blocked-note">🔒 {{ t.blocked_by }}: {{ p.blocked_by|join(', ') }}</p>{% endif %}
   {% if s.parent %}<p class="muted small">{{ t.subproject_of }} {{ s.parent }}</p>{% endif %}
   {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
@@ -46,7 +61,7 @@
   </section>
   {% endif %}
 
-  {% if upcoming or s.next %}
+  {% if s.next_task %}
   {% set first = upcoming[0] if upcoming else none %}
   {% set next_title = first.title if first else s.next %}
   {% set next_detail = first.detail if first else '' %}

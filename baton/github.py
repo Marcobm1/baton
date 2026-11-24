@@ -11,7 +11,9 @@ Repositories with neither are ignored.
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime as dt
+import hashlib
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -47,6 +49,11 @@ class Project:
     pushed_at: dt.datetime | None
     status: status_mod.Status
     blocked_by: list[str] = field(default_factory=list)
+
+    @property
+    def status_sha(self) -> str:
+        data = self.status.source.encode("utf-8")
+        return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
 
     @property
     def blocked(self) -> bool:
@@ -259,6 +266,25 @@ class Hub:
             )
         return projects
 
+    async def complete_owner_action(self, project: Project, line: int, sha: str) -> None:
+        status = project.status
+        if sha != project.status_sha or not any(item.line == line for item in status.sections.owner_actions):
+            raise ValueError("This action changed. Reload the project.")
+        lines = status.body.splitlines(keepends=True)
+        lines[line] = lines[line].replace("[ ]", "[x]", 1)
+        source = status.source.removesuffix(status.body) + "".join(lines)
+        payload = {"branch": project.branch, "sha": sha, "message": "Complete owner action in STATUS.md",
+                   "content": base64.b64encode(source.encode("utf-8")).decode("ascii")}
+        async with self._client() as client:
+            response = await client.put(f"/repos/{project.repo}/contents/{project.path}", json=payload)
+        if response.status_code == 409:
+            self._cache = None
+            raise ValueError("STATUS.md changed. Reload the project.")
+        if response.status_code != 200:
+            raise GitHubError(f"GitHub could not update STATUS.md ({response.status_code}). "
+                              "Check Contents: write permission and branch protection.")
+        self._cache = None
+
     async def create_issue(self, repo: str, title: str, body: str) -> dict[str, Any]:
         """Open an issue (needs a token with Issues: write on that repo)."""
         if not self.settings.github_token:
@@ -424,7 +450,7 @@ def index_markdown(projects: list[Project], lang: str = "en") -> str:
         for p in items:
             s = p.status
             link = f"https://github.com/{p.repo}/blob/{p.branch}/{p.path}"
-            nxt = s.next.replace("|", "\\|").replace("\n", " ")
+            nxt = s.next_task.replace("|", "\\|").replace("\n", " ")
             if p.blocked:
                 nxt = ("🔒 Bloqueado hasta completar: " if es else "🔒 Blocked until done: ") \
                     + ", ".join(p.blocked_by) + ". " + nxt

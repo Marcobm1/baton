@@ -1,13 +1,18 @@
 """Read the project dashboard from Markdown source and existing task records."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import date, datetime
 import re
 from textwrap import dedent
 
+from typing import TYPE_CHECKING
+
 from markdown_it import MarkdownIt
 
-from .runner import Task
+if TYPE_CHECKING:
+    from .runner import Task
 
 
 # A line in a Next item's description that names the agent to use:
@@ -41,6 +46,11 @@ class ChecklistItem:
     checked: bool
     detail: str
     recommended: dict = field(default_factory=dict)
+    line: int = 0
+
+    @property
+    def owner_action(self) -> bool:
+        return self.title.startswith("(Marco)")
 
     def __post_init__(self):
         if not self.recommended:
@@ -54,6 +64,14 @@ class Sections:
     blockers: list[str] = field(default_factory=list)
     decisions: list[str] = field(default_factory=list)
     log: list[str] = field(default_factory=list)
+
+    @property
+    def upcoming(self):
+        return [item for item in self.checklist if not item.checked and not item.owner_action]
+
+    @property
+    def owner_actions(self):
+        return [item for item in self.checklist if not item.checked and item.owner_action]
 
 
 _markdown = MarkdownIt("commonmark")
@@ -93,7 +111,7 @@ def sections(body: str) -> Sections:
                         break
                     detail.append(line)
                 result.checklist.append(ChecklistItem(
-                    box[2].strip(), box[1].lower() == "x", dedent("\n".join(detail)).strip()))
+                    box[2].strip(), box[1].lower() == "x", dedent("\n".join(detail)).strip(), line=start))
         elif section in ("done recently", "blockers", "decisions", "log"):
             entry = " ".join([first, *(line.strip() for line in lines[start + 1:end])]).strip()
             if entry and not (section == "blockers" and entry.casefold().rstrip(".") == "none"):
@@ -121,9 +139,7 @@ def finished_items(content: Sections, tasks: list[Task]) -> list[Finished]:
                 pass
         items.append(Finished(title, when))
     for task in tasks:
-        if task.status in ("done", "no-changes", "cancelled", "failed") or (
-            task.status == "sent" and task.summary
-        ):
+        if task.finished:
             when = datetime.fromtimestamp(task.finished_at).isoformat(" ") if task.finished_at else ""
             items.append(Finished(task.title, when, task))
     return sorted(items, key=lambda item: item.when, reverse=True)

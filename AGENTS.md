@@ -34,7 +34,9 @@ of truth for where the project stands.
     (`claude-code`, `codex`, `chatgpt`, `human`, ...), `next` = the next
     concrete step. Change `status` or `priority` only when the owner decides it;
   - tick finished tasks (`- [x]`) and add new ones (`- [ ]`) under "Next";
-    for an ongoing project, make the first unchecked item the next task.
+    prefix actions only Marco can take with `(Marco)`. Look up links in
+    `tasks.json` or on GitHub. For an ongoing project, make the first unchecked
+    agent task something an agent can complete independently.
     Give it a short title and an indented description of the work and how to
     verify it, even if provisional. Set `next` to the same title.
     Add a line `Recommended: <agent>, <model>, <effort>` to its description

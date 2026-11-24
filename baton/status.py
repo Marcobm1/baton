@@ -29,10 +29,13 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from functools import cached_property
 from dataclasses import dataclass, field
 from typing import Any
 
 import yaml
+
+from .project_detail import sections
 
 STATUSES = ("active", "planned", "paused", "done")
 PRIORITIES = ("high", "medium", "low")
@@ -40,7 +43,6 @@ REQUIRED = ("name", "status", "updated")
 
 _FRONT_MATTER = re.compile(r"\A﻿?---\s*\r?\n(.*?)\r?\n---\s*(?:\r?\n|\Z)", re.S)
 _BOX = re.compile(r"^\s*[-*+]\s+\[( |x|X)\]\s", re.M)
-_OPEN_BOX = re.compile(r"^\s*[-*+]\s+\[ \]\s+(.+)$", re.M)
 
 
 @dataclass
@@ -63,11 +65,17 @@ class Status:
     tasks_total: int = 0
     problems: list[str] = field(default_factory=list)
 
+    @cached_property
+    def sections(self):
+        return sections(self.body)
+
     @property
     def next_task(self) -> str:
-        """The first unticked task in the body, or the 'next' field."""
-        m = _OPEN_BOX.search(self.body)
-        text = m.group(1) if m else self.next
+        """First pending agent checklist item, falling back to an agent front-matter title."""
+        upcoming = self.sections.upcoming
+        text = upcoming[0].title if upcoming else self.next
+        if text.startswith("(Marco)"):
+            return ""
         text = re.sub(r"[`*_]", "", text).strip()
         return text
 
@@ -182,7 +190,7 @@ def parse(text: str, fallback_name: str = "") -> Status:
         links={str(k): str(v) for k, v in links.items()},
         depends_on=[str(d).strip() for d in depends_on if str(d).strip()],
         parent=str(meta.get("parent") or "").strip(),
-        body=body.strip(),
+        body=body,
         source=text,
         tasks_done=sum(1 for b in boxes if b.lower() == "x"),
         tasks_total=len(boxes),

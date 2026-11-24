@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Verify live OpenCode reviewer scores and charts
 updated: 2026-11-24
-updated_by: opencode
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,7 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] 2026-11-24 Separate owner actions and continue finished tasks
 - [x] 2026-11-24 Show the reviewer's model and effort on the task page
   Saved on the task when the review starts and shown next to "Review by"
   (for example "opus · medium"); with nothing configured the heading stays
@@ -35,27 +36,26 @@ links:
 - [x] 2026-11-24 Include OpenCode and local-AI tasks and their reviews in Ranking
 - [x] 2026-11-24 Confirm the first OpenCode review and auto-merge
 - [ ] Verify live OpenCode reviewer scores and charts
-  Have Marco start a small OpenCode delivery in a repository with CI. To
-  observe it while this Baton task is running, use another repository because
-  the local queue runs one task per repository at a time. Follow CI and
-  auto-merge, then use Rate to match the model, merge outcome and three scores
-  to the task and its structured review. After Marco saves his review, compare
-  the Agent, Your score and Combined views with the rated jobs for that model.
+  Find a finished OpenCode delivery in tasks.json or GitHub and compare the
+  recorded review and merge outcome with Ranking. Check chart calculations
+  against existing ratings and document any missing sample.
   Recommended: codex, gpt-6.2-sol, low
+- [ ] (Marco) Rate a real OpenCode delivery in Ranking
 - [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
 - [x] 2026-11-24 Check the project detail on a phone
 - [x] Automatic idle-only self-update with validation, rollback and status on Quotas
 - [x] 2026-11-24 Confirm the first live self-update and scheduled restart on Windows
 - [x] OpenCode delegation ranking with separate agent and human reviews
 - [x] 2026-11-24 Visual redesign: sidebar / phone tab bar, Auto-Light-Dark theme, WCAG AA colour tokens
-- [ ] Rate a real delegation from the CLI and web
+- [ ] (Marco) Rate a real delegation from the CLI and web
 - [ ] Future phase for native ChatGPT and Claude model rankings
 - [x] STATUS.md format and parser
 - [x] Web page with projects and quota panel
 - [x] Docker + README instructions
 - [x] Tested on Marco's Windows PC: native (gh login) and Docker (public repos without token)
-- [ ] Marco uses it for a few days and gives feedback
-- [ ] Daily INDEX.md workflow in the hub repo (needs `BATON_TOKEN` secret)
+- [ ] (Marco) Use Baton for a few days and give feedback
+- [ ] (Marco) Configure the `BATON_TOKEN` secret for the daily hub index workflow
+- [ ] Prepare the daily INDEX.md workflow in the hub repository
 - [x] Automatic Claude/Codex quota checks via the official CLIs (`baton ping`, scheduler)
 - [ ] Screenshots in the README
 - [x] "New task" form: GitHub issue for @claude (Claude Code GitHub Action)
@@ -91,10 +91,10 @@ links:
   Recommended: claude-code, opus, high
 
 ## Blockers
-- Live Ranking verification needs a fresh OpenCode delivery with a structured
-  review and Marco's own saved scores.
+- Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-24: owner checkboxes use a version-checked GitHub Contents commit. Follow-ups read the finished task by ID (docs/project-detail.md).
 - 2026-11-24: the reviewer's model and effort come from settings, checked against the CLI's own list; an unknown value falls back to the CLI default so a typo can't block every merge (docs/auto-merge.md).
 - 2026-11-24: every local script and stylesheet URL ends in `?v=` + a hash of all static CSS/JS, so a self-update never leaves a browser with an old file.
 - 2026-11-24: the New task form starts with the draft's `Recommended:` line, else the last local task's agent/model/effort (from tasks.json, so the same on PC and phone); unavailable recommendations fall back and are named (docs/task-defaults.md).
@@ -121,6 +121,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): added owner actions and editable task follow-ups. All 16 project-detail and task-default tests passed with simulated GitHub writes. Full suite: 112 passed; both Windows cancellation cleanup failures reproduced on the unchanged base.
 - 2026-11-24 (opencode): the task page shows the reviewer's model and effort
   (for example "opus · medium") next to "Review by Claude Code/Codex"; both are
   saved on the task when the review starts, and nothing configured keeps the

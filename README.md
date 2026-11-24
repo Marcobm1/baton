@@ -29,8 +29,7 @@ where the previous one left it:
 ```
 
 Baton runs on your own computer. It only talks to the GitHub API with your
-read-only token, and reads quota data from local files. Nothing is sent
-anywhere else.
+configured token for project data and task actions, and reads quota data from local files.
 
 The page has a light and a dark theme: **Auto** follows your system, or pick
 **Light** or **Dark** in the sidebar (on a phone, the button at the top right).
@@ -135,10 +134,21 @@ See [self-update and recovery](docs/self-update.md) for the handoff details.
 That's all: the next time the page refreshes (every 5 minutes, or with the
 *Refresh* button) the project appears.
 
+Prefix an owner-only checklist title with `(Marco)`, for example
+`- [ ] (Marco) Rate the GLM 5.3 deliveries`. The project card links to
+**Your turn**. Open it and choose **Done** to commit the checked box to
+the project's STATUS.md. This requires **Contents: write** and permission to
+update the default branch. If the file changes, reload before trying again.
+
+On a finished task, **Continue** opens an editable follow-up with the previous
+destination and available model settings. The draft includes the assignment,
+agent report, recorded PR link and space for your reply. Submit it to start
+a new task.
+
 Open a project's name to see its current queue, open PRs and test results,
 upcoming tasks, completed work, blockers, decisions and recent log entries.
 Use **Launch next task** (on the card or the project page) to review the first
-pending item's title and description, or **Launch as task** to choose another
+pending agent item's title and description, or **Launch as task** to choose another
 item. At completion, Baton asks the agent to prepare the next draft in the
 project's STATUS.md, including which agent, model and reasoning effort it
 recommends for it:
@@ -394,7 +404,7 @@ All settings are environment variables (or a `.env` file); see
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `GITHUB_TOKEN` | — | Read-only token. Without it only public repos are visible. |
+| `GITHUB_TOKEN` | — | Read-only for browsing. Marking owner actions done requires Contents: write. Without a token only public repos are visible. |
 | `BATON_OWNER` | token's user | Whose repositories to scan. |
 | `BATON_REPOS` | — | Only these repos (`owner/name,...`). |
 | `BATON_EXCLUDE` | — | Skip these repos. |
@@ -442,7 +452,7 @@ JSON endpoints: `GET /api/projects`, `GET /api/quotas`.
 
 - The page has no login. Docker publishes it on `127.0.0.1` only; keep it that
   way, because it can show private repositories.
-- Use a read-only, fine-grained token limited to the repos you need.
+- Limit the token to the repositories you use. Read-only contents access is sufficient for browsing.
 - The project detail displays STATUS.md text and agent summaries with HTML escaping.
 - OpenCode has no OS sandbox. Baton's rules stop commits, pushes and its extra
   tools, not a terminal command that writes elsewhere. Read-only is the default

@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -46,6 +46,11 @@ class Project:
     html_url: str
     pushed_at: dt.datetime | None
     status: status_mod.Status
+    blocked_by: list[str] = field(default_factory=list)
+
+    @property
+    def blocked(self) -> bool:
+        return bool(self.blocked_by)
 
     @property
     def stale(self) -> bool:
@@ -64,11 +69,37 @@ class Project:
             "url": self.html_url,
             "pushed_at": self.pushed_at.isoformat() if self.pushed_at else None,
             "stale": self.stale,
+            "blocked_by": self.blocked_by,
             **self.status.to_dict(),
         }
 
 
 STALE_DAYS = [1]  # set from Settings at load time
+
+
+def _keys(p: Project) -> set[str]:
+    """Names a dependency can use to point at this project."""
+    keys = {p.status.name, p.id, p.repo, p.repo.split("/")[-1]}
+    if "/" in p.path:
+        keys.add(p.path.rsplit("/", 2)[-2])  # folder: projects/<folder>/STATUS.md
+    return {k.strip().casefold() for k in keys if k}
+
+
+def resolve_dependencies(projects: list[Project]) -> None:
+    """Fill each project's blocked_by: dependencies that are missing or not done."""
+    lookup: dict[str, Project] = {}
+    for p in projects:
+        for key in _keys(p):
+            lookup.setdefault(key, p)
+    for p in projects:
+        blocked = []
+        for dep in p.status.depends_on:
+            target = lookup.get(dep.casefold())
+            if target is None or target is p:
+                blocked.append(dep)
+            elif target.status.status != "done":
+                blocked.append(target.status.name)
+        p.blocked_by = blocked
 
 
 def _parse_time(value: str | None) -> dt.datetime | None:
@@ -357,6 +388,7 @@ class Hub:
                     projects = list(self._cache[1])
             order = {"high": 0, "medium": 1, "low": 2}
             projects.sort(key=lambda p: (order.get(p.status.priority, 1), p.status.name.lower()))
+            resolve_dependencies(projects)
             self._cache = (now, projects, errors)
             return projects, errors
 
@@ -393,6 +425,9 @@ def index_markdown(projects: list[Project], lang: str = "en") -> str:
             s = p.status
             link = f"https://github.com/{p.repo}/blob/{p.branch}/{p.path}"
             nxt = s.next.replace("|", "\\|").replace("\n", " ")
+            if p.blocked:
+                nxt = ("🔒 Bloqueado hasta completar: " if es else "🔒 Blocked until done: ") \
+                    + ", ".join(p.blocked_by) + ". " + nxt
             upd = (s.updated.isoformat() if s.updated else "?") + (f" ({s.updated_by})" if s.updated_by else "")
             if p.stale:
                 upd += " ⚠"

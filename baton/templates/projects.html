@@ -17,11 +17,13 @@
   <div class="cards">
     {% for p in items %}
     {% set s = p.status %}
-    <article class="card prio-{{ s.priority }}">
+    <article class="card prio-{{ s.priority }}{% if p.blocked %} blocked{% endif %}">
       <div class="c-head">
         <a class="c-name" href="/p/{{ p.id }}">{{ s.name }}</a>
         <span class="badge prio">{{ t[s.priority] }}</span>
       </div>
+      {% if p.blocked %}<p class="blocked-note small">🔒 {{ t.blocked_by }}: {{ p.blocked_by|join(', ') }}</p>{% endif %}
+      {% if s.parent %}<p class="muted small">{{ t.subproject_of }} {{ s.parent }}</p>{% endif %}
       {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
       {% if s.next_task %}<p class="c-next" title="{{ s.next }}"><span class="label">{{ t.next_task }}</span> {{ s.next_task|truncate(90, True, '…') }}</p>{% endif %}
       {% if s.progress is not none %}

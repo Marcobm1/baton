@@ -10,6 +10,8 @@ A STATUS.md is Markdown with a YAML front matter block:
     next: The very next concrete step.
     updated: 2026-11-23
     updated_by: claude-code
+    depends_on: [Other project]   # optional: blocked until these are done
+    parent: Bigger project        # optional: this is a subproject of it
     ---
 
     ## Done recently
@@ -53,6 +55,8 @@ class Status:
     open_source: bool = False
     tags: list[str] = field(default_factory=list)
     links: dict[str, str] = field(default_factory=dict)
+    depends_on: list[str] = field(default_factory=list)
+    parent: str = ""
     body: str = ""
     source: str = ""
     tasks_done: int = 0
@@ -89,6 +93,8 @@ class Status:
             "open_source": self.open_source,
             "tags": self.tags,
             "links": self.links,
+            "depends_on": self.depends_on,
+            "parent": self.parent,
             "tasks_done": self.tasks_done,
             "tasks_total": self.tasks_total,
             "progress": self.progress,
@@ -155,6 +161,13 @@ def parse(text: str, fallback_name: str = "") -> Status:
         problems.append("'links' must be a mapping of label: url")
         links = {}
 
+    depends_on = meta.get("depends_on") or []
+    if isinstance(depends_on, str):
+        depends_on = [d.strip() for d in depends_on.split(",") if d.strip()]
+    if not isinstance(depends_on, list):
+        problems.append("'depends_on' must be a list of project names")
+        depends_on = []
+
     boxes = _BOX.findall(body)
     return Status(
         name=str(meta.get("name") or fallback_name or "Unnamed project"),
@@ -167,6 +180,8 @@ def parse(text: str, fallback_name: str = "") -> Status:
         open_source=bool(meta.get("open_source", False)),
         tags=[str(t) for t in tags],
         links={str(k): str(v) for k, v in links.items()},
+        depends_on=[str(d).strip() for d in depends_on if str(d).strip()],
+        parent=str(meta.get("parent") or "").strip(),
         body=body.strip(),
         source=text,
         tasks_done=sum(1 for b in boxes if b.lower() == "x"),

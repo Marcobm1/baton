@@ -60,13 +60,33 @@ git clone https://github.com/Marcobm1/baton.git
 cd baton
 python -m venv .venv
 # Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"  # editable checkout and pytest for update validation
 baton serve            # http://127.0.0.1:8787
 ```
 
 Without Docker, if `GITHUB_TOKEN` is empty Baton uses your GitHub CLI login
 (`gh auth token`) when `gh` is installed. Settings can go in a `.env` file in
 the folder where you run it.
+
+### Keeping the native service up to date
+
+Open **Quotas → Baton updates** to see the running commit, when Baton last
+checked, any pending commit, the reason it is waiting and the last error.
+**Update now** requests the same check that runs at startup, every five
+minutes and after a local Baton task merges. Work already running or queued
+finishes first, including review and merge.
+
+Baton updates a clean checkout of `main` with `git pull --ff-only origin main`.
+It reinstalls the development dependencies in its virtual environment if
+`pyproject.toml` changed and runs `pytest -q` before restarting. A failed
+validation restores the previous revision and leaves the server running.
+On Windows the service must be installed as the scheduled task **Baton**.
+An existing installation needs one manual pull and restart to load the updater.
+
+Set `BATON_SELF_UPDATE=0` to disable this feature. A deployment without a
+Git checkout, such as the Docker image, disables it automatically. The file
+`BATON_DATA_DIR/updates.jsonl` records update attempts and confirmed starts.
+See [self-update and recovery](docs/self-update.md) for the handoff details.
 
 ## Tracking a project
 
@@ -342,6 +362,7 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_CLOUD_TASKS` | `1` | `0` hides the GitHub Actions option. |
 | `BATON_AUTO_MERGE` | `1` | Local tasks: merge the pull request when the tests pass, after a review by Claude Code or Codex when needed. `0` leaves a draft for you. |
 | `BATON_MAX_PARALLEL` | `3` | Local tasks running at the same time on this computer (always one per repository); the rest wait in the queue. |
+| `BATON_SELF_UPDATE` | `1` | Automatically update a native Baton checkout. Set to `0` to disable automatic and manual update checks. |
 | `CODEX_HOME` | `~/.codex` | Where Codex keeps its logs. |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Where Claude Code keeps its logs (tokens spent). |
 | `BATON_OPENCODE_BIN` | found on PATH | Path to `opencode.exe` if it isn't found. |

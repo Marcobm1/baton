@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,6 +15,33 @@ def _settings():
     from .config import Settings
 
     return Settings.from_env()
+
+
+def windows_restart(data_dir: Path):
+    """Hand off to an independent process before the server starts shutting down."""
+    subprocess.run(["schtasks", "/Query", "/TN", "Baton"], check=True,
+                   capture_output=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+    # The scheduled action can include the venv launcher, which exits just
+    # after pythonw. Wait for Task Scheduler to release the instance as well.
+    script = f"""
+        $ErrorActionPreference = 'Stop'
+        Wait-Process -Id {os.getpid()} -ErrorAction SilentlyContinue
+        $scheduler = New-Object -ComObject Schedule.Service
+        $scheduler.Connect()
+        $task = $scheduler.GetFolder('\\').GetTask('Baton')
+        for ($i = 0; $i -lt 120; $i++) {{
+            if ($task.State -eq 3) {{
+                schtasks /Run /TN Baton
+                if ($LASTEXITCODE -eq 0) {{ exit 0 }}
+            }}
+            Start-Sleep -Seconds 1
+        }}
+        throw 'Baton scheduled task did not become ready or restart.'
+    """
+    with (data_dir / "update-restart.log").open("ab") as log:
+        subprocess.Popen(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                         stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                         creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_BREAKAWAY_FROM_JOB)
 
 
 def cmd_serve(args) -> int:
@@ -28,7 +57,23 @@ def cmd_serve(args) -> int:
         log = open(s.data_dir / "baton.log", "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stdout or log
         sys.stderr = sys.stderr or log
-    uvicorn.run(create_app(s), host=args.host, port=args.port, log_level="info")
+    restarting = False
+
+    def restart():
+        nonlocal restarting
+        if os.name == "nt":
+            try:
+                windows_restart(s.data_dir)
+            except subprocess.SubprocessError as exc:
+                raise RuntimeError("Could not prepare scheduled task Baton") from exc
+        restarting = True
+        server.should_exit = True
+
+    server = uvicorn.Server(uvicorn.Config(create_app(s, restart=restart),
+                                           host=args.host, port=args.port, log_level="info"))
+    server.run()
+    if restarting and os.name != "nt":
+        os.execv(sys.executable, [sys.executable, "-m", "baton", *sys.argv[1:]])
     return 0
 
 

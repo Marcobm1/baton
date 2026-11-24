@@ -14,6 +14,8 @@ import asyncio
 import base64
 import datetime as dt
 import hashlib
+import re
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,6 +23,7 @@ from typing import Any
 import httpx
 
 from . import status as status_mod
+from .project_detail import sections
 from .config import Settings
 
 API = "https://api.github.com"
@@ -273,7 +276,32 @@ class Hub:
         lines = status.body.splitlines(keepends=True)
         lines[line] = lines[line].replace("[ ]", "[x]", 1)
         source = status.source.removesuffix(status.body) + "".join(lines)
-        payload = {"branch": project.branch, "sha": sha, "message": "Complete owner action in STATUS.md",
+        await self._write_status(project, source, sha, "Complete owner action in STATUS.md")
+
+    async def complete_item(self, project: Project, line: int, sha: str) -> None:
+        """Tick an agent task in the Next list (already done, or no longer needed).
+
+        Like an agent finishing it: the title gets today's date and `next`
+        moves to the next unchecked task an agent can do."""
+        status = project.status
+        items = [item for item in status.sections.upcoming if item.line == line]
+        if sha != project.status_sha or not items:
+            raise ValueError("This task changed. Reload the project.")
+        lines = status.body.splitlines(keepends=True)
+        today = dt.date.today().isoformat()
+        lines[line] = re.sub(r"\[ \]\s*", f"[x] {today} ", lines[line], count=1)
+        body = "".join(lines)
+        remaining = [item.title for item in sections(body).upcoming]
+        nxt = remaining[0] if remaining else ""
+        if nxt and (": " in nxt or nxt[0] in "\"'[{&*!|>%@`#"):
+            nxt = json.dumps(nxt, ensure_ascii=False)        # keep the YAML valid
+        head = status.source.removesuffix(status.body)
+        head = re.sub(r"(?m)^next:[^\r\n]*", lambda _: f"next: {nxt}".rstrip(), head, count=1)
+        await self._write_status(project, head + body, sha,
+                                 f"Mark done in STATUS.md: {items[0].title[:60]}")
+
+    async def _write_status(self, project: Project, source: str, sha: str, message: str) -> None:
+        payload = {"branch": project.branch, "sha": sha, "message": message,
                    "content": base64.b64encode(source.encode("utf-8")).decode("ascii")}
         async with self._client() as client:
             response = await client.put(f"/repos/{project.repo}/contents/{project.path}", json=payload)

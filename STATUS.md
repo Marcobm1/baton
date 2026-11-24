@@ -94,6 +94,7 @@ links:
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-24: an agent task can be ticked from the web when it was already done or is no longer needed; Baton commits STATUS.md like an agent would (date prefix, `next` moved, YAML-safe), refusing stale pages.
 - 2026-11-24: owner checkboxes use a version-checked GitHub Contents commit. Follow-ups read the finished task by ID (docs/project-detail.md).
 - 2026-11-24: the reviewer's model and effort come from settings, checked against the CLI's own list; an unknown value falls back to the CLI default so a typo can't block every merge (docs/auto-merge.md).
 - 2026-11-24: every local script and stylesheet URL ends in `?v=` + a hash of all static CSS/JS, so a self-update never leaves a browser with an old file.
@@ -121,6 +122,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (claude): "Mark as done" for agent tasks in STATUS.md (project page, and on a finished task whose item is still unchecked, e.g. after "no changes"); ticks with today's date and moves `next`; 115 tests passed.
 - 2026-11-24 (claude): verified live: OpenCode tasks #30 and #31 were reviewed by Claude Code (opus · medium) with structured scores 9/9/10 and 10/10/10, merged after CI, and Ranking shows them (9.3 and 10.0); GLM 5.3 human average 7.4 matches the five saved human scores.
 - 2026-11-24 (codex): added owner actions and editable task follow-ups. All 16 project-detail and task-default tests passed with simulated GitHub writes. Full suite: 112 passed; both Windows cancellation cleanup failures reproduced on the unchanged base.
 - 2026-11-24 (opencode): the task page shows the reviewer's model and effort

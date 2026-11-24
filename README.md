@@ -159,6 +159,10 @@ recommends for it:
   Recommended: codex, gpt-6.2-astra, high
 ```
 
+If a task turns out to be already done (for example, it ended with no
+changes), use **Mark as done** on its task page or next to the item on the
+project page: Baton ticks it in STATUS.md with today's date and moves `next`.
+
 The New task form starts with that recommendation. Without one, it starts with
 the agent, model and effort of your last local task. Sections can be written in
 English or Spanish (`## Next` / `## Siguiente`, `## Blockers` / `## Bloqueos`...).

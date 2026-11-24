@@ -102,7 +102,7 @@ links:
   child exit and whether Git removes the worktree and branch. Record the
   failing command and exit code, or document a clean reproduction if both pass.
   Recommended: codex, gpt-6.2-sol, medium
-- [ ] (Marco) Try cancelling a real agent task on Windows (check Task Manager afterwards)
+- [x] (Marco) Try cancelling a real agent task on Windows (check Task Manager afterwards)
   Use a disposable task. Cancel it from its Tasks detail page, then confirm
   the page says Cancelled and the agent and its children exit in Task Manager.
   See [cancellation behavior](docs/cancelling-tasks.md).

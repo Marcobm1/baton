@@ -19,6 +19,10 @@ Codex work directly, OpenCode work only after Claude Code or Codex reviewed it.
 - **Reviewer for OpenCode/local AI:** the one of Claude Code and Codex with
   more of its 5-hour window left (from the Quotas page data); a reviewer with
   0 % left is skipped. With no reading, Claude Code goes first.
+- **Reviewer model:** `BATON_REVIEW_CLAUDE_MODEL` / `_EFFORT` and
+  `BATON_REVIEW_CODEX_MODEL` / `_EFFORT` (2026-11-24). Empty uses each CLI's
+  own default. A model or effort the CLI doesn't list is ignored (CLI default)
+  rather than making the review fail and leaving the PR open.
 - **Fixes.** Marco chose "the reviewer fixes it" over "leave it open": the
   reviewer edits the same worktree, Baton commits `Review fixes by …`, pushes,
   and the tests must pass again on the new commit. One review round only.

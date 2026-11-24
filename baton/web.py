@@ -79,7 +79,9 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                     # With auto-merge the PR can't be a draft: GitHub won't merge drafts.
                     open_pr=lambda *a: hub.open_pr(*a, draft=not settings.auto_merge),
                     github=hub, auto_merge=settings.auto_merge, quota_left=quota_left,
-                    max_parallel=settings.max_parallel)
+                    max_parallel=settings.max_parallel,
+                    review_models={"claude-code": (settings.review_claude_model, settings.review_claude_effort),
+                                   "codex": (settings.review_codex_model, settings.review_codex_effort)})
 
     # Tasks that were running when Baton stopped can't be resumed: mark them
     # failed. Queued tasks keep their place and start when the server is up.

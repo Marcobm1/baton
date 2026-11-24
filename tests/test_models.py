@@ -1,0 +1,200 @@
+"""Models page: models.json, readings, and starting/stopping a (fake) llama-server."""
+import json
+import socket
+import sys
+import time
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from baton import github, models
+from baton.config import Settings
+from baton.i18n import strings
+from baton.web import create_app
+
+FAKE = Path(__file__).with_name("fake_llama_server.py")
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def write_config(tmp_path, items, server=None):
+    server = server or sys.executable
+    (tmp_path / "models.json").write_text(json.dumps({"server": server, "models": items}), encoding="utf-8")
+
+
+def model_item(tmp_path, mid="demo", port=None, vram=10.0, **extra):
+    gguf = tmp_path / f"{mid}.gguf"
+    gguf.write_bytes(b"GGUF")
+    return {"id": mid, "name": mid.title(), "file": str(gguf), "port": port or free_port(),
+            "vram_gb": vram, **extra}
+
+
+def test_parse_gpus_and_metrics():
+    gpus = models.parse_gpus("NVIDIA GeForce RTX 4070 Ti SUPER, 71, 15823, 16376, 45, 118.82, 285.00\n"
+                             "Other, [N/A], 10, 100, [N/A], [N/A], [N/A]\nbroken line\n")
+    assert gpus[0] == {"name": "NVIDIA GeForce RTX 4070 Ti SUPER", "util": 71.0, "vram_used_mib": 15823.0,
+                       "vram_total_mib": 16376.0, "temp": 45.0, "power": 118.82, "power_limit": 285.0}
+    assert gpus[1]["util"] is None and len(gpus) == 2
+    m = models.parse_metrics("# HELP x\nllamacpp:tokens_predicted_total 100\nllamacpp:bad x\nother 3\n")
+    assert m == {"tokens_predicted_total": 100.0}
+
+
+def test_config_problems(tmp_path):
+    assert not models.load_config(tmp_path).found
+    a = model_item(tmp_path, "a", port=9001)
+    write_config(tmp_path, [
+        a,
+        {**model_item(tmp_path, "b"), "port": 9001},                 # same port
+        {**model_item(tmp_path, "c"), "args": ["--host", "0.0.0.0"]},   # reserved
+        {**model_item(tmp_path, "d"), "args": "-ngl 99"},               # not a list
+        {**model_item(tmp_path, "Bad Id")},
+        {"id": "e"},                                                     # no file/port
+    ])
+    cfg = models.load_config(tmp_path)
+    assert [m.id for m in cfg.models] == ["a"]
+    text = " ".join(cfg.problems)
+    for needle in ("port 9001", "--host", "\"args\" must be a list", "Bad Id", "needs \"id\""):
+        assert needle in text, needle
+
+
+def test_command_keeps_the_server_local():
+    m = models.Model(id="x", name="X", file="f.gguf", port=8080, args=["-ngl", "99"])
+    cmd = m.command("llama-server")
+    assert cmd[:3] == ["llama-server", "-m", "f.gguf"]
+    assert cmd[-4:] == ["--host", "127.0.0.1", "--port", "8080"] and "--metrics" in cmd
+
+
+def test_tokens_served_add_up_across_restarts():
+    entry = {}
+    assert models.LocalModels._count(entry, {"prompt_tokens_total": 10, "tokens_predicted_total": 50}) \
+        == {"prompt": 10, "generated": 50}
+    # The server restarted: its counters start again from zero.
+    assert models.LocalModels._count(entry, {"prompt_tokens_total": 4, "tokens_predicted_total": 5}) \
+        == {"prompt": 14, "generated": 55}
+    models.LocalModels._close_counts(entry)
+    assert models.LocalModels._count(entry, {}) == {"prompt": 14, "generated": 55}
+
+
+@pytest.fixture
+def fake_server(monkeypatch):
+    # Run the fake server script instead of llama-server.
+    monkeypatch.setattr(models.Model, "command",
+                        lambda self, server: [sys.executable, str(FAKE), "--port", str(self.port)])
+    monkeypatch.setattr(models, "_is_llama_server", lambda proc: True)
+
+
+def wait_for(lm, mid, status, seconds=15):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        row = next(r for r in lm.overview()["models"] if r["id"] == mid)
+        if row["status"] == status:
+            return row
+        time.sleep(0.3)
+    raise AssertionError(f"{mid} never became {status}: {row['status']}")
+
+
+def test_start_stats_budget_and_stop(tmp_path, fake_server, monkeypatch):
+    monkeypatch.setattr(models.LocalModels, "gpus", lambda self: [
+        {"name": "GPU", "util": 50.0, "vram_used_mib": 15000.0, "vram_total_mib": 16384.0,
+         "temp": 60.0, "power": 100.0, "power_limit": 285.0}])
+    write_config(tmp_path, [model_item(tmp_path, "one", vram=15.6), model_item(tmp_path, "two", vram=14.6)])
+    lm = models.LocalModels(tmp_path)
+    lm.start("one")
+    try:
+        row = wait_for(lm, "one", "running")
+        assert row["gen_tps"] == 40 and row["prompt_tps"] == 240 and row["busy"] == 1
+        assert row["served"] == {"prompt": 120, "generated": 400}
+        view = lm.overview("es")
+        assert view["budget"]["reserved_gb"] == 15.6 and view["show"]["m.one.gen"] == "40,0 tok/s"
+        # Both don't fit in 16 GiB: the second one is refused, naming the first.
+        with pytest.raises(models.ModelError) as err:
+            lm.start("two")
+        assert err.value.key == "m_err_vram" and err.value.params["other"] == "One"
+        with pytest.raises(models.ModelError) as err:
+            lm.start("one")
+        assert err.value.key == "m_err_running"
+    finally:
+        lm.stop("one")
+    row = wait_for(lm, "one", "stopped")
+    assert row["served"] == {"prompt": 120, "generated": 400} and not row["crashed"]
+    with pytest.raises(models.ModelError) as err:
+        lm.stop("one")
+    assert err.value.key == "m_err_not_running"
+
+
+def test_a_crash_shows_the_log(tmp_path, fake_server):
+    write_config(tmp_path, [model_item(tmp_path, "one")])
+    lm = models.LocalModels(tmp_path)
+    lm.start("one")
+    wait_for(lm, "one", "running")
+    entry = json.loads((tmp_path / "models-state.json").read_text(encoding="utf-8"))["one"]
+    import psutil
+    psutil.Process(entry["pid"]).kill()
+    row = wait_for(lm, "one", "stopped")
+    assert "start" in row["crashed"]          # the log header Baton writes at each start
+
+
+def test_port_used_by_another_program(tmp_path, monkeypatch):
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        write_config(tmp_path, [model_item(tmp_path, "one", port=port)])
+        monkeypatch.setattr(models, "_is_llama_server", lambda proc: False)
+        lm = models.LocalModels(tmp_path)
+        assert lm.overview()["models"][0]["status"] == "port_busy"
+        with pytest.raises(models.ModelError) as err:
+            lm.start("one")
+        assert err.value.key == "m_err_port"
+        with pytest.raises(models.ModelError) as err:
+            lm.stop("one")
+        assert err.value.key == "m_err_not_ours"
+
+
+def test_missing_file_and_server(tmp_path):
+    item = model_item(tmp_path, "one")
+    Path(item["file"]).unlink()
+    write_config(tmp_path, [item])
+    with pytest.raises(models.ModelError) as err:
+        models.LocalModels(tmp_path).start("one")
+    assert err.value.key == "m_err_file"
+    write_config(tmp_path, [item], server=str(tmp_path / "nope.exe"))
+    with pytest.raises(models.ModelError) as err:
+        models.LocalModels(tmp_path).start("one")
+    assert err.value.key == "m_err_server"
+
+
+def test_every_error_has_text():
+    for key in ("m_err_unknown", "m_err_server", "m_err_file", "m_err_running", "m_err_vram",
+                "m_err_port", "m_err_not_running", "m_err_not_ours", "m_err_start"):
+        for lang in ("en", "es"):
+            assert models.ModelError(key, file="f", name="n", other="o", total=16, port=1,
+                                     error="e").text(strings(lang))
+
+
+@pytest.mark.parametrize("lang", ["en", "es"])
+def test_page_and_actions(tmp_path, monkeypatch, lang):
+    async def no_projects(self, force=False):
+        return [], []
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    client = TestClient(create_app(Settings(data_dir=tmp_path, lang=lang, self_update=False)))
+    t = strings(lang)
+    page = client.get("/models").text
+    assert t["m_machine"] in page and 'href="/models" aria-current="page"' in page
+    assert "models.json" in page                       # how to create the list
+    write_config(tmp_path, [model_item(tmp_path, "one")])
+    page = client.get("/models").text
+    assert "One" in page and t["m_status_stopped"] in page and t["m_start"] in page
+    data = client.get("/api/models").json()
+    assert data["models"][0]["status"] == "stopped" and "cpu" in data["show"]
+    # Start/stop need the page's form token, like every other form.
+    assert client.post("/models/one/start", data={"csrf": "wrong"}).status_code == 403
+    csrf = page.split('name="csrf" value="')[1].split('"')[0]
+    r = client.post("/models/nope/start", data={"csrf": csrf}, follow_redirects=False)
+    assert r.status_code == 303 and "error=" in r.headers["location"]
+    assert client.post("/models/one/explode", data={"csrf": csrf}).status_code == 422

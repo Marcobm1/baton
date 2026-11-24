@@ -358,7 +358,7 @@ input[type=radio], input[type=checkbox] { accent-color: var(--accent); }
   .tok-nums b { font-size: 1.35rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; scroll-behavior: auto !important; }
+  * { transition: none !important; scroll-behavior: auto !important; animation: none !important; }
 }
 
 /* ------------------------------------------------ projects: cards and next task */
@@ -417,3 +417,17 @@ ol.upcoming li:hover .btn.small, ol.upcoming .btn.small:focus-visible { opacity:
 .score-bars small { color: var(--faint); margin-left: .2rem; }
 .ranking-entry > div:first-child { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
 .score-switch a:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* Toast: one-time confirmation (a saved evaluation) floating over the page,
+   clear of the phone tab bar. It fades out by itself; clicking removes it. */
+.toast { position: fixed; left: 50%; bottom: calc(var(--tab-h) + 1.3rem); z-index: 6;
+  transform: translateX(-50%); display: flex; align-items: center; gap: .55rem;
+  padding: .7rem 1.15rem; border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  background: var(--panel); border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line));
+  color: var(--ink); font-weight: 600; cursor: pointer; max-width: min(26rem, calc(100vw - 2.2rem));
+  animation: toast-in .22s ease-out; transition: opacity .35s, visibility .35s; }
+@media (min-width: 900px) { .toast { bottom: 1.6rem; } }
+.toast .icon { color: var(--ok); }
+.toast.hide { opacity: 0; visibility: hidden; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, .5rem); } }
+.toast:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Verify live OpenCode reviewer scores and charts
 updated: 2026-11-24
-updated_by: codex
+updated_by: opencode
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,9 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] 2026-11-24 Saving a personal rating returns to the Ranking list with a confirmation toast
+  The form keeps the origin filter and chart view; the message fades out and
+  never repeats after a page reload. Suite: 111 passed on Windows.
 - [x] 2026-11-24 Add historical delivery scores, three ranking charts and per-job rating actions
 - [x] 2026-11-24 Prepare the next editable task from the project page
 - [x] 2026-11-24 Recommended agent/model/effort for drafted tasks, last choice remembered, Spanish STATUS headings, project cards and page redesign
@@ -114,6 +117,9 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (opencode): saving a personal rating on Ranking now returns to the
+  list (origin filter and chart view kept) with a one-time "valoración guardada"
+  toast that fades out and disappears from the URL; 111 tests passed on Windows.
 - 2026-11-24 (codex): On live Ranking, five historical `opencode-go/glm-5.3`
   estimates averaged 6.6, with no human or combined scores for that model.
   Rate matched the model and merge result for #16 and #18. GitHub confirmed

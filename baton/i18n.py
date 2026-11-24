@@ -2,6 +2,8 @@
 
 STRINGS = {
     "en": {
+        "create_next": "Create next task",
+        "provisional_details": "Complete the planned task “%s” and describe how you verified the result.",
         "right_now": "Right now", "open_pulls": "Open pull requests",
         "upcoming": "Upcoming tasks", "launch_task": "Launch as task", "finished_work": "Done",
         "blockers": "Blockers", "decisions": "Decisions", "see_more": "See more",
@@ -173,6 +175,8 @@ STRINGS = {
         "token_none": "No GitHub token: only public repositories are visible.",
     },
     "es": {
+        "create_next": "Crear siguiente tarea",
+        "provisional_details": "Completa la tarea prevista «%s» y explica cómo comprobaste el resultado.",
         "right_now": "Ahora mismo", "open_pulls": "PR abiertos",
         "upcoming": "Próximas tareas", "launch_task": "Lanzar como tarea", "finished_work": "Hecho",
         "blockers": "Bloqueos", "decisions": "Decisiones", "see_more": "Ver más",

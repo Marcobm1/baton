@@ -28,7 +28,7 @@ from .task_models import catalog
 from .task_report import task_report
 from .self_update import SelfUpdate
 from .runner import UpdateInProgress
-from .runner import (AGENTS, PRIORITIES, SUMMARY_REQUEST, LocalRepos, Runner, Task, TaskStore,
+from .runner import (AGENTS, PRIORITIES, NEXT_TASK_REQUEST, SUMMARY_REQUEST, LocalRepos, Runner, Task, TaskStore,
                      extract_summary, new_id, opencode_models, queue_key)
 
 HERE = Path(__file__).parent
@@ -207,7 +207,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                 upcoming = [item for item in content.checklist if not item.checked]
                 return page(request, "project.html", "projects", p=p, content=content,
                             upcoming=upcoming, checked=len(content.checklist) - len(upcoming),
-                            finished=finished_items(content.checklist, tasks), active=active,
+                            finished=finished_items(content, tasks), active=active,
                             queue=runner.queue_info(), pulls=await hub.open_pulls(p.repo))
         raise HTTPException(404, "Unknown project")
 
@@ -349,7 +349,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             body = (f"@claude {details or title}\n\n---\n"
                     "Task created from Baton. Follow this repository's AGENTS.md / CLAUDE.md, "
                     "open a pull request with the change, and update STATUS.md in it. "
-                    f"Post your report in a comment on this issue. {SUMMARY_REQUEST}")
+                    f"{NEXT_TASK_REQUEST} Post your report in a comment on this issue. {SUMMARY_REQUEST}")
             try:
                 issue = await hub.create_issue(repo, title, body)
             except GitHubError as exc:

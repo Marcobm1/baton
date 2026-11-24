@@ -253,6 +253,7 @@ def test_task_endpoint_csrf_and_issue(tmp_path, monkeypatch):
         assert "<strong>Checked</strong> the result." in detail
         assert web.TaskStore(tmp_path).all()[0].summary == "**Checked** the result."
         assert calls and calls[0][2].startswith("@claude do X")
+        assert web.NEXT_TASK_REQUEST in calls[0][2]
         assert c.post("/tasks", data={**form, "repo": "other/repo", "csrf": token}).status_code == 400
         assert c.post("/tasks", data={**form, "where": "local:rm", "csrf": token}).status_code == 400
         assert c.get("/quotas").status_code == 200 and c.get("/tasks").status_code == 200

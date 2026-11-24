@@ -104,6 +104,7 @@ def test_runner_end_to_end_in_a_worktree(tmp_path, monkeypatch):
     store, r = _fake_agent_runner(tmp_path, work, script, opened)
     task = Task(id="t1", repo="x/demo", title="Add DONE", details="please", agent="codex", where="local",
                 created_at=time.time(), branch="baton/t1", base="main", open_pr=True)
+    assert runner_mod.NEXT_TASK_REQUEST in r._prompt(task)
     r.submit(task)
     done = _wait(store, "t1")
     assert done.status == "done", done.message

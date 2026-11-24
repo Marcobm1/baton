@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Watch the first OpenCode task go through review and auto-merge.
+next: Watch the first OpenCode task go through review and auto-merge
 updated: 2026-11-24
-updated_by: claude
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,10 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] 2026-11-24 Prepare the next editable task from the project page
+- [ ] Watch the first OpenCode task go through review and auto-merge
+  Follow a real OpenCode task through review and CI. Check that Baton records
+  the verdict on the task page and merges the reviewed commit after tests pass.
 - [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
 - [x] 2026-11-24 Check the project detail on a phone
 - [x] Automatic idle-only self-update with validation, rollback and status on Quotas
@@ -53,7 +57,6 @@ links:
 - [x] Every local task (Claude Code, Codex, OpenCode, local AI) ends in a pull request; no opt-out checkbox
 - [x] Auto-merge: Claude/Codex PRs merge when tests pass; OpenCode/local AI work and repos without tests get a review (with fixes) by Claude Code or Codex first
 - [x] First real auto-merges without review: Codex (#10, #12) and Claude Code (#11)
-- [ ] Watch the first OpenCode task go through review and auto-merge
 - [x] Local task queue with priority (high/normal/low), one task per repository, `BATON_MAX_PARALLEL` global limit, change priority or cancel while queued
 - [ ] Queue two real tasks on one repository and check the second starts from the merged result
 - [x] Test: "en" and "es" UI strings have the same keys and no empty text
@@ -92,6 +95,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): Project pages open an editable next-task draft and include Done recently in history. Local and cloud prompts request the next title and description. Project detail tests passed. The Windows suite still reports two cancellation cleanup failures.
 - 2026-11-24 (claude): `depends_on` and `parent` in STATUS.md; red blocked cards and detail note, blocked note in INDEX.md, en/es strings, README section and docs/dependencies.md; monitoring section added to Next; 90 tests passed.
 - 2026-11-24 (opencode): quota update review: scheduled checks now skip when a fresher reading exists (5-10 minute intervals barely spend extra quota), the OpenCode Go card refreshes every 5 minutes in the background, README/.env.example recommend 5-10 minutes; 87 tests passed plus an end-to-end smoke run of the loop.
 - 2026-11-24 (claude-code): visual redesign (control-panel style), sidebar on desktop and tab bar on phones, Auto/Light/Dark theme without flash, colour tokens with WCAG AA tests; checked with screenshots in both themes at 1440 px and 390 px.

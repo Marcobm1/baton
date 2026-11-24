@@ -136,7 +136,9 @@ That's all: the next time the page refreshes (every 5 minutes, or with the
 
 Open a project's name to see its current queue, open PRs and test results,
 upcoming tasks, completed work, blockers, decisions and recent log entries.
-Use **Launch as task** beside an upcoming item to review and edit a draft.
+Use **Create next task** to review the first pending item's title and description,
+or **Launch as task** to choose another item. At completion, Baton asks the
+agent to prepare the next draft in the project's STATUS.md.
 The full file is available at the bottom. See the [project detail guide](docs/project-detail.md).
 
 ### Projects without a repository: the hub repo

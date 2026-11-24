@@ -20,6 +20,7 @@ class ChecklistItem:
 @dataclass
 class Sections:
     checklist: list[ChecklistItem] = field(default_factory=list)
+    done_recently: list[str] = field(default_factory=list)
     blockers: list[str] = field(default_factory=list)
     decisions: list[str] = field(default_factory=list)
     log: list[str] = field(default_factory=list)
@@ -58,10 +59,10 @@ def sections(body: str) -> Sections:
                     detail.append(line)
                 result.checklist.append(ChecklistItem(
                     box[2].strip(), box[1].lower() == "x", dedent("\n".join(detail)).strip()))
-        elif section in ("blockers", "decisions", "log"):
+        elif section in ("done recently", "blockers", "decisions", "log"):
             entry = " ".join([first, *(line.strip() for line in lines[start + 1:end])]).strip()
             if entry and not (section == "blockers" and entry.casefold().rstrip(".") == "none"):
-                getattr(result, section).append(entry)
+                getattr(result, section.replace(" ", "_")).append(entry)
     return result
 
 
@@ -72,18 +73,18 @@ class Finished:
     task: Task | None = None
 
 
-def finished_items(checklist: list[ChecklistItem], tasks: list[Task]) -> list[Finished]:
+def finished_items(content: Sections, tasks: list[Task]) -> list[Finished]:
     items = []
-    for item in checklist:
-        if item.checked:
-            when = ""
-            match = re.match(r"(\d{4}-\d{2}-\d{2})\b", item.title)
-            if match:
-                try:
-                    when = date.fromisoformat(match[1]).isoformat()
-                except ValueError:
-                    pass
-            items.append(Finished(item.title, when))
+    titles = [item.title for item in content.checklist if item.checked]
+    for title in titles + content.done_recently:
+        when = ""
+        match = re.match(r"(\d{4}-\d{2}-\d{2})\b", title)
+        if match:
+            try:
+                when = date.fromisoformat(match[1]).isoformat()
+            except ValueError:
+                pass
+        items.append(Finished(title, when))
     for task in tasks:
         if task.status in ("done", "no-changes", "cancelled", "failed") or (
             task.status == "sent" and task.summary

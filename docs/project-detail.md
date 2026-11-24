@@ -7,8 +7,10 @@ There is no additional task or project database.
 
 ## Writing Next items
 
-Use one top-level checkbox per task. Give it a short title. Indent optional
-instructions and prerequisites below it, including how to verify completion.
+Use one top-level checkbox per task. When finishing work on an ongoing project,
+mark the completed item and put the next task first among unchecked items.
+Set the front matter `next` to its title and indent its description underneath
+the checkbox, including how to verify completion. A provisional draft is enough.
 
 ```markdown
 ## Next
@@ -18,15 +20,18 @@ instructions and prerequisites below it, including how to verify completion.
 - [x] 2026-11-23 Add report filters
 ```
 
-The project progress bar counts only these checkboxes. The launch link opens
-an editable draft with the repository, title and detail. It never queues work.
+The project progress bar counts only these checkboxes. **Create next task**
+opens an editable draft for the first unchecked item. Older files can supply
+just the front matter `next`. A title without instructions gets a provisional
+description. Hub drafts include the project's STATUS.md path so the agent
+knows which folder to update. Submitting the form starts the usual task flow.
 Keep drafts within the task form limits (200 characters for the title and
 5,000 for the details).
 
 ## Reading the history
 
-Done combines checked items with terminal Baton tasks, including failures
-and cancellations labelled with their outcome. A cloud task with a recorded
+Done combines checked items, entries under `## Done recently` and terminal
+Baton tasks, including failures and cancellations labelled with their outcome. A cloud task with a recorded
 agent summary also appears here. Each source keeps its own entry because a
 task title is not a reliable identifier. Prefix a checked title with an ISO
 completion date to place it chronologically. Entries with no recorded date

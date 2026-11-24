@@ -98,3 +98,20 @@ CLI's data directory as `BATON_HOST_DATA_DIR`.
 For Baton-managed Claude Code and Codex tasks, the CLI first writes inside
 the agent's worktree. Baton collects the records when the agent exits, before
 it checks for changes to commit. The same delegation ID survives collection.
+
+## The Ranking page (2026-11-24)
+
+- **Summary tiles:** jobs, how many you have rated, how many wait for your
+  score (a shortcut to the "To rate" list) and the best model for the chosen view.
+- **One leaderboard** instead of a chart plus a table: each model shows its
+  agent, your and the combined average side by side, with readable names
+  (`opencode-go/glm-5.3` → GLM 5.3 · OpenCode Go). The view buttons choose the
+  order. Each row says how much the average rests on (reviewed vs estimated
+  agent scores, your scores) and warns when there are fewer than three.
+- **Click a model** to list only its jobs; click again to clear.
+- **Jobs** come 8 per page, with "All" and "To rate" tabs. Estimated agent
+  scores are marked with an asterisk.
+
+Why: the chart and the table repeated the same numbers, and estimated scores
+(8.0 for every merged task) looked as solid as reviewed ones. Showing the
+counts next to each average makes that visible without hiding the estimates.

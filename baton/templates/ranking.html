@@ -26,68 +26,97 @@
   })();
 </script>
 {% endif %}
+{% import "_macros.html" as m with context %}
+{% set base = {'origin': origin, 'view': view, 'tab': tab, 'model': model} %}
+{% macro q(changes) -%}?{{ base|combine(changes)|dictsort|selectattr(1)|list|urlencode }}{%- endmacro %}
+{% macro score(value) -%}{{ '%.1f'|format(value) if value is not none else '—' }}{%- endmacro %}
+
 <div class="page-head ranking-head"><h1>{{ t.ranking }}</h1>
-<form method="get" action="/ranking">
-  <input type="hidden" name="view" value="{{ view }}">
-  <label>{{ t.origin }}
-    <select name="origin">
-      {% for value, label in [('all', t.all_origins), ('delegation', t.delegation), ('task', t.baton_task)] %}
-      <option value="{{ value }}" {% if value == origin %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <button type="submit">{{ t.filter_origin }}</button>
-</form></div>
-{% if models %}
-<section class="card score-chart" aria-labelledby="chart-title">
-  <h2 id="chart-title">{{ t.score_chart }}</h2>
-  <nav class="score-switch" aria-label="{{ t.score_chart }}">
-    {% for key, label in [('agent', t.chart_agent), ('human', t.your_score), ('combined', t.combined)] %}
-    <a href="?origin={{ origin }}&amp;view={{ key }}"{% if view == key %} aria-current="page"{% endif %}>{{ label }}</a>
+  <nav class="chips" aria-label="{{ t.origin }}">
+    {% for value, label in [('all', t.all_origins), ('task', t.baton_task), ('delegation', t.delegation)] %}
+    <a class="chip" href="{{ q({'origin': value, 'page': none, 'model': none}) }}"{% if value == origin %} aria-current="true"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
-  {% if view != 'human' %}<p class="small muted">{{ t.chart_estimates }} {% if view == 'combined' %}{{ t.chart_pairs }}{% endif %}</p>{% endif %}
-  <ul class="score-bars">
-    {% for row in models|rejectattr(view, 'none')|sort(attribute=view, reverse=true) %}
-    <li><span>{{ row.model or t.unknown_model }}</span>
-      <span class="bar" aria-hidden="true"><span class="fill" style="width: {{ row[view] * 10 }}%"></span></span>
-      <strong>{{ '%.1f'|format(row[view]) }}<small>/10</small></strong>
-    </li>
-    {% else %}<li class="muted">{{ t.chart_empty }}</li>{% endfor %}
-  </ul>
-</section>
-<p class="muted small">{{ t.rank_order }}</p>
-<div class="ranking-table">
-  <table class="tok-table">
-    <thead><tr>
-      {% for key in ('model', 'evaluated', 'fulfillment', 'correctness', 'rework', 'human', 'agent') %}
-      <th scope="col">{{ t[key] }}</th>
-      {% endfor %}
-    </tr></thead>
-    <tbody>{% for row in models %}
-      <tr><th scope="row">{{ row.model or t.unknown_model }}</th><td>{{ row.evaluated }}</td>
-        {% for key in ('fulfillment', 'correctness', 'rework', 'human', 'agent') %}
-        <td>{{ '%.1f'|format(row[key]) if row[key] is not none else '' }}</td>
-        {% endfor %}
-      </tr>
-    {% endfor %}</tbody>
-  </table>
 </div>
-<h2>{{ t.rank_entries }}</h2>
-<ul class="task-list">
-  {% for job in jobs %}
-  <li class="task-row ranking-entry">
-    <div><a class="task-title" href="/ranking/{{ job.id }}">{{ job.title if job.task_id else job.kind }}</a>
-      <div class="muted small">{{ job.model or t.unknown_model }} · {{ t.baton_task if job.task_id else t.delegation }} · {{ job.started|when }}</div>
-    </div>
-    <span class="pill">{{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</span>
-    <div class="small">{{ t.chart_agent }} · {{ '%.1f'|format(job.agent) if job.agent is not none else '—' }}
-      {% if job.estimate and job.agent is not none %}<small>({{ t.estimated }})</small>{% endif %}
-      <div class="muted">{{ t.your_score }} · {{ '%.1f'|format(job.human) if job.human is not none else t.review_pending }}</div>
-    </div>
-    <a class="btn ghost small" href="/ranking/{{ job.id }}?origin={{ origin }}&amp;view={{ view }}#your-score">{{ t.edit_score if job.human is not none else t.rate_job }}</a>
-  </li>
-  {% endfor %}
-</ul>
+
+{% if rows %}
+<section class="kpis" aria-label="{{ t.summary_label }}">
+  <div class="kpi"><span class="kpi-label">{{ t.kpi_jobs }}</span><strong>{{ stats.jobs }}</strong></div>
+  <div class="kpi"><span class="kpi-label">{{ t.kpi_rated }}</span><strong>{{ stats.rated }}<small>/{{ stats.jobs }}</small></strong></div>
+  <a class="kpi kpi-action" href="{{ q({'tab': 'pending', 'page': none}) }}#jobs">
+    <span class="kpi-label">{{ t.kpi_pending }}</span><strong>{{ stats.pending }}</strong>
+    {% if stats.next_pending %}<span class="small">{{ t.rate_next }} →</span>{% endif %}</a>
+  <div class="kpi"><span class="kpi-label">{{ t.kpi_best }} · {{ t['view_' ~ view] }}</span>
+    {% if stats.best %}<strong class="kpi-model">{{ stats.best.name or t.unknown_model }}</strong>
+    <span class="small muted">{{ stats.best.tool }} · {{ score(stats.best[view]) }}/10</span>{% else %}<strong>—</strong>{% endif %}</div>
+</section>
+
+<section class="card leaderboard" aria-labelledby="board-title">
+  <div class="board-head">
+    <h2 id="board-title">{{ t.score_chart }}</h2>
+    <nav class="score-switch" aria-label="{{ t.sort_by }}">
+      {% for key in ('agent', 'human', 'combined') %}
+      <a href="{{ q({'view': key, 'page': none}) }}"{% if view == key %} aria-current="page"{% endif %}>{{ t['view_' ~ key] }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+  <p class="small muted">{{ t['view_help_' ~ view] }}</p>
+  {% if rows|rejectattr(view, 'none')|list|length == 0 %}<p class="muted">{{ t.chart_empty }}</p>{% endif %}
+  <ol class="board">
+    {% for row in rows %}
+    <li class="board-row{% if model == row.model %} selected{% endif %}">
+      <span class="rank">{{ row.rank or '–' }}</span>
+      <a class="board-model" href="{{ q({'model': row.model if model != row.model else none, 'page': none}) }}#jobs"
+         title="{{ t.filter_model if model != row.model else t.clear_model }}">
+        <strong title="{{ row.model }}">{{ row.name or t.unknown_model }}</strong>
+        <span class="small muted">{{ row.tool }}{% if row.tool %} · {% endif %}{{ t.n_jobs|format(row.jobs) }}</span>
+      </a>
+      <div class="board-scores">
+        {% for key in ('agent', 'human', 'combined') %}
+        <div class="metric{% if key == view %} main{% endif %}">
+          <span class="metric-label">{{ t['view_' ~ key] }}</span>
+          <span class="bar" aria-hidden="true"><span class="fill" style="width: {{ (row[key] or 0) * 10 }}%"></span></span>
+          <span class="metric-value">{{ score(row[key]) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="board-meta small muted">
+        {% if row.agent_estimated %}{{ t.agent_counts|format(row.agent_real, row.agent_estimated) }}{% elif row.agent_real %}{{ t.agent_real_only|format(row.agent_real) }}{% endif %}
+        {% if row.human_count %} · {{ t.your_count|format(row.human_count) }}{% endif %}
+        {% if row.fulfillment is not none %}<br>{{ t.fulfillment }} {{ score(row.fulfillment) }} · {{ t.correctness }} {{ score(row.correctness) }} · {{ t.rework }} {{ score(row.rework) }}{% endif %}
+        {% if row.tentative %}<br><span class="tentative">⚠ {{ t.few_samples }}</span>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+
+<section id="jobs" class="jobs-section">
+  <div class="jobs-head">
+    <h2>{{ t.rank_entries }}{% if model is not none %} · {{ selected_label.name or t.unknown_model }}
+      <a class="small" href="{{ q({'model': none, 'page': none}) }}#jobs">✕ {{ t.clear_model }}</a>{% endif %}</h2>
+    <nav class="chips" aria-label="{{ t.rank_entries }}">
+      <a class="chip" href="{{ q({'tab': 'all', 'page': none}) }}#jobs"{% if tab == 'all' %} aria-current="true"{% endif %}>{{ t.all_jobs }}</a>
+      <a class="chip" href="{{ q({'tab': 'pending', 'page': none}) }}#jobs"{% if tab == 'pending' %} aria-current="true"{% endif %}>{{ t.pending_jobs }} <span class="count">{{ pending_count }}</span></a>
+    </nav>
+  </div>
+  <ul class="task-list">
+    {% for job in jobs['items'] %}
+    <li class="task-row ranking-entry">
+      <div class="entry-main"><a class="task-title" href="/ranking/{{ job.id }}?origin={{ origin }}&amp;view={{ view }}">{{ job.title if job.task_id else job.kind }}</a>
+        <div class="muted small"><span class="model-chip">{{ job.label.name or t.unknown_model }}</span> {{ t.baton_task if job.task_id else t.delegation }} · {{ job.started|when }}</div>
+      </div>
+      <span class="pill st st-{{ job.outcome }}">{{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</span>
+      <div class="entry-scores small">
+        <span title="{{ t.chart_agent }}">{{ t.agent_short }} <strong>{{ score(job.agent) }}</strong>{% if job.estimate and job.agent is not none %}<sup title="{{ t.estimated }}">*</sup>{% endif %}</span>
+        <span title="{{ t.your_score }}">{{ t.you_short }} <strong>{{ score(job.human) }}</strong></span>
+      </div>
+      <a class="btn {{ 'ghost ' if job.human is not none }}small" href="/ranking/{{ job.id }}?origin={{ origin }}&amp;view={{ view }}#your-score">{{ t.edit_score if job.human is not none else t.rate_job }}</a>
+    </li>
+    {% else %}<li class="muted">{{ t.no_pending if tab == 'pending' else t.no_rank_entries }}</li>{% endfor %}
+  </ul>
+  <p class="small muted">* {{ t.estimated_help }}</p>
+  {{ m.pager(jobs, base, '#jobs') }}
+</section>
 {% else %}<p>{{ t.no_rank_entries }}</p>{% endif %}
 {% endblock %}

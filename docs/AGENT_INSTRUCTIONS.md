@@ -27,6 +27,8 @@ dashboard and other AI agents read it to know what to do next.
     for an ongoing project, make the first unchecked item the next task.
     Give it a short title and indent its description by two spaces. Describe
     the work and how to verify it, even if provisional. Set `next` to its title.
+    Add a line `Recommended: <agent>, <model>, <effort>` to its description
+    (agent: claude-code, codex, opencode or local) with what fits it best;
     Prefix finished titles with YYYY-MM-DD when the completion date is known;
   - update "Blockers" and "Decisions" if they changed;
   - add one line at the top of "Log": `- YYYY-MM-DD (tool): what changed`.

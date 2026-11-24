@@ -25,10 +25,11 @@ from .ping import Scheduler
 from .ranking import CRITERIA, Ranking
 from .project_detail import finished_items, sections
 from .task_models import catalog
+from . import task_defaults
 from .task_report import task_report
 from .self_update import SelfUpdate
 from .runner import UpdateInProgress
-from .runner import (AGENTS, PRIORITIES, NEXT_TASK_REQUEST, SUMMARY_REQUEST, LocalRepos, Runner, Task, TaskStore,
+from .runner import (AGENTS, PRIORITIES, NEXT_TASK_REQUEST, SUMMARY_REQUEST, next_task_request, LocalRepos, Runner, Task, TaskStore,
                      extract_summary, new_id, opencode_models, queue_key)
 
 HERE = Path(__file__).parent
@@ -192,7 +193,9 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         groups = {k: [p for p in projects if p.status.status == k]
                   for k in ("active", "planned", "paused", "done")}
         running = {x.repo for x in store.all() if x.status in ("queued", "running")}
-        return page(request, "projects.html", "projects", groups=groups, count=len(projects),
+        drafts = {p.id: next((item for item in sections(p.status.body).checklist if not item.checked), None)
+                  for p in projects}
+        return page(request, "projects.html", "projects", groups=groups, count=len(projects), drafts=drafts,
                     errors=errors, no_token=not settings.github_token, running=running)
 
     @app.get("/p/{pid:path}", response_class=HTMLResponse)
@@ -262,7 +265,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     @app.get("/tasks/new", response_class=HTMLResponse)
     async def task_new(request: Request, repo: str = "", error: str = "",
-                       title: str = "", details: str = ""):
+                       title: str = "", details: str = "",
+                       agent: str = "", model: str = "", effort: str = ""):
         projects, _ = await hub.load()
         repos = sorted({p.repo for p in projects})
         local = {r: bool(runner.repos.get(r)) for r in repos}
@@ -271,11 +275,16 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         models, *choices = await asyncio.gather(
             asyncio.to_thread(opencode_models) if not available["opencode"] else asyncio.sleep(0, result=[]),
             *(asyncio.to_thread(catalog, a) for a in agents))
+        catalogs = dict(zip(agents, choices))
+        initial = task_defaults.initial_choice(
+            {"agent": agent, "model": model, "effort": effort}, store.all(),
+            available, catalogs, models)
         return page(request, "task_new.html", "tasks", repos=repos, selected=repo,
-                    local=local, available=available, oc_models=models, catalogs=dict(zip(agents, choices)),
+                    local=local, available=available, oc_models=models, catalogs=catalogs,
                     cloud=settings.cloud_tasks, error=error[:300], auto_merge=settings.auto_merge,
                     has_token=bool(settings.github_token), priorities=PRIORITIES,
-                    max_parallel=settings.max_parallel, draft_title=title, draft_details=details)
+                    max_parallel=settings.max_parallel, draft_title=title, draft_details=details,
+                    initial=initial)
 
     @app.get("/tasks/{task_id}", response_class=HTMLResponse)
     async def task_detail(request: Request, task_id: str):
@@ -349,7 +358,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             body = (f"@claude {details or title}\n\n---\n"
                     "Task created from Baton. Follow this repository's AGENTS.md / CLAUDE.md, "
                     "open a pull request with the change, and update STATUS.md in it. "
-                    f"{NEXT_TASK_REQUEST} Post your report in a comment on this issue. {SUMMARY_REQUEST}")
+                    f"{next_task_request(await asyncio.to_thread(runner.model_choices))} "
+                    f"Post your report in a comment on this issue. {SUMMARY_REQUEST}")
             try:
                 issue = await hub.create_issue(repo, title, body)
             except GitHubError as exc:

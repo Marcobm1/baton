@@ -49,6 +49,7 @@ from typing import Callable
 
 from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
 from .ranking import Ranking
+from .task_models import catalog
 
 AGENTS = {
     "claude-code": "Claude Code",
@@ -141,6 +142,22 @@ NEXT_TASK_REQUEST = (
     "a short title and an indented description of the work and how to check it. "
     "A provisional draft is fine. Set the front matter next field to that title."
 )
+
+RECOMMEND_REQUEST = (
+    "In that description add one line `Recommended: <agent>, <model>, <effort>` naming the "
+    "agent, model and reasoning effort that fit that next task best: cheaper, faster models "
+    "for simple and well-defined work; stronger models and more effort for complex, risky or "
+    "design work. Leave out the model or the effort to use the tool's default. "
+    "Choose from what this computer offers: {choices}."
+)
+
+
+def next_task_request(choices: str = "") -> str:
+    """The next-task instructions, with the recommendation line when choices are known."""
+    if not choices:
+        return NEXT_TASK_REQUEST
+    return f"{NEXT_TASK_REQUEST} {RECOMMEND_REQUEST.format(choices=choices)}"
+
 
 SUMMARY_REQUEST = (
     "Finish with a report for the owner, in the language required by the project's "
@@ -808,10 +825,32 @@ class Runner:
                 cmd.extend(["-c", f"model_reasoning_effort={json.dumps(task.effort)}"])
         return cmd + ["-"]
 
+    def model_choices(self) -> str:
+        """Agents and models available here, for the next-task recommendation."""
+        parts = []
+        for agent, reason in self.agents_available().items():
+            if reason:
+                continue
+            if agent in ("claude-code", "codex"):
+                models = [f"{m} ({'/'.join(v['efforts'])})" if v["efforts"] else m
+                          for m, v in catalog(agent).items()]
+                parts.append(f"{agent}: {'; '.join(models)}" if models else agent)
+            elif agent == "opencode":
+                models = opencode_models()[:20]
+                parts.append(f"opencode: {', '.join(models)}" if models else "opencode")
+            else:
+                parts.append(agent)
+        return " | ".join(parts)
+
     def _prompt(self, task: Task) -> str:
+        try:
+            choices = self.model_choices()
+        except Exception:  # never let model discovery stop a task
+            choices = ""
         return PROMPT.format(repo=task.repo, branch=task.branch, base=task.base,
                              agent=task.agent, title=task.title, summary_request=SUMMARY_REQUEST,
-                             next_task_request=NEXT_TASK_REQUEST, details=task.details or "(no more details)")
+                             next_task_request=next_task_request(choices),
+                             details=task.details or "(no more details)")
 
     def _run(self, task: Task) -> None:
         def step(msg: str) -> None:

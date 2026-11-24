@@ -37,6 +37,8 @@ of truth for where the project stands.
     for an ongoing project, make the first unchecked item the next task.
     Give it a short title and an indented description of the work and how to
     verify it, even if provisional. Set `next` to the same title.
+    Add a line `Recommended: <agent>, <model>, <effort>` to its description
+    (agent: claude-code, codex, opencode or local) with what fits it best;
     Prefix completed titles with YYYY-MM-DD when the date is known;
   - update "Blockers" and "Decisions" if they changed;
   - add one line at the top of "Log": `- YYYY-MM-DD (tool): what changed`.

@@ -10,11 +10,41 @@ from markdown_it import MarkdownIt
 from .runner import Task
 
 
+# A line in a Next item's description that names the agent to use:
+#   Recommended: codex, gpt-6.2-astra, high
+# (agent, then optional model and reasoning effort; commas because model
+# names can contain "/" or ".").
+_recommended = re.compile(r"^\s*(?:recommended|recomendado)\s*:\s*(.+?)\s*$", re.I | re.M)
+_agent_names = {"claude": "claude-code", "claude code": "claude-code", "claude-code": "claude-code",
+                "codex": "codex", "opencode": "opencode", "local": "local", "local ai": "local",
+                "ia local": "local"}
+
+
+def recommendation(detail: str) -> tuple[dict, str]:
+    """Split a task description into its recommendation (if any) and the rest."""
+    match = _recommended.search(detail or "")
+    if not match:
+        return {}, detail
+    parts = [part.strip() for part in match[1].split(",")]
+    agent = _agent_names.get(parts[0].casefold())
+    end = match.end() + (detail[match.end():match.end() + 1] == "\n")
+    rest = (detail[:match.start()] + detail[end:]).strip()
+    if not agent:
+        return {}, rest
+    return {"agent": agent, "model": parts[1] if len(parts) > 1 else "",
+            "effort": parts[2].casefold() if len(parts) > 2 else ""}, rest
+
+
 @dataclass
 class ChecklistItem:
     title: str
     checked: bool
     detail: str
+    recommended: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.recommended:
+            self.recommended, self.detail = recommendation(self.detail)
 
 
 @dataclass
@@ -27,6 +57,10 @@ class Sections:
 
 
 _markdown = MarkdownIt("commonmark")
+# STATUS.md files written in Spanish use these section names.
+_HEADINGS = {"siguiente": "next", "próximo": "next", "próximas tareas": "next",
+             "hecho recientemente": "done recently", "bloqueos": "blockers",
+             "decisiones": "decisions", "registro": "log"}
 _marker = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s*")
 _checkbox = re.compile(r"^\[([ xX])\]\s+(.+)")
 
@@ -39,6 +73,7 @@ def sections(body: str) -> Sections:
     for i, token in enumerate(tokens):
         if token.type == "heading_open" and token.level == 0:
             section = tokens[i + 1].content.strip().rstrip(":").strip().casefold()
+            section = _HEADINGS.get(section, section)
             continue
         is_item = token.type == "list_item_open" and token.level == 1
         is_paragraph = token.type == "paragraph_open" and token.level == 0

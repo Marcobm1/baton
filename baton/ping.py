@@ -11,7 +11,9 @@ Baton already reads; a ping just makes them fresh.
 
 Side effects to know about:
   * each ping spends a little quota (one tiny request);
-  * if no 5-hour window is open, the ping opens one (the clock starts then).
+  * if no 5-hour window is open, the ping opens one (the clock starts then);
+  * a scheduled check is skipped when a fresher reading already exists (you
+    just used the CLI), so even 5-10 minute intervals cost little extra.
 Standard library only.
 """
 
@@ -26,6 +28,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from .quotas import claude_statusline_windows, codex_windows
 from .statusline import save
 
 
@@ -145,15 +148,23 @@ def in_hours(spec: str, hour: int | None = None) -> bool:
 
 
 class Scheduler:
-    """Runs the pings every N minutes inside `baton serve`."""
+    """Runs the pings every N minutes inside `baton serve`.
+
+    A check is skipped when a fresher reading already exists: if you just
+    used the CLI, its status line (Claude) or session logs (Codex) already
+    reported usage seconds ago, and asking again would only spend quota.
+    The next check is then due N minutes after that reading, so either way
+    the panel never shows a reading older than about N minutes.
+    """
 
     def __init__(self, data_dir: Path, claude_minutes: int, codex_minutes: int, hours: str,
-                 model: str = "haiku"):
+                 model: str = "haiku", codex_home: Path | None = None):
         self.data_dir = data_dir
         self.claude_minutes = claude_minutes
         self.codex_minutes = codex_minutes
         self.hours = hours
         self.model = model
+        self.codex_home = codex_home
         self.last: dict[str, float] = {}
         self.results: dict[str, tuple[float, bool, str]] = {}
 
@@ -164,15 +175,40 @@ class Scheduler:
     def due(self, name: str, minutes: int, now: float) -> bool:
         return minutes > 0 and now - self.last.get(name, 0) >= minutes * 60
 
+    def newest_seen(self, name: str) -> float:
+        """Unix time of the freshest stored reading for that provider (0 = none)."""
+        try:
+            if name == "claude":
+                windows = claude_statusline_windows(self.data_dir)
+            elif self.codex_home is not None:
+                windows = codex_windows(self.codex_home)
+            else:
+                return 0.0
+        except OSError:
+            return 0.0
+        return max((w.seen_at for w in windows), default=0.0)
+
+    def check(self, name: str, now: float) -> None:
+        """Ping one CLI, unless its stored reading is fresher than the interval."""
+        minutes = self.claude_minutes if name == "claude" else self.codex_minutes
+        freshest = self.newest_seen(name)
+        if now - freshest < minutes * 60:
+            # The CLI itself reported usage less than N minutes ago: spend no
+            # quota; the next check waits for that reading to grow to N minutes.
+            self.last[name] = min(freshest, now)
+            age = int(max(0.0, now - freshest)) // 60
+            self.results[name] = (now, True, f"skipped: reading only {age} min old")
+            return
+        self.last[name] = now
+        ok, msg = (ping_claude(self.data_dir, model=self.model) if name == "claude"
+                   else ping_codex())
+        self.results[name] = (now, ok, msg)
+
     def tick(self) -> None:
         now = time.time()
         if not in_hours(self.hours):
             return
         if self.due("claude", self.claude_minutes, now):
-            self.last["claude"] = now
-            ok, msg = ping_claude(self.data_dir, model=self.model)
-            self.results["claude"] = (now, ok, msg)
+            self.check("claude", now)
         if self.due("codex", self.codex_minutes, now):
-            self.last["codex"] = now
-            ok, msg = ping_codex()
-            self.results["codex"] = (now, ok, msg)
+            self.check("codex", now)

@@ -144,6 +144,56 @@ def test_parse_claude_stream_exhausted_window(tmp_path):
     assert used["5h"] == 100.0 and round(used["week"]) == 40
 
 
+def _claude_reading(path: Path, age_s: float) -> float:
+    """Write claude-usage.json as the status line would, seen_at age_s ago."""
+    now = time.time()
+    (path / "claude-usage.json").write_text(json.dumps({
+        "seen_at": now - age_s, "source": "statusline",
+        "rate_limits": {"five_hour": {"used_percentage": 30, "resets_at": now + 3600},
+                        "seven_day": {"used_percentage": 10, "resets_at": now + 86400}}}))
+    return now - age_s
+
+
+def test_scheduler_skips_pings_when_readings_are_fresh(tmp_path, monkeypatch):
+    from baton import ping
+
+    calls = []
+    monkeypatch.setattr(ping, "ping_claude", lambda *a, **k: calls.append("claude") or (True, "ok"))
+    monkeypatch.setattr(ping, "ping_codex", lambda *a, **k: calls.append("codex") or (True, "ok"))
+    seen = _claude_reading(tmp_path, 60)   # the status line reported a minute ago
+    home = tmp_path / "codex"             # and Codex's own logs two minutes ago
+    d = home / "sessions" / "2026" / "11" / "24"
+    d.mkdir(parents=True)
+    ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 120))
+    (d / "rollout.jsonl").write_text(_codex_event(ts, 40, 20, time.time() + 3600,
+                                                 time.time() + 86400))
+
+    s = ping.Scheduler(tmp_path, 10, 10, "", codex_home=home)
+    s.tick()
+    assert calls == []                    # fresher readings exist: no quota spent
+    assert s.results["claude"][1] and "skipped" in s.results["claude"][2]
+    assert s.results["codex"][1] and "skipped" in s.results["codex"][2]
+    assert abs(s.last["claude"] - seen) < 2   # next check due from the reading's time
+    s.tick()
+    assert calls == []                    # and nothing runs again before N minutes
+
+
+def test_scheduler_pings_when_the_reading_is_stale(tmp_path, monkeypatch):
+    from baton import ping
+
+    calls = []
+    monkeypatch.setattr(ping, "ping_claude", lambda *a, **k: calls.append("claude") or (True, "ok"))
+    monkeypatch.setattr(ping, "ping_codex", lambda *a, **k: calls.append("codex") or (True, "ok"))
+    _claude_reading(tmp_path, 20 * 60)    # nothing new for 20 minutes
+
+    s = ping.Scheduler(tmp_path, 10, 10, "")  # no codex_home: no codex logs to read
+    s.tick()
+    assert calls == ["claude", "codex"]
+    assert s.results["claude"][1:] == (True, "ok")
+    s.tick()
+    assert calls == ["claude", "codex"]   # a check runs at most once per interval
+
+
 def test_next_task_and_grouping():
     s = parse(GOOD)
     assert s.next_task == "two" and s.tasks_left == 2

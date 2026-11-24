@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Watch the first OpenCode task go through review and auto-merge.
 updated: 2026-11-24
-updated_by: claude-code
+updated_by: opencode
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -42,6 +42,7 @@ links:
 - [x] Select model and supported reasoning effort for local Claude Code and Codex tasks
 - [x] Tokens spent per day/week, per app and model (Quotas page)
 - [x] OpenCode Go quota (5 h, week, month) with an optional key
+- [x] 2026-11-24 Faster quota updates: 5-10 min automatic checks that skip when a newer reading exists, OpenCode Go refreshed in the background
 - [x] `baton delegate`: subtasks for OpenCode models, read-only by default
 - [x] State-specific task details and Claude model access, quota and other error guidance
 - [ ] Review a historical task and a running task in the web UI
@@ -61,6 +62,7 @@ links:
 - None.
 
 ## Decisions
+- 2026-11-24: a scheduled quota check is skipped when a stored reading is fresher than the interval (the CLI just reported usage through its status line or logs), so 5-10 minute intervals cost little extra quota; OpenCode Go is asked at most every 5 minutes while the server runs, not only when the page is open (README "Quota panel").
 - 2026-11-24: one design system with colour tokens for light and dark; theme Auto/Light/Dark stored per browser and applied before the first paint; phone tab bar, desktop sidebar (docs/design.md).
 - 2026-11-24: project detail combines repository activity with each project's own Next checklist. Undated completions keep their source order after dated history (docs/project-detail.md).
 - 2026-11-24: the updater reserves the idle queue until validation and restart finish; Windows relaunches the scheduled task after the server PID exits (docs/self-update.md).
@@ -82,6 +84,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (opencode): quota update review: scheduled checks now skip when a fresher reading exists (5-10 minute intervals barely spend extra quota), the OpenCode Go card refreshes every 5 minutes in the background, README/.env.example recommend 5-10 minutes; 87 tests passed plus an end-to-end smoke run of the loop.
 - 2026-11-24 (claude-code): visual redesign (control-panel style), sidebar on desktop and tab bar on phones, Auto/Light/Dark theme without flash, colour tokens with WCAG AA tests; checked with screenshots in both themes at 1440 px and 390 px.
 - 2026-11-24 (opencode): confirmed the first live self-update on Windows: c34eb76→16a9f3a validated 05:20Z and running 05:21Z; two more updates (→551150c, →82b9604) pulled, pytest-validated and restarted themselves through the Baton scheduled task; server on 82b9604, up to date, clean checkout.
 - 2026-11-24 (codex): the owner confirmed the project detail and prefilled task draft worked on mobile. The Windows self-update check is next.

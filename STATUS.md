@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Diagnose Windows cancellation cleanup failures
+next: Agents chat: talk to OpenCode, Claude Code and Codex from Baton, with tools
 updated: 2026-11-24
 updated_by: claude-code
 open_source: true
@@ -17,6 +17,18 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [ ] Agents chat: talk to OpenCode, Claude Code and Codex from Baton, with tools
+  Priority for Marco (asked 2026-11-24). Turn the Chat page into an "Agents" chat: one page with three selectors, **agent** (Local model, OpenCode, Claude Code, Codex), **model** and **reasoning effort**, whose options change with the agent (reuse `task_models.catalog` for Claude Code/Codex and the OpenCode model list; the local models from `models.json`).
+  - **Phase 1, OpenCode** (also covers the local llama-server models, already set up as OpenCode providers `local-inkling` / `local-qwen`): Baton starts `opencode serve` (or uses ACP, `opencode acp`; pick one and record why in docs/) and keeps one OpenCode session per conversation. Stream the answer and show every tool call (tool, arguments, result) in the chat.
+  - **Phase 2, Claude Code and Codex**: the same chat through their CLIs: `codex exec --json` + `codex exec resume <id>`; Claude Code non-interactive with streaming JSON output and session resume. Check whether ACP adapters for both exist on this PC; if they do, consider ACP for all three.
+  - **Working folder per conversation**: choose one of Baton's local repos or `C:\IA\pruebas-opencode`; never the whole disk.
+  - **Two permission modes, chosen per conversation:**
+    1. **Confirm** (default): anything that writes, edits or runs a command shows **Allow / Deny** in the chat and waits (OpenCode permission requests; Codex `--sandbox workspace-write` with approvals; Claude Code's default permission mode). Read-only tools run without asking.
+    2. **Full permissions**: everything is pre-approved (OpenCode auto-approve, Codex `--dangerously-bypass-approvals-and-sandbox` or `danger-full-access`, Claude Code `bypassPermissions`). Show a clear red warning when it's chosen and a red badge on the conversation while it's on. Never allowed with abliterated local models. Log every tool call the same way.
+  - Keep Baton's rules: never read or store provider credentials (the CLIs handle login), never pass chat text through a shell, CSRF on every request, the agent's terminal only inside the chosen folder.
+  - Quotas: show which plan the conversation spends (Claude, ChatGPT/Codex, OpenCode Go, local = free).
+  - Done when, from the phone through Tailscale, Marco can hold a multi-turn conversation with each of the four agents, see tool calls, approve one in Confirm mode, and run one in Full mode; tests cover both modes with fake agents; docs/agents-chat.md explains the design and the risks.
+  Recommended: claude-code, opus, high
 - [x] 2026-11-24 Check a model survives a Baton restart
   With a model started from Baton's Models page, restart Baton (scheduled task
   or a self-update) and check the model is still running, still shown as

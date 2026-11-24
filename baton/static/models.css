@@ -20,6 +20,8 @@
 .pill.m-port_busy { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); }
 .pill.m-stopped { color: var(--muted); }
 .m-model .c-head { flex-wrap: wrap; align-items: flex-start; }
+/* Model cards aren't links: drop the card-wide click area that project cards use. */
+.m-model .m-name::after { content: none; }
 .m-model .pill { white-space: normal; text-align: left; line-height: 1.3; max-width: 100%; }
 .m-model .c-actions form { margin: 0; }
 .m-crash pre { max-height: 14rem; overflow: auto; white-space: pre-wrap; }

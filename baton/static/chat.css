@@ -1,0 +1,42 @@
+/* Chat page. Colours come from the tokens in style.css. */
+.chat { display: flex; flex-direction: column; gap: .8rem; max-width: 900px; margin: 0 auto; }
+.chat-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: .6rem 1rem; }
+.chat-head h2 { margin: 0; }
+.chat-controls { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
+.chat-controls label { display: flex; flex-direction: column; gap: .25rem; }
+.chat-controls select { font: inherit; font-size: .9rem; padding: .4rem .55rem; border-radius: var(--radius-sm);
+                        border: 1px solid var(--line); background: var(--panel); color: var(--ink); max-width: 16rem; }
+.chat-off { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.chat-off[hidden] { display: none; }
+.chat-off form { margin: 0; }
+.chat-log { display: flex; flex-direction: column; gap: .8rem; min-height: 40vh; }
+.chat-empty { margin: auto; text-align: center; padding: 2rem 0; }
+.msg { max-width: 100%; overflow-wrap: anywhere; }
+.msg-user { align-self: flex-end; max-width: min(85%, 40rem); background: var(--accent-soft); color: var(--ink);
+            padding: .6rem .9rem; border-radius: var(--radius) var(--radius) 4px var(--radius); }
+.msg-user .msg-body { white-space: pre-wrap; }
+.msg-assistant { align-self: stretch; background: var(--panel); border: 1px solid var(--line);
+                 border-radius: var(--radius); padding: .75rem 1rem; box-shadow: var(--shadow); }
+.msg-think { margin-bottom: .5rem; font-size: .85rem; color: var(--muted); }
+.msg-think summary { cursor: pointer; font: 600 .68rem var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.msg-think-text { white-space: pre-wrap; margin-top: .4rem; padding-left: .7rem; border-left: 2px solid var(--line); max-height: 16rem; overflow: auto; }
+.msg-body > :first-child { margin-top: 0; } .msg-body > :last-child { margin-bottom: 0; }
+.msg-body p, .msg-body ul, .msg-body ol { margin: .45rem 0; }
+.msg-body h3, .msg-body h4, .msg-body h5, .msg-body h6 { margin: .8rem 0 .3rem; font-size: 1rem; }
+.msg-body pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+                padding: .7rem .8rem; overflow-x: auto; font: .82rem/1.5 var(--mono); }
+.msg-body code { background: var(--panel-2); padding: .05rem .35rem; border-radius: 5px; }
+.msg-body pre code { background: none; padding: 0; }
+.msg-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .8rem; margin: .55rem 0 0; font-variant-numeric: tabular-nums; }
+.msg-meta:empty { display: none; }
+.msg-meta button { padding: .15rem .55rem; font-size: .75rem; background: var(--panel-2); color: var(--accent) !important;
+                   border: 1px solid var(--line); }
+.chat-input { position: sticky; bottom: calc(var(--tab-h) + .6rem); display: flex; gap: .5rem; align-items: end;
+              background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+              padding: .5rem; box-shadow: var(--shadow); }
+.chat-input textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent;
+                       color: var(--ink); font: .95rem/1.45 var(--sans); padding: .45rem .5rem; max-height: 12rem; }
+.chat-input:focus-within { border-color: var(--accent); }
+.chat-input button[data-busy] { background: var(--panel-2); color: var(--bad) !important; border-color: var(--line); }
+.chat-hint { margin: -.3rem 0 0; text-align: center; }
+@media (min-width: 900px) { .chat-input { bottom: 1rem; } }

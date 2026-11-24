@@ -63,7 +63,7 @@
 <div class="cards">
   {% for m in view.models %}{% set p = 'm.' ~ m.id ~ '.' %}
   <article class="card m-model" data-model="{{ m.id }}" data-state="{{ m.status }}">
-    <div class="c-head"><span class="c-name">{{ m.name }}</span>
+    <div class="c-head"><span class="c-name m-name">{{ m.name }}</span>
       <span class="pill m-{{ m.status }}">{{ t['m_status_' ~ m.status] }}</span></div>
     {% if m.description %}<p class="c-summary">{{ m.description }}</p>{% endif %}
     <dl class="m-facts">
@@ -90,13 +90,12 @@
     {% endif %}
     <div class="c-actions">
       {% if m.status in ('running', 'external') %}
-      <a class="btn small" href="http://127.0.0.1:{{ m.port }}" target="_blank" rel="noopener"
-         title="{{ t.m_chat_local }}">{{ t.m_open_chat }}</a>
+      <a class="btn small" href="/chat?model={{ m.id|urlencode }}">{{ t.m_open_chat }}</a>
       {% endif %}
       <form method="post" action="/models/{{ m.id }}/{{ 'stop' if m.uses_gpu else 'start' }}"
             {% if m.uses_gpu %}data-confirm="{{ t.m_stop_confirm }}"{% endif %}>
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <button type="submit" {% if m.uses_gpu %}class="btn ghost"{% endif %}
+        <button type="submit" class="btn{% if m.uses_gpu %} ghost{% endif %}"
                 {% if not m.uses_gpu and (not m.file_ok or m.status == 'port_busy') %}disabled{% endif %}>
           {{ t.m_stop if m.uses_gpu else t.m_start }}</button>
       </form>

@@ -419,7 +419,8 @@ temperature and power draw), a VRAM budget and one card per local
 `llama-server` model with Start/Stop, generation and prompt speed and tokens
 served. It updates every 5 seconds. List your models in `~/.baton/models.json`;
 Baton only ever runs what that file says, always bound to `127.0.0.1`.
-See [docs/models.md](docs/models.md).
+The **Chat** page talks to them from any device (Baton relays and streams the answer;
+the model stays on `127.0.0.1`). See [docs/models.md](docs/models.md).
 
 ## Configuration
 

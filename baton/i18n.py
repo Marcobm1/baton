@@ -258,7 +258,7 @@ STRINGS = {
         "m_status_running": "Running", "m_status_loading": "Loading", "m_status_stopped": "Stopped",
         "m_status_external": "Running (outside Baton)", "m_status_port_busy": "Port used by another program",
         "m_port": "Port", "m_vram_est": "VRAM (est.)", "m_file": "File", "m_file_missing": "file not found",
-        "m_open_chat": "Open chat", "m_chat_local": "only from this computer",
+        "m_open_chat": "Chat",
         "m_gen": "Generation", "m_prompt": "Prompt reading", "m_served": "Tokens generated",
         "m_served_prompt": "Prompt tokens", "m_busy": "Requests now", "m_model_uptime": "Running for",
         "m_served_help": "Averages since this server started; token counts add up across restarts.",
@@ -275,6 +275,18 @@ STRINGS = {
         "m_err_not_ours": "The program on port {port} is not llama-server, so Baton won't stop it.",
         "m_err_start": "It could not start: {error}",
         "m_stop_confirm": "Stop this model? Anything it is answering will be cut off.",
+
+        # Chat page
+        "chat_nav": "Chat", "chat_model": "Model", "chat_effort": "Reasoning",
+        "chat_effort_none": "None", "chat_effort_low": "Low", "chat_effort_medium": "Medium", "chat_effort_high": "High",
+        "chat_new": "New chat", "chat_send": "Send", "chat_stop": "Stop",
+        "chat_empty": "Ask anything. The conversation is kept only in this browser.",
+        "chat_placeholder": "Write a message…",
+        "chat_hint": "Enter sends, Shift+Enter adds a line. The model runs on this computer: the conversation never leaves it.",
+        "chat_reasoning": "Reasoning", "chat_thinking": "Thinking…", "chat_writing": "Writing…",
+        "chat_stopped": "Stopped.", "chat_error": "Error:", "chat_copy": "Copy", "chat_copied": "Copied",
+        "chat_off": "{name} is stopped. Start it to chat.", "chat_loading": "{name} is loading…",
+        "chat_busy": "{name} can't be used: its port is taken by another program.",
     },
     "es": {
         "create_next": "Crear siguiente tarea",
@@ -533,7 +545,7 @@ STRINGS = {
         "m_status_running": "En marcha", "m_status_loading": "Cargando", "m_status_stopped": "Parado",
         "m_status_external": "En marcha (fuera de Baton)", "m_status_port_busy": "Puerto ocupado por otro programa",
         "m_port": "Puerto", "m_vram_est": "VRAM (estim.)", "m_file": "Archivo", "m_file_missing": "no se encuentra el archivo",
-        "m_open_chat": "Abrir chat", "m_chat_local": "solo desde este PC",
+        "m_open_chat": "Chatear",
         "m_gen": "Generación", "m_prompt": "Lectura del prompt", "m_served": "Tokens generados",
         "m_served_prompt": "Tokens de prompt", "m_busy": "Peticiones ahora", "m_model_uptime": "En marcha desde hace",
         "m_served_help": "Medias desde que arrancó este servidor; los tokens se suman entre arranques.",
@@ -550,6 +562,18 @@ STRINGS = {
         "m_err_not_ours": "El programa del puerto {port} no es llama-server, así que Baton no lo para.",
         "m_err_start": "No se pudo arrancar: {error}",
         "m_stop_confirm": "¿Parar este modelo? Se cortará lo que esté respondiendo.",
+
+        # Página de chat
+        "chat_nav": "Chat", "chat_model": "Modelo", "chat_effort": "Razonamiento",
+        "chat_effort_none": "Sin razonar", "chat_effort_low": "Bajo", "chat_effort_medium": "Medio", "chat_effort_high": "Alto",
+        "chat_new": "Nueva conversación", "chat_send": "Enviar", "chat_stop": "Parar",
+        "chat_empty": "Pregunta lo que quieras. La conversación se guarda solo en este navegador.",
+        "chat_placeholder": "Escribe un mensaje…",
+        "chat_hint": "Intro envía y Mayús+Intro hace un salto de línea. El modelo funciona en este PC: la conversación no sale de él.",
+        "chat_reasoning": "Razonamiento", "chat_thinking": "Pensando…", "chat_writing": "Escribiendo…",
+        "chat_stopped": "Parado.", "chat_error": "Error:", "chat_copy": "Copiar", "chat_copied": "Copiado",
+        "chat_off": "{name} está parado. Arráncalo para chatear.", "chat_loading": "{name} se está cargando…",
+        "chat_busy": "{name} no se puede usar: otro programa ocupa su puerto.",
     },
 }
 

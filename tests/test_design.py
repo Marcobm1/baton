@@ -36,7 +36,7 @@ def test_theme_switch_on_every_page(tmp_path, monkeypatch, lang):
         return [], []
     monkeypatch.setattr(github.Hub, "load", no_projects)
     client = TestClient(create_app(Settings(data_dir=tmp_path, lang=lang, self_update=False)))
-    for path in ("/", "/tasks", "/tasks/new", "/quotas", "/models", "/ranking"):
+    for path in ("/", "/tasks", "/tasks/new", "/quotas", "/models", "/chat", "/ranking"):
         page = client.get(path).text
         head = page[:page.index("</head>")]
         # The saved theme is applied by an inline script before the stylesheet loads.
@@ -49,7 +49,7 @@ def test_theme_switch_on_every_page(tmp_path, monkeypatch, lang):
 def test_colours_live_only_in_the_token_blocks():
     rest = CSS[CSS.index(":root {\n  --sans"):]          # everything after the tokens
     assert not HEX.findall(rest) and "rgb(" not in rest
-    for name in ("quotas.css", "models.css"):
+    for name in ("quotas.css", "models.css", "chat.css"):
         assert not HEX.findall((STATIC / name).read_text(encoding="utf-8")), name
 
 

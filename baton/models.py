@@ -37,6 +37,33 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 BREAKAWAY_FROM_JOB = 0x01000000   # keep running when Baton's scheduled task restarts
 
 
+CHAT_ROLES = {"system", "user", "assistant"}
+CHAT_EFFORTS = {"none", "minimal", "low", "medium", "high"}
+CHAT_MAX_CHARS = 400_000
+
+
+def chat_payload(body) -> dict:
+    """What the chat page may send to a model: plain text messages and a
+    reasoning effort. Sampling and everything else stay as models.json says."""
+    if not isinstance(body, dict):
+        raise ValueError("expected a JSON object")
+    messages = body.get("messages")
+    if not isinstance(messages, list) or not messages or len(messages) > 400:
+        raise ValueError("\"messages\" must be a list of 1 to 400 messages")
+    clean, total = [], 0
+    for m in messages:
+        if not isinstance(m, dict) or m.get("role") not in CHAT_ROLES or not isinstance(m.get("content"), str):
+            raise ValueError("each message needs a role (system, user, assistant) and text")
+        total += len(m["content"])
+        clean.append({"role": m["role"], "content": m["content"]})
+    if total > CHAT_MAX_CHARS:
+        raise ValueError("the conversation is too long; start a new one")
+    payload = {"messages": clean, "stream": True}
+    if body.get("reasoning_effort") in CHAT_EFFORTS:
+        payload["reasoning_effort"] = body["reasoning_effort"]
+    return payload
+
+
 class ModelError(Exception):
     """A start/stop that can't be done. ``key`` is a UI string, ``params`` fill it."""
 
@@ -417,6 +444,15 @@ class LocalModels:
                                       "pct": 100 * r["vram_gb"] / total_gb if total_gb else 0}
                                      for r in rows if r["uses_gpu"]]},
                 "at": time.time()}
+
+    def chat_port(self, model_id: str) -> int:
+        """Port of a model that is answering (started by Baton or not), for the chat."""
+        row = next((r for r in self.overview()["models"] if r["id"] == model_id), None)
+        if row is None:
+            raise ModelError("m_err_unknown")
+        if row["status"] not in ("running", "external"):
+            raise ModelError("m_err_not_running", name=row["name"])
+        return row["port"]
 
     # ------------------------------------------------------- start / stop
     def start(self, model_id: str) -> None:

@@ -53,7 +53,7 @@ links:
 - [x] Web page with projects and quota panel
 - [x] Docker + README instructions
 - [x] Tested on Marco's Windows PC: native (gh login) and Docker (public repos without token)
-- [ ] (Marco) Use Baton for a few days and give feedback
+- [x] (Marco) Use Baton for a few days and give feedback
 - [x] (Marco) Configure the `BATON_TOKEN` secret for the daily hub index workflow
 - [ ] Prepare the daily INDEX.md workflow in the hub repository
 - [x] Automatic Claude/Codex quota checks via the official CLIs (`baton ping`, scheduler)

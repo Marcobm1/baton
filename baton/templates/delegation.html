@@ -1,15 +1,17 @@
 {% extends "base.html" %}
 {% block refresh %}{% endblock %}
-{% block title %}{{ t.delegation }} #{{ job.id }} · {{ title }}{% endblock %}
+{% block title %}{{ t.baton_task if job.task_id else t.delegation }} #{{ job.id }} · {{ title }}{% endblock %}
 {% block main %}
 <a href="/ranking">{{ t.ranking }}</a>
-<h1>{{ t.delegation }} #{{ job.id }} · {{ job.model }}</h1>
-<p>{{ job.started|when }} · {{ job.kind }} · {{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</p>
+<h1>{{ t.baton_task if job.task_id else t.delegation }} #{{ job.id }} · {{ job.model or t.unknown_model }}</h1>
+<p>{{ job.started|when }} · {{ t.baton_task if job.task_id else job.kind }} · {{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</p>
+{% if job.task_id %}<p><a href="/tasks/{{ job.task_id }}">{{ job.title }}</a> · {{ t.merged if job.merged else t.not_merged }}</p>{% endif %}
 <h2>{{ t.objective }}</h2>
 <pre class="log">{{ job.prompt }}</pre>
 <h2>{{ t.result }}</h2>
 <pre class="log">{{ job.result or '' }}</pre>
 <h2>{{ t.agent_review }}</h2>
+{% if job.report %}<pre class="log">{{ job.report }}</pre>{% endif %}
 {% if reviews.agent %}
 <p>{{ agents[reviews.agent.reviewer] }}
   {% for key in criteria %} · {{ t[key] }} <b>{{ reviews.agent[key] }}</b>{% endfor %}

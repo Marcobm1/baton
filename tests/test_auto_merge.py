@@ -33,12 +33,15 @@ class FakeGitHub:
         self.merged.append((number, sha))
 
 
-def _review_script(verdict, fix=False):
+def _review_script(verdict, fix=False, rating=None):
     lines = ["import sys", "sys.stdin.read()"]
     if fix:
         lines.append("open('FIX.md', 'w').write('fixed by the reviewer')")
     report = f"Verdict: {verdict}\\nChecked the change and ran the tests."
     lines.append(f"print('BATON_REVIEW_BEGIN\\n{report}\\nBATON_REVIEW_END')")
+    if rating is not None:
+        block = f"BATON_RATING_BEGIN\n{rating}\nBATON_RATING_END"
+        lines.append(f"print({block!r})")
     return "; ".join(lines)
 
 
@@ -112,10 +115,18 @@ def test_opencode_work_is_reviewed_fixed_and_merged(tmp_path, monkeypatch):
 
     gh = FakeGitHub(checks)
     quota = {"claude-code": 10.0, "codex": 70.0}.get       # Codex has more left
-    store, r, calls = _runner(tmp_path, work, gh, review=_review_script("FIXED", fix=True), quota=quota)
+    review = _review_script("FIXED", fix=True, rating=
+                            '{"fulfillment":9,"correctness":8,"rework":7,"comment":"Added a fix"}')
+    store, r, calls = _runner(tmp_path, work, gh, review=review, quota=quota)
     t = _start(r, store, "opencode")
     assert t.status == "done" and t.merged, t.message
     assert calls == ["opencode", "codex"] and t.reviewer == "codex"
+    jobs = store.ranking.overview("task")[1]
+    assert len(jobs) == 1
+    details, reviews = store.ranking.detail(jobs[0]["id"])
+    assert details["merged"] and details["task_id"] == t.id
+    assert tuple(reviews["agent"][k] for k in ("reviewer", "fulfillment", "correctness", "rework",
+                                              "comment")) == ("codex", 9, 8, 7, "Added a fix")
     assert t.review.startswith("Verdict: FIXED")
     head = _remote_head(origin, "baton/t1")
     files = subprocess.run(["git", "-C", str(origin), "show", "--name-only", "--format=%s", head],
@@ -137,8 +148,10 @@ def test_reviewer_block_leaves_it_open(tmp_path, monkeypatch):
     work, _ = make_repo(tmp_path)
     monkeypatch.setattr(runner_mod, "_remote_repo", lambda url: "x/demo" if url.strip() else "")
     gh = FakeGitHub(PASSED)
-    store, r, calls = _runner(tmp_path, work, gh, review=_review_script("BLOCK", fix=True))
+    store, r, calls = _runner(tmp_path, work, gh, review=_review_script("BLOCK", fix=True, rating="bad JSON"))
     t = _start(r, store, "opencode")
+    job, = store.ranking.overview("task")[1]
+    assert store.ranking.detail(job["id"])[1] == {}
     assert not t.merged and gh.merged == [] and "advised not to merge" in t.message
     assert calls == ["opencode", "claude-code"]               # unknown quotas: Claude first
     assert gh.comments                                          # the reasons are on the PR

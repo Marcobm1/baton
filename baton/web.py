@@ -8,6 +8,7 @@ import hashlib
 import secrets
 import time
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -22,7 +23,7 @@ from .config import Settings
 from .github import GitHubError, Hub
 from .i18n import ordinal, strings
 from .ping import Scheduler
-from .ranking import CRITERIA, Ranking
+from .ranking import CRITERIA
 from .project_detail import finished_items, sections
 from .task_models import catalog
 from . import task_defaults
@@ -62,7 +63,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                           settings.ping_codex_minutes, settings.ping_hours, settings.ping_model,
                           codex_home=settings.codex_home)
     store = TaskStore(settings.data_dir)
-    ranking = Ranking(settings.data_dir)
+    ranking = store.ranking
 
     def quota_left(agent: str) -> float | None:
         """% left in the agent's 5 h window (Claude Code or Codex), if known."""
@@ -235,9 +236,9 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         return RedirectResponse("/quotas#self-update", status_code=303)
 
     @app.get("/ranking", response_class=HTMLResponse)
-    def ranking_page(request: Request):
-        models, jobs = ranking.overview()
-        return page(request, "ranking.html", "ranking", models=models, jobs=jobs)
+    def ranking_page(request: Request, origin: Literal["all", "delegation", "task"] = "all"):
+        models, jobs = ranking.overview(origin)
+        return page(request, "ranking.html", "ranking", models=models, jobs=jobs, origin=origin)
 
     @app.get("/ranking/{job}", response_class=HTMLResponse)
     def delegation_page(request: Request, job: int):
@@ -308,7 +309,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         log = store.read_log(task.id)
         return page(request, "task.html", "tasks", task=task, report=task_report(task, log),
                     log="\n".join(log.splitlines()[-200:]), can_cancel=runner.can_cancel(task.id),
-                    report_error=report_error, queue=runner.queue_info().get(task.id),
+                    report_error=report_error, ranking_job=store.record_task(task), queue=runner.queue_info().get(task.id),
                     priorities=PRIORITIES)
 
     @app.post("/tasks/{task_id}/priority")

@@ -1,5 +1,6 @@
-"""Local history and independent reviews of OpenCode delegations."""
+"""Local history and independent reviews of delegations and Baton tasks."""
 
+import json
 import os
 import secrets
 import sqlite3
@@ -11,6 +12,25 @@ from pathlib import Path
 from .config import configured_data_dir
 
 CRITERIA = ("fulfillment", "correctness", "rework")
+
+
+def parse_rating(block):
+    try:
+        data = json.loads(block)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(data, dict) or set(data) != {*CRITERIA, "comment"}:
+        return None
+    if any(type(data[k]) is not int or not 1 <= data[k] <= 10 for k in CRITERIA):
+        return None
+    comment = data["comment"]
+    if not isinstance(comment, str) or not comment.strip() or len(comment) > 500:
+        return None
+    try:
+        comment.encode("utf-8")  # SQLite requires valid Unicode text.
+    except UnicodeEncodeError:
+        return None
+    return data
 
 
 def cli_ranking():
@@ -37,6 +57,9 @@ class Ranking:
                 correctness INTEGER NOT NULL CHECK(correctness BETWEEN 1 AND 10),
                 rework INTEGER NOT NULL CHECK(rework BETWEEN 1 AND 10),
                 comment TEXT NOT NULL CHECK(length(comment)<=500), PRIMARY KEY(job, role))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS task_jobs (
+                task_id TEXT PRIMARY KEY, job INTEGER UNIQUE NOT NULL REFERENCES jobs(id),
+                title TEXT NOT NULL, merged INTEGER NOT NULL, report TEXT NOT NULL)""")
             yield db
 
     def start(self, model, kind, prompt):
@@ -67,23 +90,50 @@ class Ranking:
                 rework=excluded.rework, comment=excluded.comment""",
                        (job, role, reviewer, fulfillment, correctness, rework, comment.strip()))
 
-    def overview(self):
+    def record_task(self, task):
+        if (task.where != "local" or task.agent not in ("opencode", "local")
+                or task.status not in ("done", "no-changes", "failed", "cancelled")):
+            return None
+        with self.database() as db:
+            db.execute("BEGIN IMMEDIATE")
+            existing = db.execute("SELECT job FROM task_jobs WHERE task_id=?", (task.id,)).fetchone()
+            if existing:
+                return existing["job"]
+            prompt = "\n\n".join(filter(None, (task.title, task.details)))
+            result = "\n\n".join(filter(None, (task.message, task.summary)))
+            job = db.execute("""INSERT INTO jobs(model, started, kind, prompt, outcome, result)
+                VALUES (?, ?, 'Baton task', ?, ?, ?)""",
+                (task.model, task.started_at or task.created_at, prompt, task.status, result)).lastrowid
+            db.execute("INSERT INTO task_jobs VALUES (?, ?, ?, ?, ?)",
+                       (task.id, job, task.title, task.merged, task.review))
+            rating = task.review_rating
+            if rating and task.reviewer in ("codex", "claude-code"):
+                db.execute("INSERT INTO reviews VALUES (?, 'agent', ?, ?, ?, ?, ?)",
+                           (job, task.reviewer, *(rating[k] for k in CRITERIA), rating["comment"]))
+            return job
+
+    def overview(self, origin="all"):
+        # Existing delegation databases need no migration. Only Baton tasks have a link.
+        origins = {"all": "1", "task": "task_id IS NOT NULL", "delegation": "task_id IS NULL"}
+        source = """ FROM jobs LEFT JOIN task_jobs ON task_jobs.job=jobs.id
+            LEFT JOIN reviews ON jobs.id=reviews.job WHERE """ + origins[origin]
+
         with self.database() as db:
             models = db.execute("""SELECT model, COUNT(DISTINCT reviews.job) AS evaluated,
                 AVG(fulfillment) AS fulfillment, AVG(correctness) AS correctness, AVG(rework) AS rework,
                 AVG(CASE WHEN role='human' THEN (fulfillment+correctness+rework)/3.0 END) AS human,
                 AVG(CASE WHEN role='agent' THEN (fulfillment+correctness+rework)/3.0 END) AS agent
-                FROM jobs LEFT JOIN reviews ON jobs.id=reviews.job GROUP BY model
+                """ + source + """ GROUP BY model
                 ORDER BY human DESC, agent DESC, model""").fetchall()
-            jobs = db.execute("""SELECT jobs.id, started, model, kind, outcome,
+            jobs = db.execute("""SELECT jobs.id, started, model, kind, outcome, task_id, title,
                 MAX(role='human') AS human, MAX(role='agent') AS agent
-                FROM jobs LEFT JOIN reviews ON jobs.id=reviews.job
-                GROUP BY jobs.id ORDER BY started DESC, jobs.id DESC""").fetchall()
+                """ + source + """ GROUP BY jobs.id ORDER BY started DESC, jobs.id DESC""").fetchall()
         return models, jobs
 
     def detail(self, job):
         with self.database() as db:
-            details = db.execute("SELECT * FROM jobs WHERE id=?", (str(job),)).fetchone()
+            details = db.execute("""SELECT jobs.*, task_id, title, merged, report FROM jobs
+                LEFT JOIN task_jobs ON task_jobs.job=jobs.id WHERE jobs.id=?""", (str(job),)).fetchone()
             reviews = db.execute("SELECT * FROM reviews WHERE job=?", (str(job),))
             return details, {row["role"]: row for row in reviews}
 

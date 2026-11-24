@@ -109,7 +109,9 @@ See [self-update and recovery](docs/self-update.md) for the handoff details.
    - ...
 
    ## Next
-   - [ ] a task          (check boxes feed the progress bar)
+   - [ ] Add a CSV export
+     Include the filtered rows and column names.
+     Check the result against the sample report.
 
    ## Blockers
    ## Decisions
@@ -126,6 +128,11 @@ See [self-update and recovery](docs/self-update.md) for the handoff details.
 
 That's all: the next time the page refreshes (every 5 minutes, or with the
 *Refresh* button) the project appears.
+
+Open a project's name to see its current queue, open PRs and test results,
+upcoming tasks, completed work, blockers, decisions and recent log entries.
+Use **Launch as task** beside an upcoming item to review and edit a draft.
+The full file is available at the bottom. See the [project detail guide](docs/project-detail.md).
 
 ### Projects without a repository: the hub repo
 
@@ -389,7 +396,7 @@ JSON endpoints: `GET /api/projects`, `GET /api/quotas`.
 - The page has no login. Docker publishes it on `127.0.0.1` only; keep it that
   way, because it can show private repositories.
 - Use a read-only, fine-grained token limited to the repos you need.
-- `STATUS.md` bodies are rendered as Markdown with raw HTML disabled.
+- The project detail displays STATUS.md text and agent summaries with HTML escaping.
 - OpenCode has no OS sandbox. Baton's rules stop commits, pushes and its extra
   tools, not a terminal command that writes elsewhere. Read-only is the default
   for `baton delegate`.

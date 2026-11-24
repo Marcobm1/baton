@@ -6,7 +6,7 @@
   <p><a href="/">← {{ t.back }}</a></p>
   <a class="btn small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
 </div>
-<article class="detail prio-{{ s.priority }}">
+<article class="detail project-detail prio-{{ s.priority }}">
   <h2>{{ s.name }} <span class="badge prio">{{ t[s.priority] }}</span> <span class="badge">{{ t[s.status] }}</span>
     {% if s.open_source %}<span class="badge os">{{ t.open_source }}</span>{% endif %}</h2>
   {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
@@ -17,8 +17,77 @@
     · {{ t.repo }}: <a href="{{ p.html_url }}">{{ p.repo }}</a>
     · <a href="https://github.com/{{ p.repo }}/blob/{{ p.branch }}/{{ p.path }}">{{ p.path }}</a>
   </p>
-  {% if s.links %}<p class="small">{% for label, url in s.links.items() %}<a href="{{ url }}">{{ label }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+  {% for label, url in s.links.items() if url.lower().startswith(('https://', 'http://')) %}<a class="small" href="{{ url }}">{{ label }}</a> {% endfor %}
   {% if s.problems %}<p class="warn small">{{ t.problems }}: {{ s.problems|join('; ') }}</p>{% endif %}
-  <div class="md">{{ s.body|md|safe }}</div>
+  {% if content.checklist %}
+  <label class="project-progress">{{ checked }}/{{ content.checklist|length }} {{ t.tasks }}
+    <progress value="{{ checked }}" max="{{ content.checklist|length }}"></progress>
+  </label>
+  {% endif %}
+
+  {% if active or pulls %}
+  <section><h3>{{ t.right_now }}</h3>
+    {% for task in active %}
+    <div class="project-row">
+      <a href="/tasks/{{ task.id|urlencode }}">{{ task.title }}</a>
+      <div class="small muted">{{ t['prio_' ~ task.priority] }} ·
+        {% if task.id in queue %}{{ t.queue_pos|format(queue[task.id].position|ordinal) }}{% else %}{{ t['st_' ~ task.status] }}{% endif %}
+      </div>
+      {% if task.details %}<div class="one-line">{{ task.details.splitlines()[0] }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% if pulls %}<h4>{{ t.open_pulls }}</h4>
+    {% for pr in pulls %}<div class="project-row">
+      <a href="https://github.com/{{ p.repo }}/pull/{{ pr.number }}">#{{ pr.number }} {{ pr.title }}</a>
+      <span class="badge">{{ t['checks_' ~ pr.checks] }}</span>
+    </div>{% endfor %}{% endif %}
+  </section>
+  {% endif %}
+
+  {% if upcoming %}
+  <section><h3>{{ t.upcoming }}</h3>
+    {% for item in upcoming %}
+    <div class="project-row draft-row">
+      <div>{% if item.detail %}<details><summary>{{ item.title }}</summary><pre>{{ item.detail }}</pre></details>
+        {% else %}{{ item.title }}{% endif %}</div>
+      <a class="btn small" href="/tasks/new?{{ {'repo': p.repo, 'title': item.title, 'details': item.detail}|urlencode }}">{{ t.launch_task }}</a>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% macro history(entries) %}
+    {% for row in entries %}<div class="project-row">
+      {% set task = row.task %}
+      {% if task %}
+        <a href="/tasks/{{ task.id|urlencode }}">{{ row.title }}</a>
+        <div class="small muted">{% if task.finished_at %}{{ task.finished_at|when }} · {% endif %}
+          {{ agents.get(task.agent, task.agent) }} · {{ t['st_' ~ task.status] }}
+          {% if task.pr_url.startswith('https://github.com/') %} · <a href="{{ task.pr_url }}">PR</a> · {{ t.merged if task.merged else t.not_merged }}{% endif %}
+        </div>
+        {% if task.summary %}<details><summary>{{ t.agent_summary }}</summary><pre>{{ task.summary }}</pre></details>{% endif %}
+      {% else %}{{ row.title }} <span class="badge">STATUS.md</span>{% endif %}
+    </div>{% endfor %}
+  {% endmacro %}
+  {% if finished %}
+  <section><h3>{{ t.finished_work }}</h3>{{ history(finished[:10]) }}
+    {% if finished|length > 10 %}<details><summary>{{ t.see_more }} ({{ finished|length - 10 }})</summary>{{ history(finished[10:]) }}</details>{% endif %}
+  </section>
+  {% endif %}
+
+  {% for key in ['blockers', 'decisions'] if content[key] %}
+  <section><h3>{{ t[key] }}</h3>
+    <ul>{% for entry in content[key] %}<li>{{ entry }}</li>{% endfor %}</ul>
+  </section>
+  {% endfor %}
+  {% macro timeline(entries) %}
+    <ol class="timeline">{% for entry in entries %}<li>{{ entry }}</li>{% endfor %}</ol>
+  {% endmacro %}
+  {% if content.log %}
+  <section><h3>{{ t.log }}</h3>{{ timeline(content.log[:5]) }}
+    {% if content.log|length > 5 %}<details><summary>{{ t.see_more }} ({{ content.log|length - 5 }})</summary>{{ timeline(content.log[5:]) }}</details>{% endif %}
+  </section>
+  {% endif %}
+  <details class="full-status"><summary>{{ t.full_status }}</summary><pre>{{ s.source }}</pre></details>
 </article>
 {% endblock %}

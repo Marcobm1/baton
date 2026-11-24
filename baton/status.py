@@ -54,6 +54,7 @@ class Status:
     tags: list[str] = field(default_factory=list)
     links: dict[str, str] = field(default_factory=dict)
     body: str = ""
+    source: str = ""
     tasks_done: int = 0
     tasks_total: int = 0
     problems: list[str] = field(default_factory=list)
@@ -167,6 +168,7 @@ def parse(text: str, fallback_name: str = "") -> Status:
         tags=[str(t) for t in tags],
         links={str(k): str(v) for k, v in links.items()},
         body=body.strip(),
+        source=text,
         tasks_done=sum(1 for b in boxes if b.lower() == "x"),
         tasks_total=len(boxes),
         problems=problems,
@@ -189,6 +191,7 @@ open_source: false
 
 ## Next
 - [ ] First task
+  Describe the work, prerequisites and how to check the result here.
 
 ## Blockers
 - None

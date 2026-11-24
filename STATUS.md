@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Screenshots in the README
+next: Check how Codex cloud tasks can be triggered
 updated: 2026-11-24
-updated_by: claude
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -57,11 +57,16 @@ links:
 - [x] (Marco) Configure the `BATON_TOKEN` secret for the daily hub index workflow
 - [x] 2026-11-24 Prepare the daily INDEX.md workflow in the hub repository
 - [x] Automatic Claude/Codex quota checks via the official CLIs (`baton ping`, scheduler)
-- [ ] Screenshots in the README
+- [x] 2026-11-24 Screenshots in the README
 - [x] "New task" form: GitHub issue for @claude (Claude Code GitHub Action)
 - [x] Separate pages: Projects, Tasks, Quotas
 - [x] Local tasks on this computer (Claude Code, Codex, local AI) in git worktrees, ending in a PR
 - [x] Remote access through Tailscale Serve
+- [ ] Check how Codex cloud tasks can be triggered
+  Compare the official Codex GitHub integration guide with Baton's issue-based
+  cloud task flow. Record which triggers are documented and how to test any
+  proposed trigger before adding it to the task form.
+  Recommended: codex, gpt-6.2-sol, low
 - [ ] Codex cloud tasks (only documented from PR comments; test first)
 - [x] OpenCode as a local agent, with any model it lists
 - [x] Select model and supported reasoning effort for local Claude Code and Codex tasks
@@ -123,6 +128,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-24 (codex): Added Projects and Quotas screenshots with sample data to the README. Checked both rendered image paths and inspected both PNGs. Windows suite: 114 passed, two known cancellation cleanup failures.
 - 2026-11-24 (claude): `Repo: <owner/repo>` in a Next item sends its launch to that repository (badge on the project page, warning if Baton doesn't list it) and the finished task offers to tick it in the origin project; agents are told to add it. Installed the daily index workflow in Marcobm1/proyectos (skips quietly until BATON_TOKEN exists; manual run passed); 116 tests passed.
 - 2026-11-24 (claude): "Mark as done" for agent tasks in STATUS.md (project page, and on a finished task whose item is still unchecked, e.g. after "no changes"); ticks with today's date and moves `next`; 115 tests passed.
 - 2026-11-24 (claude): verified live: OpenCode tasks #30 and #31 were reviewed by Claude Code (opus · medium) with structured scores 9/9/10 and 10/10/10, merged after CI, and Ranking shows them (9.3 and 10.0); GLM 5.3 human average 7.4 matches the five saved human scores.

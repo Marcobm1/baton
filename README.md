@@ -36,6 +36,8 @@ The page has a light and a dark theme: **Auto** follows your system, or pick
 The choice is remembered by that browser. On a phone the sections are in a tab
 bar at the bottom. See [`docs/design.md`](docs/design.md).
 
+![Two example project cards in the light theme show priority, checklist progress and a button to launch each project's next task.](docs/screenshots/projects.png)
+
 ## Quick start (Docker)
 
 ```bash
@@ -220,6 +222,8 @@ window** (OpenCode Go adds a **monthly** allowance). The panel shows, for each w
 and your pace compared with an even spread (the tick on the bar is how much of
 the window has passed). "Quota to spare" means you will probably reach the
 reset with quota left over.
+
+![Example quota windows in the dark theme. Claude is on pace for its five-hour window, while Codex is using quota faster than an even spread.](docs/screenshots/quotas.png)
 
 | Source | How | Notes |
 |---|---|---|

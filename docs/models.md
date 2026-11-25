@@ -92,3 +92,19 @@ server-sent events. The model keeps listening only on `127.0.0.1`.
   which sits above that layer). Model cards don't use it now.
 - Levels turn amber/red at: CPU 85/97 %, RAM 85/95 %, disk 90/97 % used,
   GPU 75/85 °C, VRAM 90/98 %.
+
+## Automatic GPU shutdown
+
+Baton reads NVIDIA GPU temperatures at server startup and every five seconds,
+even with the dashboard closed. If any GPU reports more than 85 °C, Baton
+stops each model process it started (including models still loading) and
+cancels tasks running on this computer, including their agents and reviewers.
+Git and GitHub operations already in flight can finish. Interrupted tasks
+keep their existing worktrees and record the thermal stop in their log.
+
+New model starts are blocked and queued tasks wait until the reported GPUs
+all have valid readings at or below 85 °C. The queue then resumes. Restart
+stopped models or relaunch cancelled tasks manually. Monitoring requires
+temperature readings from `nvidia-smi`. If none are available at startup,
+Baton operates normally. External model servers and GitHub Actions jobs
+remain under their own process managers.

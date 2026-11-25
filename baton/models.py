@@ -10,6 +10,8 @@ never reachable from the network.
 from __future__ import annotations
 
 import json
+import logging
+import math
 import os
 import platform
 import re
@@ -31,6 +33,7 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 RESERVED = {"-m", "--model", "--host", "--port", "--alias", "-a", "--metrics",
             "--api-key", "--api-key-file"}
 GPU_FIELDS = "name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit"
+GPU_LIMIT_C = 85
 GIB = 1024 ** 3
 # Windows: a console program started by pythonw would flash a window; this hides it.
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -269,6 +272,8 @@ class LocalModels:
     def __init__(self, data_dir: Path):
         self.data_dir = Path(data_dir)
         self.lock = threading.Lock()
+        self.overheated = False
+        self._pending_thermal_stop = False
         self._gpu_at, self._gpu = 0.0, []
         psutil.cpu_percent(None)   # the first call only starts the measurement
 
@@ -327,6 +332,36 @@ class LocalModels:
             base[k] = base.get(k, 0) + v
 
     # --------------------------------------------------------- readings
+    def check_temperature(self) -> bool:
+        with self.lock:
+            # A launch can observe a short spike between two monitor samples.
+            if self._pending_thermal_stop:
+                self._pending_thermal_stop = False
+                return True
+            return self._check_temperature_locked()
+
+    def _check_temperature_locked(self) -> bool:
+        readings = [gpu["temp"] for gpu in self.gpus()]
+        known = [t for t in readings if t is not None and math.isfinite(t)]
+        if any(t > GPU_LIMIT_C for t in known):
+            self.overheated = True
+        elif known and len(known) == len(readings):
+            self.overheated = False
+        return self.overheated
+
+    def stop_overheated_models(self) -> None:
+        with self.lock:
+            state = self._state()
+            for entry in state.values():
+                proc = self._proc(entry) if entry.get("pid") else None
+                if proc is not None:
+                    try:
+                        self._stop_process(proc, entry)
+                    except psutil.Error:
+                        logging.getLogger(__name__).exception("Could not stop overheated model")
+                    else:
+                        self._save(state)
+
     def gpus(self) -> list[dict]:
         if time.time() - self._gpu_at < 2:
             return self._gpu
@@ -480,6 +515,11 @@ class LocalModels:
         log.parent.mkdir(parents=True, exist_ok=True)
         command = model.command(cfg.server)
         with self.lock, open(log, "ab") as fh:
+            if self.overheated:
+                raise ModelError("m_err_temperature")
+            if self._check_temperature_locked():
+                self._pending_thermal_stop = True
+                raise ModelError("m_err_temperature")
             fh.write(f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} start\n".encode())
             fh.flush()
             kwargs = dict(stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
@@ -521,14 +561,19 @@ class LocalModels:
                 if not _is_llama_server(other):
                     raise ModelError("m_err_not_ours", port=model.port)
                 proc = other
+            self._stop_process(proc, entry)
+            self._save(state)
+
+    def _stop_process(self, proc: psutil.Process, entry: dict) -> None:
+        try:
+            proc.terminate()
             try:
-                proc.terminate()
                 proc.wait(10)
             except psutil.TimeoutExpired:
                 proc.kill()
-            except psutil.NoSuchProcess:
-                pass
-            for k in ("pid", "created", "started", "crashed"):
-                entry.pop(k, None)
-            self._close_counts(entry)
-            self._save(state)
+                proc.wait(5)
+        except psutil.NoSuchProcess:
+            pass
+        for k in ("pid", "created", "started", "crashed"):
+            entry.pop(k, None)
+        self._close_counts(entry)

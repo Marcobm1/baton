@@ -17,6 +17,7 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] 2026-11-25 Stop local models and active tasks above 85 °C
 - [x] 2026-11-25 Serialize task and updater Git writes in the same clone
 - [x] 2026-11-25 Separate Go and pay-as-you-go models in the OpenCode chat picker
 - [ ] Isolated Docker container for the All permissions mode
@@ -212,6 +213,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (codex): Added [automatic GPU shutdown](docs/models.md#automatic-gpu-shutdown). Four tests covered 85/86 °C, model and reviewer shutdown, work preservation and queue recovery. Windows suite: 155 passed, three failed. Both manual cancellation cleanup failures reproduced on the base revision. The chat process-close test passed on retry.
 - 2026-11-25 (codex): Serialized task and updater Git writes per clone with a 120-second wait limit and logged task retries. All six new regression cases passed. Windows suite had 152 passes and two cancellation cleanup failures, both reproduced on the unchanged base.
 - 2026-11-25 (codex): Added Go, pay-as-you-go and other-provider buttons to OpenCode chat. Checked switching, the credit warning and session restoration in Edge. Windows suite: 146 passed, two known cancellation cleanup failures.
 - 2026-11-25 (claude-code): Agents chat phase 1: Chat page Agent selector (Local model / OpenCode), OpenCode over ACP with model, effort and folder fixed on the server, tool calls with arguments and results, Allow/Deny with exact command or diff (CSRF, bound to one request of one conversation, 10-minute deny), All permissions disabled; fake ACP agent tests; checked live with OpenCode 2.4.1 and local Inkling and through the web API; 148 tests passed on Windows (11 new).

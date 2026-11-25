@@ -44,6 +44,11 @@ links:
   agent covers the mode switch. Replaces the earlier "Prototype folder
   confinement" item.
   Recommended: claude-code, opus, high
+- [ ] Readable log for Gemini tasks
+  The task page shows a Gemini run as raw `stream-json` lines. Render it like
+  the other agents: the text deltas joined, tool steps as one line each, and
+  the final `result` (status, tokens). Check with a saved agy log in a test.
+  Recommended: gemini, gemini-4-neon, medium
 - [x] (Marco) Check the Agents chat from the phone
   Through Tailscale open Chat, pick Agent: OpenCode, model
   `local-inkling/inkling-2-mini` (start Inkling on Models first) and folder
@@ -227,6 +232,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (claude-code): Fixed the two tests that failed on GitHub's Linux runner (`find_agy` built a WindowsPath when pretending to be Windows; the two-models test had no fake GPU), added the Gemini logo and colour to Quotas and Gemini names to the ranking labels. Suite: 173 passed.
 - 2026-11-25 (claude-code): Added Gemini through the Antigravity CLI (tasks, task form, Agents chat, quota windows from `agy /usage`, tokens per day/week/model), full permissions for Claude Code, Codex and Gemini tasks with merge without review, and Claude Code (Opus, medium) as the only reviewer of OpenCode/local-AI work. Checked live with agy 1.5.17 (task command, report, tokens, quota, ACP chat). Suite: 172 passed.
 - 2026-11-25 (claude-code): Review of the family grouping: kept model ids without dots, and made the flat model order follow the family groups so `/models` no longer reloads every 5 s with two models in use (new regression test). Suite: 160 passed.
 - 2026-11-25 (opencode): Grouped local models by family (Inkling, Qwen, etc.) with family filter chips, distinct family badges, Abliterated variant badge and context window size, and placed the model currently in use in the first position on `/models` and in `/chat` selectors (docs/models.md).

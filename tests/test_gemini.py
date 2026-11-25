@@ -236,3 +236,8 @@ def test_gemini_chat_sets_default_mode_model_and_thinking_level_and_counts_token
     # Its environment has no GitHub token or Baton settings (and no OpenCode config).
     env = agent_chat.chat_env("gemini")
     assert "GITHUB_TOKEN" not in env and "OPENCODE_CONFIG_CONTENT" not in env
+
+
+def test_gemini_model_label_without_cache():
+    from baton.ranking_view import model_label
+    assert model_label("gemini-4-neon") == {"name": "Gemini 4 Neon", "tool": "Gemini"}

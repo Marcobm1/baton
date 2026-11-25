@@ -87,13 +87,15 @@ def find_agy() -> str | None:
         return found
     local = os.environ.get("LOCALAPPDATA")
     if os.name == "nt" and local:
-        winget = Path(local) / "Microsoft" / "WinGet"
-        matches = sorted(glob.glob(str(winget / "Packages" / "Google.AntigravityCLI_*" / "agy.exe")))
-        link = winget / "Links" / "agy.exe"
+        # os.path, not Path: Path picks its Windows or POSIX class from the
+        # system, so a test that pretends to be Windows on Linux can't build one.
+        winget = os.path.join(local, "Microsoft", "WinGet")
+        matches = sorted(glob.glob(os.path.join(winget, "Packages", "Google.AntigravityCLI_*", "agy.exe")))
+        link = os.path.join(winget, "Links", "agy.exe")
         if matches:
             return matches[-1]
-        if link.is_file():
-            return str(link)
+        if os.path.isfile(link):
+            return link
     return None
 
 

@@ -30,7 +30,7 @@ def model_label(model: str) -> dict:
     only labels the task form has already read are reused."""
     if not model:
         return {"name": "", "tool": ""}
-    for agent, tool in (("claude-code", "Claude Code"), ("codex", "Codex")):
+    for agent, tool in (("claude-code", "Claude Code"), ("codex", "Codex"), ("gemini", "Gemini")):
         cached = task_models._cache.get(agent, (0, {}))[1]
         if model in cached:
             return {"name": cached[model]["label"], "tool": tool}
@@ -43,6 +43,8 @@ def model_label(model: str) -> dict:
         parts = model.split("-")            # gpt-6.2-astra -> GPT-6.2 Astra
         return {"name": " ".join(["GPT-" + parts[1], *(w.capitalize() for w in parts[2:])]).strip(),
                 "tool": "Codex"}
+    if model.startswith("gemini-"):         # gemini-4-neon -> Gemini 4 Neon
+        return {"name": " ".join(w.capitalize() for w in model.split("-")), "tool": "Gemini"}
     if model in ("opus", "sonnet", "haiku", "fable") or model.startswith("claude"):
         return {"name": model.capitalize(), "tool": "Claude Code"}
     return {"name": model, "tool": ""}

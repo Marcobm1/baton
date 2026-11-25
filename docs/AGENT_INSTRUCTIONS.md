@@ -30,7 +30,7 @@ dashboard and other AI agents read it to know what to do next.
     Give it a short title and indent its description by two spaces. Describe
     the work and how to verify it, even if provisional. Set `next` to its title.
     Add a line `Recommended: <agent>, <model>, <effort>` to its description
-    (agent: claude-code, codex, opencode or local) with what fits it best;
+    (agent: claude-code, codex, gemini, opencode or local) with what fits it best;
     if it must be done in another repository, add `Repo: <owner/repo>`;
     Prefix finished titles with YYYY-MM-DD when the completion date is known;
   - update "Blockers" and "Decisions" if they changed;

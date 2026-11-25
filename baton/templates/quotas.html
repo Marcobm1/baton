@@ -3,7 +3,7 @@
 {% block styles %}<link rel="stylesheet" href="/static/quotas.css?v={{ css_v }}">{% endblock %}
 {% block main %}
 {% macro logo(provider) -%}
-  {% set brand = {'claude': 'anthropic', 'claude-code': 'anthropic', 'codex': 'openai', 'opencode': 'opencode'}.get(provider) %}
+  {% set brand = {'claude': 'anthropic', 'claude-code': 'anthropic', 'codex': 'openai', 'gemini': 'gemini', 'opencode': 'opencode'}.get(provider) %}
   {% if brand %}<img class="q-logo" src="/static/{{ brand }}.svg" width="22" height="22" alt="">{% endif %}
 {%- endmacro %}
 <section class="quotas">

@@ -29,6 +29,14 @@ links:
   - Quotas: show which plan the conversation spends (Claude, ChatGPT/Codex, OpenCode Go, local = free).
   - Done when, from the phone through Tailscale, Marco can hold a multi-turn conversation with each of the four agents, see tool calls, approve one in Confirm mode, and run one in Full mode; tests cover both modes with fake agents; docs/agents-chat.md explains the design and the risks.
   Recommended: claude-code, opus, high
+- [ ] Tell included OpenCode Go models apart from pay-as-you-go ones
+  Asked by Marco on 2026-11-25. In the New task form (and the Agents chat later), OpenCode lists `opencode-go/...` models (covered by the OpenCode Go plan) next to `opencode/...` models (pay-as-you-go, billed to OpenCode Models credits). Two tasks with `opencode/gemini-4-neon` failed at once with "Insufficient balance ... OpenCode Go covers only requests to the OpenCode Go provider".
+  - Group the OpenCode model list by provider and label each group: "Included in OpenCode Go" for `opencode-go/`, "Pay as you go (credits)" for `opencode/`, and the provider name for the rest (local `local-*`, etc.).
+  - When a pay-as-you-go model is chosen, show a warning under the selector before launching.
+  - When a task fails with that error, show a clear message on the task page ("This model is not included in OpenCode Go; pick an opencode-go/ model or add credits") instead of only "exit code 1", and suggest the closest included model (e.g. `opencode-go/gemini-4-argon` for `opencode/gemini-4-neon`).
+  - en/es strings, tests for the grouping and the error detection (use the real error line above as a fixture), README note.
+  Done when the form shows both groups labelled, the warning appears for `opencode/...`, and a fake failed task with that log shows the clear message; suite passes on Windows.
+  Recommended: opencode, opencode-go/gemini-4-argon
 - [x] 2026-11-24 Check a model survives a Baton restart
   With a model started from Baton's Models page, restart Baton (scheduled task
   or a self-update) and check the model is still running, still shown as

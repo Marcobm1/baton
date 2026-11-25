@@ -7,7 +7,7 @@ import subprocess
 import time
 
 from .i18n import STRINGS
-from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
+from .ping import _NO_WINDOW, _clean_env, find_agy, find_claude, find_codex
 
 _cache = {}
 
@@ -121,12 +121,57 @@ def closest_opencode_go_model(model: str, models: list[str] | None = None) -> st
     return max(candidates, key=score)
 
 
+# Only Gemini models are offered through agy: its Claude and GPT models have a
+# separate allowance and are already reachable through their own CLIs.
+GEMINI_MODEL = re.compile(r"gemini-4-[\w.-]+|gemini-3\.8-flash(?:-[\w.-]+)?|gemini-pro-orchestrator[\w.-]*")
+GEMINI_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def parse_agy_models(text: str) -> dict:
+    """`agy models` lines ("gemini-4-neon-high<TAB>Gemini 4 Neon (High)") as
+    {base model: {"label", "efforts"}}, the same shape as the other catalogs.
+
+    agy lists one slug per model and thinking level; its own `--model` and
+    `--effort` flags take them apart (`--model gemini-4-neon --effort high`),
+    as its ACP server does (`model` + `thought_level`). A slug without a level
+    suffix (the Orchestrators) is a model with no effort choice.
+    """
+    models: dict = {}
+    for line in text.splitlines():
+        slug, _, label = line.strip().partition("	")
+        if not GEMINI_MODEL.fullmatch(slug):
+            continue
+        base, _, level = slug.rpartition("-")
+        if level in GEMINI_EFFORTS and base:
+            item = models.setdefault(base, {"label": re.sub(r"\s*\([^)]*\)$", "", label.strip()) or base,
+                                            "efforts": []})
+            item["efforts"].append(level)
+        else:
+            models.setdefault(slug, {"label": label.strip() or slug, "efforts": []})
+    for item in models.values():
+        item["efforts"].sort(key=GEMINI_EFFORTS.index)
+    return models
+
+
 def catalog(agent: str) -> dict:
     now = time.monotonic()
     expires, previous = _cache.get(agent, (0, {}))
     if now < expires:
         return previous
     models = {}
+    if agent == "gemini":
+        exe = find_agy()
+        if not exe:
+            return {}
+        try:
+            result = subprocess.run([exe, "models"], capture_output=True, text=True, encoding="utf-8",
+                                    errors="replace", timeout=60, stdin=subprocess.DEVNULL,
+                                    env=_clean_env(), **_NO_WINDOW)
+            models = parse_agy_models(result.stdout)
+        except (OSError, subprocess.SubprocessError):
+            models = {}
+        _cache[agent] = (now + (600 if models else 30), models)
+        return models
     cmd = find_claude() if agent == "claude-code" else find_codex()
     if not cmd:
         return {}

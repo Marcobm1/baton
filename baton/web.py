@@ -26,7 +26,7 @@ from . import __version__, quotas, usage
 from .config import Settings
 from .github import GitHubError, Hub
 from .i18n import ordinal, strings
-from .ping import Scheduler
+from .ping import Scheduler, fetch_gemini_quota, find_agy
 from .ranking import CRITERIA, historical_score
 from .project_detail import finished_items
 from .task_models import catalog, opencode_groups
@@ -80,7 +80,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                           codex_home=settings.codex_home)
     store = TaskStore(settings.data_dir)
     models = LocalModels(settings.data_dir)
-    agent_chats = AgentChats()
+    agent_chats = AgentChats(data_dir=settings.data_dir)
     ranking = store.ranking
 
     def quota_left(agent: str) -> float | None:
@@ -98,8 +98,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                     open_pr=lambda *a: hub.open_pr(*a, draft=not settings.auto_merge),
                     github=hub, auto_merge=settings.auto_merge, quota_left=quota_left,
                     max_parallel=settings.max_parallel,
-                    review_models={"claude-code": (settings.review_claude_model, settings.review_claude_effort),
-                                   "codex": (settings.review_codex_model, settings.review_codex_effort)})
+                    review_models={"claude-code": (settings.review_claude_model, settings.review_claude_effort)})
 
     # Tasks that were running when Baton stopped can't be resumed: mark them
     # failed. Queued tasks keep their place and start when the server is up.
@@ -117,9 +116,10 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     def _quota_tick():
         scheduler.tick()
-        # OpenCode Go's usage endpoint is free to ask: keep that card fresh
-        # even when nobody has the page open (throttled to every 5 minutes).
+        # OpenCode Go's usage endpoint and agy's /usage are free to ask: keep
+        # those cards fresh even when nobody has the page open (every 5 minutes).
         refresh_go()
+        refresh_gemini()
 
     async def _loop():
         # Check once a minute whether a quota check is due; checks run in a
@@ -158,7 +158,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         # The loop keeps every quota source at most ~N minutes old (pings when
         # enabled, OpenCode Go when a key is set), not only while pages are open.
         loop_task = (asyncio.create_task(_loop())
-                     if scheduler.enabled or settings.opencode_go_key else None)
+                     if scheduler.enabled or settings.opencode_go_key or find_agy() else None)
         update_task = None
         if updater.enabled:
             loop = asyncio.get_running_loop()
@@ -225,7 +225,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         # Reading the logs takes a moment: reuse the result for 5 minutes.
         if not usage_cache or time.time() - usage_cache["at"] > 300:
             usage_cache.update(at=time.time(), data=usage.collect(
-                settings.claude_home, settings.codex_home, settings.opencode_db))
+                settings.claude_home, settings.codex_home, settings.opencode_db,
+                data_dir=settings.data_dir))
         return usage_cache["data"]
 
     go_state: dict = {"at": 0.0, "msg": ""}
@@ -236,6 +237,15 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             ok, msg = quotas.fetch_opencode_go(settings.opencode_go_key, settings.data_dir)
             go_state.update(at=time.time(), msg="" if ok else msg)
         return go_state["msg"]
+
+    gemini_state: dict = {"at": 0.0, "msg": ""}
+
+    def refresh_gemini() -> str:
+        # `agy -p /usage` asks no model (0 tokens): at most every 5 minutes.
+        if time.time() - gemini_state["at"] > 300 and find_agy():
+            ok, msg = fetch_gemini_quota(settings.data_dir)
+            gemini_state.update(at=time.time(), msg="" if ok else msg)
+        return gemini_state["msg"]
 
     def page(request: Request, name: str, nav: str, **ctx):
         return templates.TemplateResponse(request, name, {"nav": nav, **ctx})
@@ -306,8 +316,10 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     # --------------------------------------------------------------- quotas
     @app.get("/quotas", response_class=HTMLResponse)
     async def quotas_page(request: Request):
-        go_error = await asyncio.to_thread(refresh_go)
-        return page(request, "quotas.html", "quotas", go_error=go_error, updater=updater,
+        go_error, gemini_error = await asyncio.gather(asyncio.to_thread(refresh_go),
+                                                      asyncio.to_thread(refresh_gemini))
+        return page(request, "quotas.html", "quotas", go_error=go_error, gemini_error=gemini_error,
+                    updater=updater,
                     providers=quotas.by_provider(quotas.all_windows(settings.data_dir, settings.codex_home)),
                     sched=scheduler, tokens=await asyncio.to_thread(token_usage),
                     sched_results={k: {"age": time.time() - v[0], "ok": v[1], "msg": v[2]}
@@ -420,7 +432,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         repos = sorted({p.repo for p in projects})
         local = {r: bool(runner.repos.get(r)) for r in repos}
         available = runner.agents_available()
-        agents = [a for a in ("claude-code", "codex") if not available[a]]
+        agents = [a for a in ("claude-code", "codex", "gemini") if not available.get(a, "missing")]
         models, *choices = await asyncio.gather(
             asyncio.to_thread(opencode_models) if not available["opencode"] else asyncio.sleep(0, result=[]),
             *(asyncio.to_thread(catalog, a) for a in agents))
@@ -571,7 +583,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             return back(reason)
         if not runner.repos.get(repo):
             return back("There is no local clone of this repository on this computer.")
-        if agent in ("codex", "claude-code") and (model or effort):
+        if agent in ("codex", "claude-code", "gemini") and (model or effort):
             options = await asyncio.to_thread(catalog, agent)
             if model not in options or (effort and effort not in options[model]["efforts"]):
                 return back(strings(settings.lang)["invalid_model"])
@@ -618,7 +630,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     # ----------------------------------------------------------------- chat
     @app.get("/chat", response_class=HTMLResponse)
     async def chat_page(request: Request, model: str = "", error: str = "",
-                        agent: Literal["local", "opencode"] = "local"):
+                        agent: Literal["local", "opencode", "gemini"] = "local"):
         view = await asyncio.to_thread(models.overview, settings.lang)
         ids = [m["id"] for m in view["models"]]
         running = [m["id"] for m in view["models"] if m["status"] in ("running", "external")]
@@ -629,6 +641,13 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             active_families = {m["family_key"] for m in view["models"] if m["uses_gpu"]}
             oc = {"available": True, "groups": opencode_groups(oc_list, t, active_families=active_families),
                   "folders": await asyncio.to_thread(chat_folders)}
+        elif agent == "gemini" and find_agy():
+            gm = await asyncio.to_thread(catalog, "gemini")
+            # One group; each model carries its own thinking levels (data-efforts).
+            oc = {"available": True, "folders": await asyncio.to_thread(chat_folders),
+                  "groups": [{"provider": "gemini", "label": "Gemini", "included": False, "payg": False,
+                              "models": list(gm)}] if gm else [],
+                  "efforts": {m: v["efforts"] for m, v in gm.items()}}
         return page(request, "chat.html", "chat", view=view, selected=selected, error=error[:300],
                     agent=agent, oc=oc, efforts=EFFORTS)
 
@@ -670,11 +689,14 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         body = await json_body(request)
         agent, model = body.get("agent", "opencode"), str(body.get("model") or "")
         effort, mode = str(body.get("effort") or "default"), str(body.get("mode") or "confirm")
-        if agent != "opencode":
+        if agent not in ("opencode", "gemini"):
             raise HTTPException(400, "Unknown agent")
         if mode not in MODES or effort not in EFFORTS:
             raise HTTPException(400, "Unknown permission mode or reasoning effort")
-        if model not in await asyncio.to_thread(opencode_models):
+        if agent == "gemini":
+            if model not in await asyncio.to_thread(catalog, "gemini"):
+                raise HTTPException(400, t["ag_err_model_gemini"])
+        elif model not in await asyncio.to_thread(opencode_models):
             raise HTTPException(400, t["ag_err_model"])
         if mode == "full":
             # Refused for everyone in this phase; abliterated models never get it.
@@ -692,7 +714,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         # The canonical folder (junctions and links resolved) is what OpenCode gets.
         path = Path(os.path.realpath(path))
         try:
-            chat = await asyncio.to_thread(agent_chats.create, path, folder["label"], model, effort, mode)
+            chat = await asyncio.to_thread(agent_chats.create, path, folder["label"], model, effort, mode,
+                                           agent)
         except ChatError as exc:
             raise agent_error(exc, 502 if exc.key == "ag_err_start" else 409) from exc
         return JSONResponse(chat.info())

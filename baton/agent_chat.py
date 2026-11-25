@@ -1,4 +1,4 @@
-"""Agents chat: one OpenCode process per conversation, spoken to over ACP.
+"""Agents chat: one OpenCode or Gemini (agy) process per conversation, over ACP.
 
 ACP (Agent Client Protocol) is JSON-RPC 2.0 with one JSON message per line on
 the agent's stdin and stdout. Baton is the *client*: it sends `initialize`,
@@ -13,6 +13,11 @@ OpenCode runs with Baton's own `baton-chat` agent: reads inside the folder run
 freely; every write, edit, command or access outside the folder becomes a
 permission request shown in the chat. "Full permissions" is refused on the
 server until the isolated container exists, and always for abliterated models.
+
+Gemini (`agy acp`, added 2026-11-25) runs in Antigravity's own "default" mode:
+every terminal command asks first, but Baton cannot add per-path rules as it
+does for OpenCode, and agy edits files inside the folder without asking
+(checked with agy 1.5.17). docs/agents-chat.md explains the difference.
 """
 
 from __future__ import annotations
@@ -30,18 +35,34 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import __version__
-from .ping import _NO_WINDOW, _clean_env
+from .ping import _NO_WINDOW, _clean_env, find_agy
 from .runner import ALWAYS_DENIED, NO_GIT_CHANGES, _rule, find_opencode, kill_tree
+from .usage import record_gemini
 
 CHAT_AGENT = "baton-chat"
 MODES = ("confirm", "full")
 EFFORTS = ("default", "none", "low", "medium", "high", "xhigh", "max")
 PERMISSION_TIMEOUT = 600          # seconds without an answer -> Deny
 MAX_PROMPT_CHARS = 20000
-MAX_CHATS = 4                     # OpenCode processes open at once
+MAX_CHATS = 4                     # agent processes open at once
 IDLE_SECONDS = 1800               # an idle conversation's process is closed after this
 MAX_EVENTS = 20000
 START_TIMEOUT = 90
+
+
+@dataclass(frozen=True)
+class Profile:
+    """How one agent's ACP server is set up for a conversation."""
+    label: str          # name shown in messages
+    mode: str           # the session mode Baton sets (fail closed if missing)
+    effort_option: str  # the configOptions id of the reasoning effort
+
+
+PROFILES = {
+    "opencode": Profile("OpenCode", "baton-chat", "effort"),
+    # agy: "default" asks before commands; `thought_level` is its effort.
+    "gemini": Profile("Gemini", "default", "thought_level"),
+}
 
 # OpenCode 2.x rules: a list of {action, resource, effect}, the last match wins.
 # Deny everything first, then allow only reading inside the folder; anything
@@ -71,20 +92,27 @@ def chat_config() -> dict:
     }
 
 
-def chat_env() -> dict[str, str]:
-    """The environment OpenCode gets: Baton's own settings and GitHub tokens
+def chat_env(agent: str = "opencode") -> dict[str, str]:
+    """The environment the agent gets: Baton's own settings and GitHub tokens
     stay out (an approved `echo %GITHUB_TOKEN%` must find nothing)."""
     env = _clean_env()
     for key in list(env):
         if key.upper().startswith("BATON_") or key.upper() in (
                 "GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT", "OPENCODE_PERMISSION"):
             env.pop(key)
-    env["OPENCODE_CONFIG_CONTENT"] = json.dumps(chat_config())
+    if agent == "opencode":
+        env["OPENCODE_CONFIG_CONTENT"] = json.dumps(chat_config())
     return env
 
 
 def opencode_command() -> list[str] | None:
     exe = find_opencode()
+    return [exe, "acp"] if exe else None
+
+
+def agy_command() -> list[str] | None:
+    """`agy acp` without --dangerously-skip-permissions: commands ask first."""
+    exe = find_agy()
     return [exe, "acp"] if exe else None
 
 
@@ -220,13 +248,13 @@ class AcpClient:
         try:
             self._send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
             if not waiter["event"].wait(timeout):
-                raise AcpError(f"OpenCode did not answer {method} in {timeout:.0f} s.")
+                raise AcpError(f"The agent did not answer {method} in {timeout:.0f} s.")
         finally:
             with self._lock:
                 self._waiting.pop(rid, None)
         reply = waiter["reply"]
         if reply is None:
-            raise AcpError("OpenCode stopped. " + " ".join(self.stderr)[-500:])
+            raise AcpError("The agent stopped. " + " ".join(self.stderr)[-500:])
         if "error" in reply:
             error = reply["error"] if isinstance(reply["error"], dict) else {}
             raise AcpError(str(error.get("message") or reply["error"]))
@@ -264,6 +292,7 @@ class AgentChat:
     effort: str
     mode: str = "confirm"
     agent: str = "opencode"
+    on_usage: Callable[[str, dict], None] | None = None
     created: float = field(default_factory=time.time)
     last_active: float = field(default_factory=time.time)
     busy: bool = False
@@ -277,6 +306,7 @@ class AgentChat:
         self.pending: dict[str, Permission] = {}
         self.tools: dict[str, dict] = {}
         self.client: AcpClient | None = None
+        self.profile = PROFILES[self.agent]
 
     # ------------------------------------------------------------ events
     def emit(self, event_type: str, /, **data) -> None:
@@ -310,16 +340,17 @@ class AgentChat:
         new = req("session/new", {"cwd": str(self.folder), "mcpServers": []}, START_TIMEOUT)
         self.session_id = str(new.get("sessionId") or "")
         if not self.session_id:
-            raise AcpError("OpenCode did not open a session.")
-        # Fail closed: without Baton's own agent the permission rules would be
-        # OpenCode's defaults, which let the model run commands unasked.
-        options = self._set("mode", CHAT_AGENT, new.get("configOptions"))
+            raise AcpError(f"{self.profile.label} did not open a session.")
+        # Fail closed: without Baton's own agent (OpenCode) or agy's asking
+        # "default" mode the model could run commands unasked.
+        options = self._set("mode", self.profile.mode, new.get("configOptions"))
         options = self._set("model", self.model, options)
-        effort = next((o for o in options if o.get("id") == "effort"), None)
+        effort_id = self.profile.effort_option
+        effort = next((o for o in options if o.get("id") == effort_id), None)
         values = [str(v.get("value")) for v in (effort or {}).get("options") or []]
         if self.effort != "default":
             if self.effort in values:
-                self._set("effort", self.effort, options)
+                self._set(effort_id, self.effort, options)
             else:
                 self.emit("notice", key="ag_effort_missing", effort=self.effort)
                 self.effort = "default"
@@ -329,13 +360,13 @@ class AgentChat:
         if option in ("mode", "model"):
             allowed = [str(v.get("value")) for v in (known.get(option) or {}).get("options") or []]
             if value not in allowed:
-                raise AcpError(f"OpenCode does not offer {option} '{value}'.")
+                raise AcpError(f"{self.profile.label} does not offer {option} '{value}'.")
         result = self.client.request("session/set_config_option", {
             "sessionId": self.session_id, "configId": option, "value": value}, START_TIMEOUT)
         options = [o for o in result.get("configOptions") or [] if isinstance(o, dict)]
         current = next((o.get("currentValue") for o in options if o.get("id") == option), None)
         if current != value:
-            raise AcpError(f"OpenCode kept {option} '{current}' instead of '{value}'.")
+            raise AcpError(f"{self.profile.label} kept {option} '{current}' instead of '{value}'.")
         return options
 
     # -------------------------------------------------------------- turns
@@ -355,6 +386,11 @@ class AgentChat:
             result = self.client.request("session/prompt", {
                 "sessionId": self.session_id, "prompt": [{"type": "text", "text": text}]})
             self.emit("done", reason=str(result.get("stopReason") or "end_turn"))
+            if self.on_usage and isinstance(result.get("usage"), dict):
+                try:
+                    self.on_usage(self.model, result["usage"])
+                except Exception:  # counting tokens must never break a turn
+                    pass
         except AcpError as exc:
             if self.alive:      # closing the conversation is not an error
                 self.emit("error", text=str(exc)[:1000])
@@ -388,7 +424,7 @@ class AgentChat:
             self.cond.notify_all()
         self._resolve_all("cancelled")
         if was:
-            self.emit("error", text=("OpenCode stopped. " + stderr).strip()[:1500])
+            self.emit("error", text=(f"{self.profile.label} stopped. " + stderr).strip()[:1500])
             self.emit("closed")
 
     # ---------------------------------------------------- agent -> Baton
@@ -400,7 +436,7 @@ class AgentChat:
             if params.get("sessionId") == self.session_id:
                 self._update(params.get("update") or {})
         elif rid is not None:
-            # Files and terminals stay with OpenCode's own (permission-checked) tools.
+            # Files and terminals stay with the agent's own (permission-checked) tools.
             self.client.respond(rid, error={"code": -32601, "message": f"{method} is not offered by Baton"})
 
     def _update(self, u: dict) -> None:
@@ -505,8 +541,12 @@ class AgentChats:
     """The open conversations (in memory: a Baton restart ends them)."""
 
     def __init__(self, command: Callable[[], list[str] | None] = opencode_command,
-                 permission_timeout: float = PERMISSION_TIMEOUT):
-        self.command = command
+                 permission_timeout: float = PERMISSION_TIMEOUT,
+                 gemini_command: Callable[[], list[str] | None] = agy_command,
+                 data_dir: Path | None = None):
+        self.command = command                  # OpenCode
+        self.gemini_command = gemini_command
+        self.data_dir = data_dir                # where Gemini token counts go
         self.permission_timeout = permission_timeout
         self._chats: dict[str, AgentChat] = {}
         self._lock = threading.Lock()
@@ -532,19 +572,26 @@ class AgentChats:
             self.close(oldest.id)
             open_now.remove(oldest)
 
+    def _record(self, model: str, tokens: dict) -> None:
+        if self.data_dir is not None:
+            record_gemini(self.data_dir, model, tokens, "chat")
+
     def create(self, folder: Path, folder_label: str, model: str, effort: str,
-               mode: str = "confirm") -> AgentChat:
+               mode: str = "confirm", agent: str = "opencode") -> AgentChat:
         if mode != "confirm":
             raise ChatError("ag_full_off")
-        command = self.command()
-        if not command:
+        if agent not in PROFILES:
             raise ChatError("ag_unavailable")
+        command = (self.gemini_command if agent == "gemini" else self.command)()
+        if not command:
+            raise ChatError("ag_unavailable_gemini" if agent == "gemini" else "ag_unavailable")
         self._reap()
         chat = AgentChat(id=secrets.token_urlsafe(12), folder=folder, folder_label=folder_label,
-                         model=model, effort=effort, mode=mode,
+                         model=model, effort=effort, mode=mode, agent=agent,
+                         on_usage=self._record if agent == "gemini" else None,
                          permission_timeout=self.permission_timeout)
         try:
-            chat.start(command, chat_env())
+            chat.start(command, chat_env(agent))
         except (AcpError, OSError) as exc:
             chat.close()
             raise ChatError("ag_err_start", str(exc)[:500]) from exc

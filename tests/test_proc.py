@@ -165,7 +165,8 @@ def test_concurrent_kill_tree_waits_for_first_teardown_to_finish(monkeypatch):
             return 0
 
     monkeypatch.setattr(proc_mod.os, "name", "posix")
-    monkeypatch.setattr(proc_mod.os, "killpg", lambda pid, sig: None)
+    monkeypatch.setattr(proc_mod.os, "killpg", lambda pid, sig: None, raising=False)
+    monkeypatch.setattr(proc_mod.signal, "SIGKILL", 9, raising=False)
 
     p = SlowProc()
     t1 = threading.Thread(target=proc_mod.kill_tree, args=(p,))

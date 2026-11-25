@@ -59,11 +59,13 @@ def test_agent_env_strips_secrets_case_insensitively_without_mutating_parent(mon
     sample = {**os.environ, "GitHub_Token": "mixed-case-token", "Baton_Extra": "mixed-baton"}
 
     cleaned = ping.agent_env(sample)
+    cleaned_upper = {k.upper(): v for k, v in cleaned.items()}
 
     for key in (*MUST_BE_STRIPPED, "GitHub_Token", "Baton_Extra"):
         assert key not in cleaned
-    assert cleaned["SAFE_KEEP_VAR"] == "hello"
-    assert cleaned["github_token_not_exact"] == "keep-unrelated"
+        assert key.upper() not in cleaned_upper
+    assert cleaned_upper["SAFE_KEEP_VAR"] == "hello"
+    assert cleaned_upper["GITHUB_TOKEN_NOT_EXACT"] == "keep-unrelated"
     # Baton's own process environment stays intact for GitHub API / git calls.
     assert os.environ["GITHUB_TOKEN"] == "ghp_secret_token"
     assert os.environ["BATON_OPENCODE_GO_KEY"] == "go-secret-key"

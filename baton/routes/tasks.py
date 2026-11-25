@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from typing import Literal
 from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
 from .. import ranking_view, task_defaults
 from ..agents import AGENTS, SUMMARY_REQUEST, extract_summary, next_task_request
 from ..github import GitHubError
 from ..i18n import strings
 from ..task_models import opencode_groups
-from ..task_report import task_report
+from ..task_report import format_task_log, task_report
 from ..task_store import PRIORITIES, Task, UpdateInProgress, new_id
 from .deps import CTX, AppContext
 
@@ -153,11 +154,68 @@ async def task_detail(request: Request, task_id: str, ctx: AppContext = CTX):
             if item:
                 pending = {"project": project, "item": item}
                 break
+    rendered_log = format_task_log(task.agent, log)
     return ctx.page(
         request, "task.html", "tasks", task=task, report=task_report(task, log), pending=pending,
-        log="\n".join(log.splitlines()[-200:]), can_cancel=ctx.runner.can_cancel(task.id),
+        log="\n".join(rendered_log.splitlines()[-200:]), can_cancel=ctx.runner.can_cancel(task.id),
         report_error=report_error, ranking_job=ctx.store.record_task(task),
         queue=ctx.runner.queue_info().get(task.id), priorities=PRIORITIES,
+    )
+
+
+def _task_snapshot(ctx: AppContext, task: Task) -> dict:
+    raw_log = ctx.store.read_log(task.id)
+    rendered = format_task_log(task.agent, raw_log)
+    report = task_report(task, raw_log)
+    return {
+        "status": task.status,
+        "status_label": ctx.t.get(f"st_{task.status}", task.status),
+        "finished": task.finished,
+        "last_step": task.steps[-1] if task.steps else "",
+        "progress": report.get("progress") or "",
+        "steps": list(task.steps),
+        "log": "\n".join(rendered.splitlines()[-200:]),
+        "can_cancel": ctx.runner.can_cancel(task.id),
+    }
+
+
+@router.get("/api/tasks/{task_id}/events")
+async def task_events(request: Request, task_id: str, ctx: AppContext = CTX):
+    """Server-sent events streaming live status, steps, progress, and log tail for one task."""
+    initial = ctx.store.get(task_id)
+    if not initial:
+        raise HTTPException(404, "Unknown task")
+
+    async def stream():
+        last_payload: str | None = None
+        last_sent = time.monotonic()
+        poll = max(0.02, ctx.task_sse_poll)
+        keepalive = max(poll, ctx.task_sse_keepalive)
+        while True:
+            task = await asyncio.to_thread(ctx.store.get, task_id)
+            if task is None:
+                yield 'event: done\ndata: {"status": "deleted"}\n\n'
+                return
+            snap = await asyncio.to_thread(_task_snapshot, ctx, task)
+            encoded = json.dumps(snap, ensure_ascii=False)
+            if encoded != last_payload:
+                yield f"event: update\ndata: {encoded}\n\n"
+                last_payload = encoded
+                last_sent = time.monotonic()
+            if task.status not in ("queued", "running"):
+                yield f"event: done\ndata: {json.dumps({'status': task.status})}\n\n"
+                return
+            if await request.is_disconnected():
+                return
+            if time.monotonic() - last_sent >= keepalive:
+                yield ": keepalive\n\n"
+                last_sent = time.monotonic()
+            await asyncio.sleep(poll)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

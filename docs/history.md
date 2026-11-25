@@ -1,0 +1,242 @@
+# Baton — Archived History
+
+Completed milestones, earlier decisions, and log entries archived from `STATUS.md`
+(Phase 3C, 2026-11-25) to keep `STATUS.md` concise as a live dashboard.
+
+## Archived completed items
+- [x] 2026-11-25 Group local models by family and put the model in use first
+- [x] 2026-11-25 Stop local models and active tasks above 85 °C
+- [x] 2026-11-25 Serialize task and updater Git writes in the same clone
+- [x] 2026-11-25 Separate Go and pay-as-you-go models in the OpenCode chat picker
+- [x] 2026-11-25 Gemini models (Antigravity CLI) and full permissions for Claude Code, Codex and Gemini
+  New `gemini` agent (`agy -p … --output-format stream-json --dangerously-skip-permissions`,
+  `--model`/`--effort` from `agy models`), Claude/Codex tasks with full permissions,
+  merge without review except OpenCode/local AI (Claude Code, Opus medium), Gemini
+  quota from `agy /usage` and tokens per day/week/model, Gemini in the Agents chat
+  ([auto-merge](docs/auto-merge.md), [chat](docs/agents-chat.md)).
+- [x] (Marco) Check the Agents chat from the phone
+  Through Tailscale open Chat, pick Agent: OpenCode, model
+  `local-inkling/inkling-2-mini` (start Inkling on Models first) and folder
+  `C:\IA\pruebas-opencode (pruebas)`. Ask it to read `baton-fase1/nota.txt`
+  (no question asked), then to create a file twice: allow once, deny once.
+- [x] 2026-11-25 Agents chat, phase 1: OpenCode over ACP with Confirm mode
+  [Design and limits](docs/agents-chat.md). Verified on this PC with OpenCode
+  2.4.1 and local Inkling (read without asking, write allowed and denied,
+  outside-folder read asked first); phone check pending (above).
+- [x] 2026-11-25 Check existing chat runner isolation and CLI transports
+- [x] 2026-11-25 Tell included OpenCode Go models apart from pay-as-you-go ones
+  Asked by Marco on 2026-11-25. In the New task form (and the Agents chat later), OpenCode lists `opencode-go/...` models (covered by the OpenCode Go plan) next to `opencode/...` models (pay-as-you-go, billed to OpenCode Models credits). Two tasks with `opencode/gemini-4-neon` failed at once with "Insufficient balance ... OpenCode Go covers only requests to the OpenCode Go provider".
+  - Group the OpenCode model list by provider and label each group: "Included in OpenCode Go" for `opencode-go/`, "Pay as you go (credits)" for `opencode/`, and the provider name for the rest (local `local-*`, etc.).
+  - When a pay-as-you-go model is chosen, show a warning under the selector before launching.
+  - When a task fails with that error, show a clear message on the task page ("This model is not included in OpenCode Go; pick an opencode-go/ model or add credits") instead of only "exit code 1", and suggest the closest included model (e.g. `opencode-go/gemini-4-argon` for `opencode/gemini-4-neon`).
+  - en/es strings, tests for the grouping and the error detection (use the real error line above as a fixture), README note.
+  Done when the form shows both groups labelled, the warning appears for `opencode/...`, and a fake failed task with that log shows the clear message; suite passes on Windows.
+  Recommended: opencode, opencode-go/gemini-4-argon
+- [x] 2026-11-24 Check a model survives a Baton restart
+  With a model started from Baton's Models page, restart Baton (scheduled task
+  or a self-update) and check the model is still running, still shown as
+  started by Baton (not "outside Baton"), and Stop still works. Record the
+  result in the Log.
+  Recommended: claude-code, opus, medium
+- [x] 2026-11-24 Chat page for local models (`/chat`), relayed and streamed by Baton
+- [x] 2026-11-24 Fix: the Start button on model cards didn't react (covered by the card's click layer)
+- [x] 2026-11-24 Start and stop a model from the live Models page (start, stop, VRAM refusal checked on Marco's PC)
+- [x] 2026-11-24 Models page: this computer, VRAM budget and local models with Start/Stop
+  `/models`: CPU, RAM, disk, GPU load, VRAM, temperature, power; one card per
+  model in `~/.baton/models.json` with live speed and tokens served (docs/models.md).
+- [x] 2026-11-24 Separate owner actions and continue finished tasks
+- [x] 2026-11-24 Show the reviewer's model and effort on the task page
+  Saved on the task when the review starts and shown next to "Review by"
+  (for example "opus · medium"); with nothing configured the heading stays
+  plain. Suite: 111 passed on Windows.
+- [x] 2026-11-24 Saving a personal rating returns to the Ranking list with a confirmation toast
+  The form keeps the origin filter and chart view; the message fades out and
+  never repeats after a page reload. Suite: 111 passed on Windows.
+- [x] 2026-11-24 Add historical delivery scores, three ranking charts and per-job rating actions
+- [x] 2026-11-24 Prepare the next editable task from the project page
+- [x] 2026-11-24 Recommended agent/model/effort for drafted tasks, last choice remembered, Spanish STATUS headings, project cards and page redesign
+- [x] 2026-11-24 Check on the live page that "Launch next task" preselects the recommended model
+  Open a project whose next item has a `Recommended:` line, press Launch next task
+  and check the agent, model and effort; then open New task from Tasks and check
+  it starts with the last task's choice.
+  Recommended: codex, gpt-6.2-astra, low
+- [x] 2026-11-24 Include OpenCode and local-AI tasks and their reviews in Ranking
+- [x] 2026-11-24 Confirm the first OpenCode review and auto-merge
+- [x] 2026-11-24 Verify live OpenCode reviewer scores and charts
+  Find a finished OpenCode delivery in tasks.json or GitHub and compare the
+  recorded review and merge outcome with Ranking. Check chart calculations
+  against existing ratings and document any missing sample.
+  Recommended: codex, gpt-6.2-sol, low
+- [x] (Marco) Rate a real OpenCode delivery in Ranking
+- [x] 2026-11-24 Organize project details and launch drafts from the Next checklist
+- [x] 2026-11-24 Check the project detail on a phone
+- [x] Automatic idle-only self-update with validation, rollback and status on Quotas
+- [x] 2026-11-24 Confirm the first live self-update and scheduled restart on Windows
+- [x] OpenCode delegation ranking with separate agent and human reviews
+- [x] 2026-11-24 Visual redesign: sidebar / phone tab bar, Auto-Light-Dark theme, WCAG AA colour tokens
+- [x] (Marco) Rate a real delegation from the CLI and web
+- [x] 2026-11-24 Future phase for native ChatGPT and Claude model rankings
+- [x] STATUS.md format and parser
+- [x] Web page with projects and quota panel
+- [x] Docker + README instructions
+- [x] Tested on Marco's Windows PC: native (gh login) and Docker (public repos without token)
+- [x] (Marco) Use Baton for a few days and give feedback
+- [x] (Marco) Configure the `BATON_TOKEN` secret for the daily hub index workflow
+- [x] 2026-11-24 Prepare the daily INDEX.md workflow in the hub repository
+- [x] Automatic Claude/Codex quota checks via the official CLIs (`baton ping`, scheduler)
+- [x] 2026-11-24 Screenshots in the README
+- [x] "New task" form: GitHub issue for @claude (Claude Code GitHub Action)
+- [x] Separate pages: Projects, Tasks, Quotas
+- [x] Local tasks on this computer (Claude Code, Codex, local AI) in git worktrees, ending in a PR
+- [x] Remote access through Tailscale Serve
+- [x] 2026-11-24 Check how Codex cloud tasks can be triggered
+  Recorded the [documented triggers and smoke test](docs/codex-cloud-tasks.md).
+- [x] (Marco) Validate a Codex cloud implementation trigger
+  Use a connected test repository and the intended Baton GitHub identity for
+  the [smoke test](docs/codex-cloud-tasks.md#smoke-test). Record the task and
+  delivery links, or the observed failure, before adding a form option.
+- [x] OpenCode as a local agent, with any model it lists
+- [x] Select model and supported reasoning effort for local Claude Code and Codex tasks
+- [x] Tokens spent per day/week, per app and model (Quotas page)
+- [x] OpenCode Go quota (5 h, week, month) with an optional key
+- [x] 2026-11-24 Faster quota updates: 5-10 min automatic checks that skip when a newer reading exists, OpenCode Go refreshed in the background
+- [x] `baton delegate`: subtasks for OpenCode models, read-only by default
+- [x] State-specific task details and Claude model access, quota and other error guidance
+- [x] 2026-11-24 Review a historical task and a running task in the web UI
+  Open the completed task for [PR #29](https://github.com/Marcobm1/baton/pull/29)
+  and a running task in Baton's Tasks page. Check the report and PR link on the
+  completed task and the active step and cancel control on the running task.
+  If no task is running, use the [task report fixture](tests/test_task_report.py)
+  for the active step and the [web cancellation test](tests/test_runner.py)
+  for the control.
+  Recommended: codex, gpt-6.2-sol, low
+- [x] Cancel a running task from its page
+- [x] (Marco) Try cancelling a real agent task on Windows (check Task Manager afterwards)
+  Use a disposable task. Cancel it from its Tasks detail page, then confirm
+  the page says Cancelled and the agent and its children exit in Task Manager.
+  See [cancellation behavior](docs/cancelling-tasks.md).
+- [x] Show the agent's completion summary on local and cloud task pages (PRs #3 + #4 combined)
+- [x] 2026-11-24 Check a live task summary from the web
+  The [PR #29](https://github.com/Marcobm1/baton/pull/29) task shows a saved
+  report with Summary and Checks.
+- [x] Every local task (Claude Code, Codex, OpenCode, local AI) ends in a pull request; no opt-out checkbox
+- [x] Auto-merge: Claude/Codex PRs merge when tests pass; OpenCode/local AI work and repos without tests get a review (with fixes) by Claude Code or Codex first
+- [x] First real auto-merges without review: Codex (#10, #12) and Claude Code (#11)
+- [x] Local task queue with priority (high/normal/low), one task per repository, `BATON_MAX_PARALLEL` global limit, change priority or cancel while queued
+- [x] Test: "en" and "es" UI strings have the same keys and no empty text
+- [x] 2026-11-24 Project dependencies (`depends_on`) and subprojects (`parent`): blocked cards turn red until the dependency is done
+
+## Earlier decisions (2026-11-23 – 2026-11-25)
+- 2026-11-25: Gemini runs through the Antigravity CLI (`agy`), offering only its Gemini models (base model + `--effort`). Its quota comes from `agy -p /usage --output-format json` (no model call, 0 tokens); its tokens are written by Baton from agy's own `result` / ACP `usage` numbers to `gemini-usage.jsonl`. In the Agents chat Gemini uses agy's "Default" mode: commands ask, but edits inside the folder don't (docs/agents-chat.md).
+- 2026-11-25: local models are grouped and badged by family (e.g. Inkling, Qwen) with filter chips, variant (`Abliterated`) and context-size (`-c` / `--ctx-size`) badges, and the model currently in use is placed in the first position on `/models` and in the `/chat` model selectors (docs/models.md).
+- 2026-11-25: Agents chat phase 1 talks to OpenCode over ACP on stdio (`opencode acp`, one process per conversation, no port) instead of `opencode serve`; Baton's `baton-chat` agent reads freely inside the folder and asks for every edit, command, `.env` read and outside-folder access; Allow sends "allow once" only; no answer in 10 minutes denies; All permissions is refused on the server until the container exists (docs/agents-chat.md).
+- 2026-11-25: OpenCode models are grouped by provider with `opencode-go/` ("Included in OpenCode Go") first, `opencode/` ("Pay as you go (credits)") second with an inline warning when selected, and other providers (`local-*`, etc.) after; tasks failing with OpenCode's Go balance error explain the cause and suggest the closest `opencode-go/` model (docs/task-details.md).
+- 2026-11-24: the chat goes through Baton (`/api/chat/<id>`, streamed) instead of opening the model's port: works from the phone, the model stays on 127.0.0.1, and only text plus reasoning effort is forwarded (docs/models.md).
+- 2026-11-24: local models run as one detached `llama-server` per model from `~/.baton/models.json`, not router mode: each keeps its tuned options, a 16 GB card fits one large model anyway, and models survive Baton restarts (docs/models.md).
+- 2026-11-24: a Codex cloud form option needs a live implementation task and a
+  retrievable result from the intended trigger ([test plan](docs/codex-cloud-tasks.md)).
+- 2026-11-24: a Next item can run in another repository with a `Repo:` line; the origin project keeps the checklist item, ticked from the finished task's page.
+- 2026-11-24: an agent task can be ticked from the web when it was already done or is no longer needed; Baton commits STATUS.md like an agent would (date prefix, `next` moved, YAML-safe), refusing stale pages.
+- 2026-11-24: owner checkboxes use a version-checked GitHub Contents commit. Follow-ups read the finished task by ID (docs/project-detail.md).
+- 2026-11-24: the reviewer's model and effort come from settings, checked against the CLI's own list; an unknown value falls back to the CLI default so a typo can't block every merge (docs/auto-merge.md).
+- 2026-11-24: every local script and stylesheet URL ends in `?v=` + a hash of all static CSS/JS, so a self-update never leaves a browser with an old file.
+- 2026-11-24: the New task form starts with the draft's `Recommended:` line, else the last local task's agent/model/effort (from tasks.json, so the same on PC and phone); unavailable recommendations fall back and are named (docs/task-defaults.md).
+- 2026-11-24: "blocked" is computed from `depends_on` each time projects load instead of being a status value, so it clears itself when the dependency is marked done; unknown names keep the project blocked so typos are visible (docs/dependencies.md).
+- 2026-11-24: a scheduled quota check is skipped when a stored reading is fresher than the interval (the CLI just reported usage through its status line or logs), so 5-10 minute intervals cost little extra quota; OpenCode Go is asked at most every 5 minutes while the server runs, not only when the page is open (README "Quota panel").
+- 2026-11-24: one design system with colour tokens for light and dark; theme Auto/Light/Dark stored per browser and applied before the first paint; phone tab bar, desktop sidebar (docs/design.md).
+- 2026-11-24: project detail combines repository activity with each project's own Next checklist. Undated completions keep their source order after dated history (docs/project-detail.md).
+- 2026-11-24: the updater reserves the idle queue until validation and restart finish; Windows relaunches the scheduled task after the server PID exits (docs/self-update.md).
+- 2026-11-23: the page reads STATUS.md from GitHub (not local folders), so it
+  works the same for every agent and every computer.
+- 2026-11-23: every local task ends in a pull request (owner's request), so
+  finished work is always on GitHub and visible from the phone.
+- 2026-11-23: local tasks merge themselves; OpenCode/local AI work and repos
+  without tests are reviewed by Claude Code or Codex first (docs/auto-merge.md).
+- 2026-11-23: Claude and Codex quota readings come from local sources. OpenCode Go
+  is optional and uses its configured key to query the official usage endpoint.
+- 2026-11-23: Claude units: the status line sends used_percentage as 0-100 and the
+  automatic check sends utilization as a 0-1 fraction; claude-usage.json stores percent.
+- 2026-11-23: cancelling kills the agent's whole process tree, commits/pushes
+  nothing, and deletes the worktree + local branch only if the branch is not
+  on GitHub (see docs/cancelling-tasks.md).
+- 2026-11-24: local tasks wait in a priority queue kept in tasks.json (one per
+  repository, at most BATON_MAX_PARALLEL=3 at once); a task fetches and makes
+  its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
+
+## Earlier log (2026-11-23 – 2026-11-25)
+- 2026-11-25 (claude-code): Quotas → Baton updates no longer shows an old update failure as the last error once a later update has succeeded. Suite: 174 passed.
+- 2026-11-25 (claude-code): Fixed the two tests that failed on GitHub's Linux runner (`find_agy` built a WindowsPath when pretending to be Windows; the two-models test had no fake GPU), added the Gemini logo and colour to Quotas and Gemini names to the ranking labels. Suite: 173 passed.
+- 2026-11-25 (claude-code): Added Gemini through the Antigravity CLI (tasks, task form, Agents chat, quota windows from `agy /usage`, tokens per day/week/model), full permissions for Claude Code, Codex and Gemini tasks with merge without review, and Claude Code (Opus, medium) as the only reviewer of OpenCode/local-AI work. Checked live with agy 1.5.17 (task command, report, tokens, quota, ACP chat). Suite: 172 passed.
+- 2026-11-25 (claude-code): Review of the family grouping: kept model ids without dots, and made the flat model order follow the family groups so `/models` no longer reloads every 5 s with two models in use (new regression test). Suite: 160 passed.
+- 2026-11-25 (opencode): Grouped local models by family (Inkling, Qwen, etc.) with family filter chips, distinct family badges, Abliterated variant badge and context window size, and placed the model currently in use in the first position on `/models` and in `/chat` selectors (docs/models.md).
+- 2026-11-25 (codex): Added [automatic GPU shutdown](docs/models.md#automatic-gpu-shutdown). Four tests covered 85/86 °C, model and reviewer shutdown, work preservation and queue recovery. Windows suite: 155 passed, three failed. Both manual cancellation cleanup failures reproduced on the base revision. The chat process-close test passed on retry.
+- 2026-11-25 (codex): Serialized task and updater Git writes per clone with a 120-second wait limit and logged task retries. All six new regression cases passed. Windows suite had 152 passes and two cancellation cleanup failures, both reproduced on the unchanged base.
+- 2026-11-25 (codex): Added Go, pay-as-you-go and other-provider buttons to OpenCode chat. Checked switching, the credit warning and session restoration in Edge. Windows suite: 146 passed, two known cancellation cleanup failures.
+- 2026-11-25 (claude-code): Agents chat phase 1: Chat page Agent selector (Local model / OpenCode), OpenCode over ACP with model, effort and folder fixed on the server, tool calls with arguments and results, Allow/Deny with exact command or diff (CSRF, bound to one request of one conversation, 10-minute deny), All permissions disabled; fake ACP agent tests; checked live with OpenCode 2.4.1 and local Inkling and through the web API; 148 tests passed on Windows (11 new).
+- 2026-11-25 (codex): Documented the folder confinement requirement, proposed ACP transport and acceptance checks for Agents chat. Implementation and phone verification are pending.
+- 2026-11-25 (claude-code): review of the OpenCode Go grouping: the task page now uses the cached OpenCode model list (no `opencode models` run inside a request), kept the old log parsing for runs without an agent step; 137 tests passed on Windows.
+- 2026-11-25 (opencode): grouped OpenCode models by provider ("Included in OpenCode Go" for `opencode-go/`, "Pay as you go (credits)" for `opencode/`, provider name for `local-*` and others), added a warning under the selector when an `opencode/` model is chosen, and added OpenCode Go insufficient-balance error detection on the task page with the closest included `opencode-go/` model suggestion, en/es strings, README note and tests; 137 tests passed on Windows.
+- 2026-11-24 (claude-code): Chat page (nav tab) relaying /v1/chat/completions with streaming, reasoning shown apart, safe Markdown, per-model history in the browser, start a model from the chat; fixed the dead Start button; checked live with Inkling 2 Mini (~57 tok/s through Baton) at desktop and 375 px.
+- 2026-11-24 (claude-code): Models page (`/models`, nav tab): this PC's CPU/RAM/disk/GPU readings, VRAM budget, Start/Stop for the llama-server models in `~/.baton/models.json`, live speed and tokens served from `--metrics`; detects servers started outside Baton; new dependency psutil 7.2.2; 130 tests passed on Windows (the two cancellation tests passed too); checked at 800 px dark and 375 px light.
+- 2026-11-24 (codex): Checked the saved report and merged [PR #29](https://github.com/Marcobm1/baton/pull/29) link in Tasks. This running review showed the Codex step and the cancel button with confirmation. Windows suite: 117 passed, two known cancellation cleanup failures.
+- 2026-11-24 (claude): Ranking "Reviewed scores only" toggle and rating from the list; Tasks filter by repository; project page split into Next / Done / Notes tabs with a compact header, Markdown descriptions with GitHub links; 119 tests passed; screenshots checked at 1440 and 390 px.
+- 2026-11-24 (claude): Ranking redesign (summary tiles, one leaderboard with agent/you/average per model and readable names, sample counts and a few-scores warning, filter by model, 8 jobs per page with All/To rate tabs, origin chips); Tasks page keeps running and queued tasks on top and pages the history (10 per page) with status filters; 117 tests passed; checked with screenshots at 1440 and 390 px in both themes.
+- 2026-11-24 (claude): after Baton merges a task it drops its 5-minute project cache, so the ticked STATUS.md item shows at once (before, a just-merged task could still look pending for up to five minutes).
+- 2026-11-24 (codex): Compared official Codex triggers with Baton's Claude issue flow and documented a smoke test. Live submission is pending. Windows suite: 114 passed, two known cancellation cleanup failures.
+- 2026-11-24 (codex): Added Projects and Quotas screenshots with sample data to the README. Checked both rendered image paths and inspected both PNGs. Windows suite: 114 passed, two known cancellation cleanup failures.
+- 2026-11-24 (claude): `Repo: <owner/repo>` in a Next item sends its launch to that repository (badge on the project page, warning if Baton doesn't list it) and the finished task offers to tick it in the origin project; agents are told to add it. Installed the daily index workflow in Marcobm1/proyectos (skips quietly until BATON_TOKEN exists; manual run passed); 116 tests passed.
+- 2026-11-24 (claude): "Mark as done" for agent tasks in STATUS.md (project page, and on a finished task whose item is still unchecked, e.g. after "no changes"); ticks with today's date and moves `next`; 115 tests passed.
+- 2026-11-24 (claude): verified live: OpenCode tasks #30 and #31 were reviewed by Claude Code (opus · medium) with structured scores 9/9/10 and 10/10/10, merged after CI, and Ranking shows them (9.3 and 10.0); GLM 5.3 human average 7.4 matches the five saved human scores.
+- 2026-11-24 (codex): added owner actions and editable task follow-ups. All 16 project-detail and task-default tests passed with simulated GitHub writes. Full suite: 112 passed; both Windows cancellation cleanup failures reproduced on the unchanged base.
+- 2026-11-24 (opencode): the task page shows the reviewer's model and effort
+  (for example "opus · medium") next to "Review by Claude Code/Codex"; both are
+  saved on the task when the review starts, and nothing configured keeps the
+  heading plain; 111 tests passed on Windows.
+- 2026-11-24 (opencode): saving a personal rating on Ranking now returns to the
+  list (origin filter and chart view kept) with a one-time "valoración guardada"
+  toast that fades out and disappears from the URL; 111 tests passed on Windows.
+- 2026-11-24 (codex): On live Ranking, five historical `opencode-go/glm-5.3`
+  estimates averaged 6.6, with no human or combined scores for that model.
+  Rate matched the model and merge result for #16 and #18. GitHub confirmed
+  [CI](https://github.com/Marcobm1/baton/actions/runs/45349145376) and merge
+  for #18. Local suite: 108 passed, two known Windows cancellation cleanup
+  failures. A fresh structured review and Marco's rating are still pending.
+- 2026-11-24 (codex): [PR #16](https://github.com/Marcobm1/baton/pull/16) logged `APPROVE` and merged `17c7bf2` after [CI passed](https://github.com/Marcobm1/baton/actions/runs/45337107945). Rate showed `opencode-go/glm-5.3`, merged, and an estimated 9/10. An isolated form save survived restart and charts matched 6.6 (agent), 8.0 (human) and 8.5 (combined). Local suite: 108 passed, two known Windows cancellation cleanup failures. Live reviewer criteria and Marco's score remain pending.
+- 2026-11-24 (codex): Ranking imports finished tasks across agents, labels delivery estimates and charts agent, human and paired scores. Suite: 108 passed, two known Windows cancellation cleanup failures. Live history check pending.
+- 2026-11-24 (claude): reviewer model and effort configurable (BATON_REVIEW_CLAUDE_MODEL/EFFORT, BATON_REVIEW_CODEX_MODEL/EFFORT); Marco's PC reviews with Opus 5.5 at medium effort; values the CLI doesn't list fall back to its default; 107 tests passed.
+- 2026-11-24 (codex): Ranking includes finished OpenCode/local tasks, structured reviewer scores, historical reports and origin filters. Suite: 104 passed; both Windows cancellation cleanup failures also reproduced on the unchanged base. Live review check remains next.
+- 2026-11-24 (codex): In live Edge, Launch next task matched the Baton recommendation and Tasks > New task matched the latest local task. Both selected Codex, gpt-6.2-astra, low.
+- 2026-11-24 (claude): the self-update rolled back #22 because the new test read templates with Windows' default encoding (cp1252); it now reads UTF-8. Suite checked on Windows before merging.
+- 2026-11-24 (claude): phones kept the old task-form.js after the update (only style.css and theme.js had a version in their URL), so the recommended model was not preselected there; every script and stylesheet URL now carries a version that changes with any of them; test added; 97 tests passed.
+- 2026-11-24 (claude): drafted tasks carry a recommended agent/model/effort that the form preselects; the form remembers the last local choice; prompts list this computer's models; Spanish section headings parsed; cards open the project and launch the next task, project page features the next task; 96 tests passed, checked with screenshots (1440 px and 390 px, light and dark).
+- 2026-11-24 (codex): Project pages open an editable next-task draft and include Done recently in history. Local and cloud prompts request the next title and description. Project detail tests passed. The Windows suite still reports two cancellation cleanup failures.
+- 2026-11-24 (claude): `depends_on` and `parent` in STATUS.md; red blocked cards and detail note, blocked note in INDEX.md, en/es strings, README section and docs/dependencies.md; monitoring section added to Next; 90 tests passed.
+- 2026-11-24 (opencode): quota update review: scheduled checks now skip when a fresher reading exists (5-10 minute intervals barely spend extra quota), the OpenCode Go card refreshes every 5 minutes in the background, README/.env.example recommend 5-10 minutes; 87 tests passed plus an end-to-end smoke run of the loop.
+- 2026-11-24 (claude-code): visual redesign (control-panel style), sidebar on desktop and tab bar on phones, Auto/Light/Dark theme without flash, colour tokens with WCAG AA tests; checked with screenshots in both themes at 1440 px and 390 px.
+- 2026-11-24 (opencode): confirmed the first live self-update on Windows: c34eb76→16a9f3a validated 05:20Z and running 05:21Z; two more updates (→551150c, →82b9604) pulled, pytest-validated and restarted themselves through the Baton scheduled task; server on 82b9604, up to date, clean checkout.
+- 2026-11-24 (codex): the owner confirmed the project detail and prefilled task draft worked on mobile. The Windows self-update check is next.
+- 2026-11-24 (codex): added structured project details and editable checklist drafts. All six detail tests passed, including cached GitHub failure and token-free views. Full suite: 77 passed, two known Windows cancellation cleanup failures. Phone and live PR check pending.
+- 2026-11-24 (claude-code): installed #10-#12 on Windows by hand (73 tests passed there); this commit is the first one the self-updater should pull and restart on by itself.
+- 2026-11-24 (codex): added native self-update, a CSRF-protected Quotas control and update history. All 11 updater tests passed; two Windows cancellation failures also reproduced on the unchanged base. Live scheduler handoff pending.
+- 2026-11-24 (claude-code): task queue with priority instead of refusing a second task per repository; global limit BATON_MAX_PARALLEL; change priority / cancel while queued; queue survives restarts; en/es texts; docs/task-queue.md; tasks.json reads now take the store lock and the replace retries (Windows "Access denied" race, seen once in 3 runs); 8 new tests, 62 passing 5 runs in a row.
+- 2026-11-24 (codex): added OpenCode Ranking and confirmed both reviews survived a process restart. 52 tests passed; two Windows cancellation tests also failed on the unchanged base.
+- 2026-11-23 (claude-code): auto-merge of local tasks: wait for GitHub tests, review and fix by Claude Code or Codex when needed (OpenCode, local AI, repos without tests), merge the checked commit; BATON_AUTO_MERGE; docs/auto-merge.md; 7 tests.
+- 2026-11-23 (opencode): test that every language has exactly the "en" keys and no
+  empty UI text; "es"."ago" is empty on purpose (Spanish puts "hace" before the
+  time), so the test allows that one case explicitly.
+- 2026-11-23 (claude-code): Claude quota: a used-up window ("rejected" in the automatic check) now reads 100 % used instead of keeping an old reading; quota bars turn red when exhausted and orange when fast. PR #5 closed (it read status line values of 1 % or less as fractions).
+- 2026-11-23 (claude-code): removed the "open a pull request" checkbox: every local task now pushes its branch and opens a PR; test for the three agents.
+- 2026-11-23 (claude-code): task summary panel (combined PRs #3 and #4): the agent ends with a marked report (what, how, why, checks, problems, what you need to know); cloud tasks read it from the issue.
+- 2026-11-23 (claude-code): Cancel task button (kills the process tree, no commit/push, removes worktree and branch); status cancelled/cancelada; tests.
+- 2026-11-23 (codex): added collapsible task details using existing records and CLI logs. Tested legacy reports and simulated Claude access, quota and unrelated failures.
+- 2026-11-23 (codex): verified private Tailscale Serve routing to native Baton and documented phone access. Replaced inline placeholder icons in quota and token cards with the bundled Anthropic, OpenAI and OpenCode images. Phone-side confirmation remains with the owner.
+- 2026-11-23 (codex): verified 15 Claude Code and 10 Codex models, per-model effort selection, and 25 tests. Refreshed the task form. Checked quota backgrounds in both themes and local Anthropic, OpenAI and OpenCode logos on Windows and Docker.
+- 2026-11-23 (codex): verified the live Go quota card and all three API windows on native Windows (8787) and Docker Compose (8788). Docker health check passed; 23 tests passed.
+- 2026-11-23 (claude): OpenCode Go quota; baton delegate; OpenCode rules rewritten deny-first after tests; tokens section fixed.
+- 2026-11-23 (claude): OpenCode agent (own permission rules, exe without shell); tokens spent per app/model.
+- 2026-11-23 (claude): pages split (Projects/Tasks/Quotas); local tasks in worktrees; manual quota form removed.
+- 2026-11-23 (claude): one quota card per provider; next task on project cards; New task form with CSRF protection; Claude task workflow template.
+- 2026-11-23 (claude): runs at Windows logon (scheduled task, pythonw); log file when there is no console.
+- 2026-11-23 (claude): automatic quota checks (claude -p stream-json unifiedWindows; codex exec).
+- 2026-11-23 (claude): tested on Windows (native + Docker); fixed .env files with a BOM; Codex CLI oriented itself correctly from the hub's AGENTS.md + INDEX.md.
+- 2026-11-23 (claude): v0.1.0 created.

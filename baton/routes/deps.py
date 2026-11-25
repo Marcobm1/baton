@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,6 +55,11 @@ class AppContext:
     find_opencode_fn: Callable[[], str | None]
     find_agy_fn: Callable[[], str | None]
     usage_cache: dict = field(default_factory=dict)
+    usage_ttl: float = 300.0
+    _usage_lock: threading.Lock = field(default_factory=threading.Lock)
+    _usage_refreshing: bool = False
+    task_sse_poll: float = 1.0
+    task_sse_keepalive: float = 15.0
     go_state: dict = field(default_factory=lambda: {"at": 0.0, "msg": ""})
     gemini_state: dict = field(default_factory=lambda: {"at": 0.0, "msg": ""})
 
@@ -78,19 +84,63 @@ class AppContext:
             raise HTTPException(403, "Invalid form token; reload the page.")
         self.check_origin(request)
 
-    def token_usage(self) -> dict:
-        # Reading the logs takes a moment: reuse the result for 5 minutes.
-        if not self.usage_cache or time.time() - self.usage_cache["at"] > 300:
-            self.usage_cache.update(
-                at=time.time(),
-                data=usage.collect(
+    def refresh_usage(self, *, force: bool = False) -> dict:
+        """Compute token usage from disk logs and update the in-memory cache."""
+        with self._usage_lock:
+            if not force and self.usage_cache and time.time() - self.usage_cache["at"] <= self.usage_ttl:
+                return self.usage_cache["data"]
+            if self._usage_refreshing and self.usage_cache:
+                return self.usage_cache["data"]
+            self._usage_refreshing = True
+        try:
+            data = usage.collect(
+                self.settings.claude_home,
+                self.settings.codex_home,
+                self.settings.opencode_db,
+                data_dir=self.settings.data_dir,
+            )
+            with self._usage_lock:
+                self.usage_cache = {"at": time.time(), "data": data}
+            return data
+        finally:
+            with self._usage_lock:
+                self._usage_refreshing = False
+
+    def schedule_usage_refresh(self) -> None:
+        """Kick off a background refresh if one is not already running."""
+        with self._usage_lock:
+            if self._usage_refreshing:
+                return
+            self._usage_refreshing = True
+
+        def _worker() -> None:
+            try:
+                data = usage.collect(
                     self.settings.claude_home,
                     self.settings.codex_home,
                     self.settings.opencode_db,
                     data_dir=self.settings.data_dir,
-                ),
-            )
-        return self.usage_cache["data"]
+                )
+                with self._usage_lock:
+                    self.usage_cache = {"at": time.time(), "data": data}
+            except Exception:
+                pass
+            finally:
+                with self._usage_lock:
+                    self._usage_refreshing = False
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def token_usage(self) -> dict:
+        """Return cached token usage immediately without blocking HTTP requests."""
+        with self._usage_lock:
+            cached = self.usage_cache
+        if cached:
+            if time.time() - cached["at"] > self.usage_ttl:
+                self.schedule_usage_refresh()
+            return cached["data"]
+        self.schedule_usage_refresh()
+        return {"days": 7, "apps": []}
 
     def refresh_go(self) -> str:
         # OpenCode Go's usage endpoint costs nothing: ask at most every 5 minutes.

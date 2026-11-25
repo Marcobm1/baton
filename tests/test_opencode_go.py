@@ -88,3 +88,39 @@ def test_delegate_read_only_by_default():
     assert cmd[-1] == "A & B" and "--archived" in cmd
     cmd = delegate.command("oc.exe", "m", "x", write=True)
     assert cmd[cmd.index("--agent") + 1] == "baton"
+
+
+def test_quotas_uses_urllib_and_never_imports_httpx(tmp_path, monkeypatch):
+    import io
+    import urllib.error
+    import urllib.request
+    from pathlib import Path
+
+    quotas_src = Path(quotas.__file__).read_text(encoding="utf-8")
+    assert "import httpx" not in quotas_src and "from httpx" not in quotas_src
+
+    seen = {}
+
+    class FakeResp(io.BytesIO):
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.close()
+
+    def fake_urlopen(req, timeout=20):
+        seen["url"] = req.full_url
+        seen["auth"] = req.get_header("Authorization")
+        if seen["auth"] == "Bearer bad":
+            raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, None)
+        return FakeResp(json.dumps(GO_ANSWER).encode("utf-8"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    ok, msg = quotas.fetch_opencode_go("sk-urllib", tmp_path)
+    assert ok, msg
+    assert seen == {"url": quotas.GO_USAGE_URL, "auth": "Bearer sk-urllib"}
+    ok2, msg2 = quotas.fetch_opencode_go("bad", tmp_path)
+    assert not ok2 and "401" in msg2
+

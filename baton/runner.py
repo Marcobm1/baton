@@ -541,6 +541,7 @@ class Runner:
         self._active: dict[str, Task] = {}          # running tasks by id
         self._procs: dict[str, subprocess.Popen] = {}
         self._cancelled: set[str] = set()
+        self._cancel_events: dict[str, threading.Event] = {}
         self._committing: set[str] = set()
 
     # ---------------------------------------------------------- availability
@@ -593,11 +594,12 @@ class Runner:
         with self._lock:
             if self._updating or self._overheated:
                 return
-            busy = {t.repo for t in self._active.values()}
+            busy = {t.repo.casefold() for t in self._active.values()}
             for task in self.queued():
                 if len(self._active) >= self.max_parallel:
                     break
-                if task.repo in busy:       # one task at a time per repository
+                repo_key = task.repo.casefold()
+                if repo_key in busy:       # one task at a time per repository
                     continue
                 if task.agent == "local" and not task.model:
                     task.model = self.local_model
@@ -606,7 +608,8 @@ class Runner:
                 thread = threading.Thread(target=self._run, args=(task,), daemon=True)
                 self._threads[task.id] = thread
                 self._active[task.id] = task
-                busy.add(task.repo)
+                self._cancel_events[task.id] = threading.Event()
+                busy.add(repo_key)
                 thread.start()
 
     def set_priority(self, task_id: str, priority: str) -> bool:
@@ -639,17 +642,18 @@ class Runner:
         and what it waits for: the queued task just ahead of it, else the task
         running in that repository, else (None) a free slot on this computer."""
         tasks = self.store.all()
-        running = {t.repo: t for t in tasks if t.where == "local" and t.status == "running"}
+        running = {t.repo.casefold(): t for t in tasks if t.where == "local" and t.status == "running"}
         slots = sum(1 for t in tasks if t.where == "local" and t.status == "running")
         info: dict[str, dict] = {}
         ahead: dict[str, Task] = {}
         count: dict[str, int] = {}
         for task in self.queued():
-            count[task.repo] = count.get(task.repo, 0) + 1
-            info[task.id] = {"position": count[task.repo],
-                             "waiting_for": ahead.get(task.repo) or running.get(task.repo),
+            key = task.repo.casefold()
+            count[key] = count.get(key, 0) + 1
+            info[task.id] = {"position": count[key],
+                             "waiting_for": ahead.get(key) or running.get(key),
                              "running": slots, "max": self.max_parallel}
-            ahead[task.repo] = task
+            ahead[key] = task
         return info
 
     # ------------------------------------------------------------ cancelling
@@ -660,6 +664,8 @@ class Runner:
             if hot:
                 self._thermal_stops.update(self._active)
                 self._cancelled.update(self._active)
+                for ev in self._cancel_events.values():
+                    ev.set()
                 processes = list(self._procs.values())
         if hot:
             for proc in processes:
@@ -701,6 +707,9 @@ class Runner:
             if not thread or not thread.is_alive() or task_id in self._committing:
                 return False
             self._cancelled.add(task_id)
+            ev = self._cancel_events.get(task_id)
+            if ev is not None:
+                ev.set()
             proc = self._procs.get(task_id)
         if proc:
             kill_tree(proc)
@@ -797,9 +806,22 @@ class Runner:
             if new_sha != sha and tests == "passed":
                 self._wait_for_tests(task, new_sha, step, must_exist=True)
             sha = new_sha
-        self._check_cancelled(task)
-        self.github.merge(task.repo, number, sha)
-        task.merged = True
+        with self._lock:
+            if task.id in self._cancelled:
+                raise Cancelled()
+            self._committing.add(task.id)
+        try:
+            self.github.merge(task.repo, number, sha)
+            task.merged = True
+        finally:
+            with self._lock:
+                self._committing.discard(task.id)
+        delete_branch = getattr(self.github, "delete_branch", None)
+        if callable(delete_branch) and task.branch.startswith("baton/"):
+            try:
+                delete_branch(task.repo, task.branch)
+            except Exception:
+                pass  # non-fatal: the PR is already merged
         # The merge usually ticks the task in STATUS.md: show it now, not when
         # the project cache expires minutes later.
         invalidate = getattr(self.github, "invalidate", None)
@@ -813,6 +835,7 @@ class Runner:
         """"passed", or "none" if the repository runs no tests on GitHub."""
         step(f"Waiting for the repository's tests on GitHub ({sha[:7]})")
         start = time.monotonic()
+        cancel_ev = self._cancel_events.get(task.id)
         while True:
             self._check_cancelled(task)
             c = self.github.checks(task.repo, sha)
@@ -829,7 +852,10 @@ class Runner:
                 return "none"
             if waited >= self.ci_timeout:
                 raise LeftOpen(f"the tests were still running after {self.ci_timeout // 60} minutes")
-            time.sleep(self.ci_poll)
+            if cancel_ev is not None:
+                cancel_ev.wait(self.ci_poll)
+            else:
+                time.sleep(self.ci_poll)
 
     def _pick_reviewer(self, task: Task) -> str:
         """Claude Code reviews OpenCode and local-AI work (Opus, medium effort
@@ -932,10 +958,18 @@ class Runner:
         if not verdict:
             raise LeftOpen(f"{AGENTS[reviewer]} gave no verdict")
         if changed:
-            self._write_git(task, repo_dir, "add", "-A", cwd=wt)
-            message = f"Review fixes by {AGENTS[reviewer]}\n\nBaton review of the task: {task.title}"
-            self._write_git(task, repo_dir, *ident, "commit", "-m", message, cwd=wt)
-            self._write_git(task, repo_dir, "push", "origin", task.branch, cwd=wt)
+            with self._lock:
+                if task.id in self._cancelled:
+                    raise Cancelled()
+                self._committing.add(task.id)
+            try:
+                self._write_git(task, repo_dir, "add", "-A", cwd=wt)
+                message = f"Review fixes by {AGENTS[reviewer]}\n\nBaton review of the task: {task.title}"
+                self._write_git(task, repo_dir, *ident, "commit", "-m", message, cwd=wt)
+                self._write_git(task, repo_dir, "push", "origin", task.branch, cwd=wt)
+            finally:
+                with self._lock:
+                    self._committing.discard(task.id)
             step("Review fixes committed and pushed")
         return self._git(wt, "rev-parse", "HEAD")
 
@@ -1050,6 +1084,8 @@ class Runner:
             task.worktree = str(wt)
             step(f"Worktree on branch {task.branch} (from origin/{task.base})")
 
+            if task.agent == "local" and not task.model and self.local_model:
+                task.model = self.local_model
             label = AGENTS.get(task.agent, task.agent) + (f" ({task.model})" if task.model else "")
             step(f"Running {label}…")
             env = agent_env()
@@ -1100,6 +1136,8 @@ class Runner:
             output = self._read_output(log_path, start, 16 * 2**20 if task.agent == "gemini" else 65536)
             if task.agent == "gemini":
                 model, result = agy_events(output)
+                if model and not task.model:
+                    task.model = model
                 task.summary = extract_summary(str(result.get("response") or "")) or extract_summary(output)
                 if record_gemini(self.store.dir, task.model or model, result.get("usage") or {}, "task"):
                     self._log(task, "== Gemini tokens recorded for the Quotas page")
@@ -1120,32 +1158,38 @@ class Runner:
             with self._lock:
                 if task.id in self._cancelled:
                     raise Cancelled()
-                self._committing.add(task.id)  # from here on, cancel() says no
-            self._write_git(task, repo_dir, "add", "-A", cwd=wt)
-            ident = []
-            if not self._git(wt, "config", "user.email", check=False):
-                ident = ["-c", f"user.name={self.git_name}", "-c", f"user.email={self.git_email}"]
-            body = f"Task from Baton, done by {AGENTS.get(task.agent, task.agent)}.\n\n{task.details}".strip()
-            self._write_git(task, repo_dir, *ident, "commit", "-m", f"{task.title}\n\n{body}", cwd=wt)
-            step("Changes committed")
-            self._check_cancelled(task)
+                self._committing.add(task.id)  # only while committing, pushing, and opening the PR
+            try:
+                self._write_git(task, repo_dir, "add", "-A", cwd=wt)
+                ident = []
+                if not self._git(wt, "config", "user.email", check=False):
+                    ident = ["-c", f"user.name={self.git_name}", "-c", f"user.email={self.git_email}"]
+                body = f"Task from Baton, done by {AGENTS.get(task.agent, task.agent)}.\n\n{task.details}".strip()
+                self._write_git(task, repo_dir, *ident, "commit", "-m", f"{task.title}\n\n{body}", cwd=wt)
+                step("Changes committed")
+                self._check_cancelled(task)
+
+                if task.open_pr:
+                    self._write_git(task, repo_dir, "push", "-u", "origin", task.branch, cwd=wt)
+                    step("Branch pushed to GitHub")
+                    self._check_cancelled(task)
+                    if not self.auto_merge:
+                        after = "Review it before merging."
+                    elif task.agent in REVIEWED_AGENTS:
+                        after = ("Baton merges it when the repository's tests pass, after a review "
+                                 "by Claude Code.")
+                    else:
+                        after = "Baton merges it when the repository's tests pass, without a review."
+                    pr_body = (f"Task sent from Baton to **{AGENTS.get(task.agent, task.agent)}** "
+                               f"on my computer.\n\n**Task:** {task.title}\n\n{task.details}\n\n{after}")
+                    task.pr_url = self.open_pr(task.repo, task.branch, task.base, task.title, pr_body)
+                    step(f"Pull request: {task.pr_url}")
+                    task.message = "Done: review the pull request."
+            finally:
+                with self._lock:
+                    self._committing.discard(task.id)
 
             if task.open_pr:
-                self._write_git(task, repo_dir, "push", "-u", "origin", task.branch, cwd=wt)
-                step("Branch pushed to GitHub")
-                self._check_cancelled(task)
-                if not self.auto_merge:
-                    after = "Review it before merging."
-                elif task.agent in REVIEWED_AGENTS:
-                    after = ("Baton merges it when the repository's tests pass, after a review "
-                             "by Claude Code.")
-                else:
-                    after = "Baton merges it when the repository's tests pass, without a review."
-                pr_body = (f"Task sent from Baton to **{AGENTS.get(task.agent, task.agent)}** "
-                           f"on my computer.\n\n**Task:** {task.title}\n\n{task.details}\n\n{after}")
-                task.pr_url = self.open_pr(task.repo, task.branch, task.base, task.title, pr_body)
-                step(f"Pull request: {task.pr_url}")
-                task.message = "Done: review the pull request."
                 if self.auto_merge:
                     try:
                         self._finish_pr(task, repo_dir, wt, ident, step)
@@ -1163,6 +1207,9 @@ class Runner:
                     self._check_cancelled(task)
                 self._write_git(task, repo_dir, "worktree", "remove", "--force", str(wt), check=False)
                 task.worktree = ""
+                if task.merged and task.branch.startswith("baton/"):
+                    self._write_git(task, repo_dir, "branch", "-D", task.branch, check=False)
+                    self._write_git(task, repo_dir, "remote", "prune", "origin", check=False)
             else:
                 task.message = f"Done: the changes are on the local branch {task.branch} in {wt}."
             task.status = "done"
@@ -1191,6 +1238,7 @@ class Runner:
             self.store.save(task)
             with self._lock:
                 self._cancelled.discard(task.id)
+                self._cancel_events.pop(task.id, None)
                 self._thermal_stops.discard(task.id)
                 self._committing.discard(task.id)
                 self._threads.pop(task.id, None)

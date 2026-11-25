@@ -168,25 +168,47 @@ def fetch_opencode_go(key: str, data_dir: Path, client=None) -> tuple[bool, str]
     Only percentages, statuses and reset dates are kept (opencode-go.json);
     the key is sent in the Authorization header and nowhere else.
     """
-    import httpx
+    import urllib.error
+    import urllib.request
 
-    own = client is None
-    client = client or httpx.Client(timeout=20)
-    try:
-        r = client.get(GO_USAGE_URL, headers={"Authorization": f"Bearer {key}"})
-    except httpx.HTTPError as e:
-        return False, f"no answer ({type(e).__name__})"
-    finally:
-        if own:
-            client.close()
-    if r.status_code == 401:
+    status: int
+    body: Any
+    if client is not None:
+        try:
+            r = client.get(GO_USAGE_URL, headers={"Authorization": f"Bearer {key}"})
+        except Exception as e:
+            return False, f"no answer ({type(e).__name__})"
+        status = r.status_code
+        try:
+            body = r.json() if status == 200 else None
+        except ValueError:
+            return False, "unexpected answer"
+    else:
+        req = urllib.request.Request(
+            GO_USAGE_URL,
+            headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                status = getattr(resp, "status", 200)
+                raw = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            status, raw = e.code, ""
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            return False, f"no answer ({type(e).__name__})"
+        try:
+            body = json.loads(raw) if status == 200 else None
+        except ValueError:
+            return False, "unexpected answer"
+
+    if status == 401:
         return False, "key not valid (401)"
-    if r.status_code == 403:
+    if status == 403:
         return False, "this key has no OpenCode Go subscription (403)"
-    if r.status_code != 200:
-        return False, f"HTTP {r.status_code}"
+    if status != 200:
+        return False, f"HTTP {status}"
     try:
-        usage = r.json()["usage"]
+        usage = body["usage"]
         meters = {name: {"percent": float(usage[name]["percent"]),
                          "status": str(usage[name].get("status", "")),
                          "resetsAt": str(usage[name].get("resetsAt") or "")}

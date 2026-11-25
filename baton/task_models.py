@@ -123,7 +123,7 @@ def closest_opencode_go_model(model: str, models: list[str] | None = None) -> st
 
 # Only Gemini models are offered through agy: its Claude and GPT models have a
 # separate allowance and are already reachable through their own CLIs.
-GEMINI_MODEL = re.compile(r"gemini-4-[\w.-]+|gemini-3\.8-flash(?:-[\w.-]+)?|gemini-pro-orchestrator[\w.-]*")
+GEMINI_MODEL = re.compile(r"gemini-[\w.-]+")
 GEMINI_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 

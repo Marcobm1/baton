@@ -88,7 +88,7 @@ class Ranking:
             yield db
 
     def start(self, model, kind, prompt):
-        job = secrets.randbits(62) + 1  # Stable across independent task worktrees.
+        job = secrets.randbits(52) + 1  # JS Number-safe (< 2**53) and collision-free across worktrees.
         with self.database() as db:
             db.execute("INSERT INTO jobs(id, model, started, kind, prompt) VALUES (?, ?, ?, ?, ?)",
                        (job, model, time.time(), kind, prompt))
@@ -128,9 +128,10 @@ class Ranking:
                 return existing["job"]
             prompt = "\n\n".join(filter(None, (task.title, task.details)))
             result = "\n\n".join(filter(None, (task.message, task.summary)))
+            model = task.model or (f"{task.agent}/default" if task.agent else "default")
             job = db.execute("""INSERT INTO jobs(model, started, kind, prompt, outcome, result)
                 VALUES (?, ?, 'Baton task', ?, ?, ?)""",
-                (task.model, task.started_at or task.created_at, prompt, outcome, result)).lastrowid
+                (model, task.started_at or task.created_at, prompt, outcome, result)).lastrowid
             db.execute("INSERT INTO task_jobs VALUES (?, ?, ?, ?, ?)",
                        (task.id, job, task.title, task.merged, task.review))
             rating = task.review_rating

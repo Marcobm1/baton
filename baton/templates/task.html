@@ -3,8 +3,9 @@
 {% block refresh %}{% endblock %}
 {% block main %}
 <p><a href="/tasks">← {{ t.tasks_nav }}</a></p>
-<article class="detail">
-  <h2>{{ task.title }} <span class="pill st st-{{ task.status }}">{{ t['st_' ~ task.status] }}</span></h2>
+<article class="detail" data-task-id="{{ task.id }}" data-task-status="{{ task.status }}"
+         data-no-step="{{ t.no_step }}" data-no-progress="{{ t.no_progress }}" data-no-log="{{ t.no_log }}">
+  <h2>{{ task.title }} <span id="task-status" class="pill st st-{{ task.status }}">{{ t['st_' ~ task.status] }}</span></h2>
   {% if pending %}
   <div class="pending-item">
     <p class="small">{{ t.still_pending|format(pending.project.status.name) }}</p>
@@ -20,8 +21,8 @@
   {% elif task.finished %}<a class="btn" href="/tasks/new?followup={{ task.id|urlencode }}">{{ t.continue_task }}</a>{% endif %}
   {% if ranking_job %}<p><a class="btn ghost small" href="/ranking/{{ ranking_job }}#your-score">{{ t.rate_job }}</a></p>{% endif %}
   {% if task.status == 'running' %}
-    <p><strong>{{ t.last_step }}</strong> · {{ task.steps|last or t.no_step }}</p>
-    <p>{{ report.progress|truncate(240) if report.progress else t.no_progress }}</p>
+    <p><strong>{{ t.last_step }}</strong> · <span id="task-last-step">{{ task.steps|last or t.no_step }}</span></p>
+    <p id="task-progress">{{ report.progress|truncate(240) if report.progress else t.no_progress }}</p>
   {% elif task.status == 'queued' %}
     {% if queue %}
     <p class="queue-info"><span class="pill prio-{{ task.priority }}">{{ t.priority }} · {{ t['prio_' ~ task.priority] }}</span>
@@ -81,15 +82,11 @@
     {% if task.details %}<h3>{{ t.objective }}</h3><div class="md">{{ task.details|md|safe }}</div>{% endif %}
     {% if task.branch %}<p>{{ t.branch }} <code>{{ task.branch }}</code></p>{% endif %}
     {% if task.worktree %}<p class="small">{{ t.worktree_kept }} <code>{{ task.worktree }}</code></p>{% endif %}
-    {% if task.steps %}<h3>{{ t.steps }}</h3><ul class="small steps">{% for s in task.steps %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
-    {% if task.where == 'local' %}<h3>{{ t.log }}</h3>{% if log %}<pre class="log">{{ log }}</pre>{% else %}<p>{{ t.no_log }}</p>{% endif %}{% endif %}
+    {% if task.steps or task.status == 'running' %}<h3>{{ t.steps }}</h3><ul id="task-steps" class="small steps">{% for s in task.steps %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
+    {% if task.where == 'local' %}<h3>{{ t.log }}</h3>{% if log or task.status == 'running' %}<pre id="task-log" class="log">{{ log or t.no_log }}</pre>{% else %}<p>{{ t.no_log }}</p>{% endif %}{% endif %}
   </details>
 </article>
 {% if task.status in ['queued', 'running'] %}
-<script>
-  setInterval(() => {
-    if (!document.getElementById("task-details").open) location.reload();
-  }, 5000);
-</script>
+<script src="/static/task-live.js?v={{ css_v }}" defer></script>
 {% endif %}
 {% endblock %}

@@ -182,21 +182,27 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                     await asyncio.wait_for(update_requested.wait(), 300)
 
     def _quota_tick():
-        scheduler.tick()
+        # Refresh token usage from disk logs in the background so /quotas never blocks.
+        ctx.refresh_usage()
+        if scheduler.enabled:
+            scheduler.tick()
         # OpenCode Go's usage endpoint and agy's /usage are free to ask: keep
         # those cards fresh even when nobody has the page open (every 5 minutes).
-        ctx.refresh_go()
-        ctx.refresh_gemini()
+        if settings.opencode_go_key:
+            ctx.refresh_go()
+        if find_agy():
+            ctx.refresh_gemini()
 
-    async def _loop():
-        # Check once a minute whether a quota check is due; checks run in a
-        # thread so the pages keep answering while a CLI is working.
-        while True:
+    async def _loop(stopping: asyncio.Event):
+        # Check once a minute whether usage or quota refreshes are due; work runs
+        # in a thread so HTTP handlers stay responsive.
+        while not stopping.is_set():
             try:
                 await asyncio.to_thread(_quota_tick)
             except Exception:  # never let the loop die
                 pass
-            await asyncio.sleep(60)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stopping.wait(), 60)
 
     def thermal_check():
         hot = models.check_temperature()
@@ -222,10 +228,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         await asyncio.to_thread(runner.dispatch)   # the queue left by the last run
         stopping = asyncio.Event()
         monitor = asyncio.create_task(thermal_loop(stopping))
-        # The loop keeps every quota source at most ~N minutes old (pings when
-        # enabled, OpenCode Go when a key is set), not only while pages are open.
-        loop_task = (asyncio.create_task(_loop())
-                     if scheduler.enabled or settings.opencode_go_key or find_agy() else None)
+        # Background loop keeps token usage and quota cards fresh without blocking pages.
+        loop_task = asyncio.create_task(_loop(stopping))
         update_task = None
         if updater.enabled:
             loop = asyncio.get_running_loop()
@@ -241,14 +245,15 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         finally:
             stopping.set()
             await monitor
+            loop_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await loop_task
         await asyncio.to_thread(agent_chats.close_all)   # no OpenCode left behind
         runner.on_finished = None
         if update_task:
             update_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await update_task
-        if loop_task:
-            loop_task.cancel()
 
     app = FastAPI(title="Baton", version=__version__, docs_url=None, redoc_url=None,
                   lifespan=lifespan)

@@ -29,7 +29,7 @@ async def quotas_page(request: Request, ctx: AppContext = CTX):
             quotas.all_windows(ctx.settings.data_dir, ctx.settings.codex_home)
         ),
         sched=ctx.scheduler,
-        tokens=await asyncio.to_thread(ctx.token_usage),
+        tokens=ctx.token_usage(),
         sched_results={
             k: {"age": time.time() - v[0], "ok": v[1], "msg": v[2]}
             for k, v in ctx.scheduler.results.items()

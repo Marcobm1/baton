@@ -9,12 +9,32 @@
       if (!window.confirm(form.dataset.confirm)) event.preventDefault();
     });
   });
-  var states = {};
-  root.querySelectorAll("[data-model]").forEach(function (el) { states[el.dataset.model] = el.dataset.state; });
+  var order = [], states = {};
+  root.querySelectorAll("[data-model]").forEach(function (el) {
+    order.push(el.dataset.model);
+    states[el.dataset.model] = el.dataset.state;
+  });
+
+  var filters = root.querySelectorAll("[data-family-filter]");
+  var groups = root.querySelectorAll("[data-family-group]");
+  function setFamily(key) {
+    filters.forEach(function (btn) {
+      var on = btn.dataset.familyFilter === key;
+      btn.setAttribute("aria-pressed", String(on));
+      if (on) btn.setAttribute("aria-current", "true");
+      else btn.removeAttribute("aria-current");
+    });
+    groups.forEach(function (g) {
+      g.hidden = key !== "all" && g.dataset.familyGroup !== key;
+    });
+  }
+  filters.forEach(function (btn) {
+    btn.addEventListener("click", function () { setFamily(btn.dataset.familyFilter); });
+  });
 
   function changed(models) {
-    if (models.length !== Object.keys(states).length) return true;
-    return models.some(function (m) { return states[m.id] !== m.status; });
+    if (models.length !== order.length) return true;
+    return models.some(function (m, i) { return m.id !== order[i] || states[m.id] !== m.status; });
   }
 
   function tick() {

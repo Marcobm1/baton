@@ -46,16 +46,22 @@ KNOWN_OPENCODE_GO_MODELS = (
 )
 
 
-def opencode_groups(models: list[str], t: dict[str, str] | None = None) -> list[dict]:
+def opencode_groups(models: list[str], t: dict[str, str] | None = None,
+                    active_families: set[str] | None = None) -> list[dict]:
     """Group OpenCode models by provider with clear labels for OpenCode Go vs pay-as-you-go."""
     labels = t or STRINGS["en"]
+    active = {f.casefold() for f in (active_families or ()) if f}
     by_provider: dict[str, list[str]] = {}
     for model in models:
         provider = model.split("/", 1)[0] if "/" in model else model
         by_provider.setdefault(provider, []).append(model)
     order = sorted(
         by_provider,
-        key=lambda p: (0 if p == "opencode-go" else (1 if p == "opencode" else 2)),
+        key=lambda p: (
+            (0, 0) if p == "opencode-go"
+            else (1, 0) if p == "opencode"
+            else (2, 0 if any(f in p.casefold() for f in active) else 1)
+        ),
     )
     groups = []
     for provider in order:

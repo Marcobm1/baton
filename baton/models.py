@@ -32,6 +32,25 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 # can't change them. An API key would also lock Baton out of /metrics.
 RESERVED = {"-m", "--model", "--host", "--port", "--alias", "-a", "--metrics",
             "--api-key", "--api-key-file"}
+KNOWN_FAMILIES = (
+    ("inkling", "Inkling"),
+    ("qwen", "Qwen"),
+    ("deepseek", "DeepSeek"),
+    ("llama", "Llama"),
+    ("gemma", "Gemma"),
+    ("mistral", "Mistral"),
+    ("mixtral", "Mixtral"),
+    ("phi", "Phi"),
+    ("glm", "GLM"),
+    ("kimi", "Kimi"),
+    ("minimax", "MiniMax"),
+    ("nemotron", "Nemotron"),
+    ("starcoder", "StarCoder"),
+    ("falcon", "Falcon"),
+    ("command", "Command"),
+    ("yi", "Yi"),
+)
+_ABLITERATED_RE = re.compile(r"abliterat|uncensor", re.I)
 GPU_FIELDS = "name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit"
 GPU_LIMIT_C = 85
 GIB = 1024 ** 3
@@ -87,11 +106,58 @@ class Model:
     args: list[str] = field(default_factory=list)
     description: str = ""
     vram_gb: float = 0.0
+    family: str = ""
 
     def command(self, server: str) -> list[str]:
         # The reserved options go last, after the owner's arguments.
         return [server, "-m", self.file, *self.args, "--alias", self.id, "--metrics",
                 "--host", "127.0.0.1", "--port", str(self.port)]
+
+
+def model_family(name: str, model_id: str = "", file: str = "", explicit: str = "") -> tuple[str, str]:
+    """Return ``(family_key, family_label)`` for a model (e.g. ``('inkling', 'Inkling')``)."""
+    if explicit and explicit.strip():
+        label = explicit.strip()
+        key = re.sub(r"[^a-z0-9]+", "-", label.casefold()).strip("-") or "other"
+        return key, label
+    stem = Path(file).stem if file else ""
+    for source in (name, model_id, stem):
+        if not source:
+            continue
+        matches = []
+        for key, label in KNOWN_FAMILIES:
+            m = re.search(rf"(?:^|[^a-z0-9])({key})(?:[^a-z]|$)", source, re.I)
+            if m:
+                matches.append((m.start(1), key, label))
+        if matches:
+            _, key, label = min(matches, key=lambda x: x[0])
+            return key, label
+    for source in (name, model_id, stem):
+        m = re.search(r"[A-Za-z]{2,}", source or "")
+        if m:
+            word = m.group(0)
+            key = word.casefold()
+            label = word if any(c.isupper() for c in word[1:]) else word.capitalize()
+            return key, label
+    return "other", "Other"
+
+
+def _context_tokens(args: list[str]) -> int | None:
+    """Extract the context window (``-c`` / ``--ctx-size``) from llama-server args, if set."""
+    for i, arg in enumerate(args):
+        if arg in ("-c", "--ctx-size") and i + 1 < len(args):
+            try:
+                val = int(args[i + 1])
+                return val if val > 0 else None
+            except ValueError:
+                return None
+        if arg.startswith("--ctx-size="):
+            try:
+                val = int(arg.split("=", 1)[1])
+                return val if val > 0 else None
+            except ValueError:
+                return None
+    return None
 
 
 @dataclass
@@ -140,7 +206,8 @@ def load_config(data_dir: Path) -> Config:
                           file=str(item["file"]), port=int(item["port"]),
                           args=[str(a) for a in args],
                           description=str(item.get("description", "")),
-                          vram_gb=float(item.get("vram_gb") or 0))
+                          vram_gb=float(item.get("vram_gb") or 0),
+                          family=str(item.get("family", "")))
         except (KeyError, TypeError, ValueError) as exc:
             cfg.problems.append(f"{where}: needs \"id\", \"file\" and \"port\" ({exc})")
             continue
@@ -389,7 +456,7 @@ class LocalModels:
 
     def _rows(self, cfg: Config, state: dict) -> list[dict]:
         rows = []
-        for m in cfg.models:
+        for idx, m in enumerate(cfg.models):
             entry = state.setdefault(m.id, {})
             proc = self._proc(entry) if entry.get("pid") else None
             crashed = ""
@@ -415,11 +482,17 @@ class LocalModels:
             served = self._count(entry, metrics)
             gen_s = metrics.get("tokens_predicted_seconds_total") or 0
             prompt_s = metrics.get("prompt_seconds_total") or 0
+            file_name = Path(m.file).name
+            family_key, family = model_family(m.name, m.id, m.file, m.family)
+            abliterated = bool(_ABLITERATED_RE.search(f"{m.id} {m.name} {file_name}"))
+            ctx = _context_tokens(m.args)
             rows.append({
                 "id": m.id, "name": m.name, "description": m.description, "port": m.port,
-                "vram_gb": m.vram_gb, "file": m.file, "file_name": Path(m.file).name,
+                "vram_gb": m.vram_gb, "file": m.file, "file_name": file_name,
                 "file_ok": Path(m.file).is_file(), "status": status,
                 "uses_gpu": status in ("running", "loading", "external"),
+                "family": family, "family_key": family_key,
+                "abliterated": abliterated, "ctx": ctx,
                 "started": entry.get("started"), "crashed": crashed,
                 "gen_tps": metrics.get("tokens_predicted_total", 0) / gen_s if gen_s else None,
                 "prompt_tps": metrics.get("prompt_tokens_total", 0) / prompt_s if prompt_s else None,
@@ -427,7 +500,32 @@ class LocalModels:
                 "served": served, "since_start": {
                     "prompt": metrics.get("prompt_tokens_total", 0),
                     "generated": metrics.get("tokens_predicted_total", 0)},
+                "_order": idx,
             })
+
+        def _active_rank(row: dict) -> int:
+            if row["status"] in ("running", "external"):
+                return 0
+            if row["status"] == "loading":
+                return 1
+            return 2
+
+        first_seen: dict[str, int] = {}
+        family_best: dict[str, int] = {}
+        for r in rows:
+            fk = r["family_key"]
+            first_seen.setdefault(fk, r["_order"])
+            family_best[fk] = min(family_best.get(fk, 2), _active_rank(r))
+        # Family first, then status inside it: the flat list must follow the
+        # same order as the grouped cards, or models.js reloads on every poll.
+        rows.sort(key=lambda r: (
+            family_best[r["family_key"]],
+            first_seen[r["family_key"]],
+            _active_rank(r),
+            r["_order"],
+        ))
+        for r in rows:
+            r.pop("_order", None)
         return rows
 
     def overview(self, lang: str = "en") -> dict:
@@ -462,6 +560,8 @@ class LocalModels:
                 if gpu["power"] is not None and gpu["power_limit"] else 0,
             })
             levels.update(temp=_level(gpu["temp"], 75, 85), vram=_level(vram_pct, 90, 98))
+        groups = []
+        by_family: dict[str, dict] = {}
         for r in rows:
             p = f"m.{r['id']}."
             show.update({
@@ -470,10 +570,21 @@ class LocalModels:
                 p + "served_prompt": f"{f(r['served']['prompt'], 0)}",
                 p + "busy": str(r["busy"]),
                 p + "vram": f"{f(r['vram_gb'])} GiB" if r["vram_gb"] else "—",
+                p + "ctx": f"{f(r['ctx'], 0)}" if r["ctx"] else "—",
                 p + "uptime": _dur(time.time() - r["started"]) if r["started"] else "—",
             })
+            fk = r["family_key"]
+            group = by_family.get(fk)
+            if group is None:
+                group = {"key": fk, "label": r["family"], "models": [], "active": 0}
+                by_family[fk] = group
+                groups.append(group)
+            group["models"].append(r)
+            if r["uses_gpu"]:
+                group["active"] += 1
         return {"config": {"found": cfg.found, "path": str(cfg.path), "problems": cfg.problems},
-                "machine": machine, "gpu": gpu, "levels": levels, "models": rows, "show": show,
+                "machine": machine, "gpu": gpu, "levels": levels, "models": rows, "groups": groups,
+                "show": show,
                 "budget": {"total_gb": total_gb, "used_gb": used_gb, "reserved_gb": reserved,
                            "parts": [{"id": r["id"], "name": r["name"], "gb": r["vram_gb"],
                                       "pct": 100 * r["vram_gb"] / total_gb if total_gb else 0}

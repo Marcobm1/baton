@@ -98,7 +98,10 @@
         if (!view) return;
         view.models.forEach(function (m) {
           var o = modelSel.querySelector('option[value="' + CSS.escape(m.id) + '"]');
-          if (o) o.dataset.status = m.status;
+          if (o) {
+            o.dataset.status = m.status;
+            o.textContent = (m.uses_gpu ? "● " : "") + (o.dataset.name || m.name);
+          }
         });
         showState();
       })

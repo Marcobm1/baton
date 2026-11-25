@@ -92,10 +92,21 @@
       {% if view.models %}
       <label><span class="label">{{ t.chat_model }}</span>
         <select data-model>
+          {% if view.groups|length > 1 %}
+          {% for g in view.groups %}
+          <optgroup label="{{ g.label }}">
+            {% for m in g.models %}
+            <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
+                    {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endfor %}
+          {% else %}
           {% for m in view.models %}
           <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
-                  {% if m.id == selected %}selected{% endif %}>{{ m.name }}</option>
+                  {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
           {% endfor %}
+          {% endif %}
         </select></label>
       <label><span class="label">{{ t.chat_effort }}</span>
         <select data-effort>

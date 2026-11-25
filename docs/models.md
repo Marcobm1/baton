@@ -30,6 +30,7 @@ write on the computer itself (`BATON_DATA_DIR` changes the folder).
 
 - `server`: path to `llama-server` (if empty, the one on `PATH`).
 - `id`: a-z, 0-9 and `-`; also used as the API model name (`--alias`).
+- `family` *(optional)*: family label such as `"Inkling"` or `"Qwen"`. When omitted, Baton infers it automatically from the model's `name`, `id` and `.gguf` file name.
 - `port`: one per model, 1024-65535.
 - `vram_gb`: what the model takes on the card once loaded (measure it with
   `nvidia-smi`). Used for the budget: a second model only starts if both fit.
@@ -37,6 +38,8 @@ write on the computer itself (`BATON_DATA_DIR` changes the folder).
   Baton always adds `-m <file> --alias <id> --metrics --host 127.0.0.1 --port <port>`,
   so `args` can't contain those options (or `--api-key`, which would lock Baton
   out of `/metrics`). A model started from Baton is never reachable from the network.
+
+Models are grouped and badged by family (for example **Inkling** and **Qwen**), with filter chips at the top when more than one family is configured, an **Abliterated** badge on abliterated/uncensored variants, and the configured context size (`-c` / `--ctx-size`) shown on the card. Any model currently in use (`running`, `external` or `loading`) is placed in the **first position** (its family group goes first and it leads that group; highlighted with an **In use** badge and green accent border) both on `/models` and in the `/chat` model selector.
 
 Problems in the file are listed on the page instead of breaking it.
 

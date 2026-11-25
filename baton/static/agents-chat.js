@@ -43,7 +43,20 @@
   var groups = Array.from(modelSel.children);
   var buttons = new Map();
   function chooseCatalog(key, model) {
-    modelSel.replaceChildren(...groups.filter(function (g) { return g.dataset.catalogKey === key; }));
+    var matching = groups.filter(function (g) { return g.dataset.catalogKey === key; });
+    var active = model || modelSel.value;
+    if (active) {
+      matching.sort(function (a, b) {
+        var aHas = Array.from(a.children).some(function (o) { return o.value === active; });
+        var bHas = Array.from(b.children).some(function (o) { return o.value === active; });
+        return (bHas ? 1 : 0) - (aHas ? 1 : 0);
+      });
+      matching.forEach(function (g) {
+        var opt = Array.from(g.children).find(function (o) { return o.value === active; });
+        if (opt && g.firstElementChild !== opt) g.insertBefore(opt, g.firstElementChild);
+      });
+    }
+    modelSel.replaceChildren(...matching);
     if (model) modelSel.value = model;
     buttons.forEach(function (button, id) {
       button.setAttribute("aria-pressed", String(id === key));

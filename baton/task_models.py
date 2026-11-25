@@ -1,12 +1,121 @@
 """Model pickers from the installed CLIs. Discovery never submits a user prompt."""
+import difflib
 import json
+import os
 import re
 import subprocess
 import time
 
+from .i18n import STRINGS
 from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
 
 _cache = {}
+
+KNOWN_OPENCODE_GO_MODELS = (
+    "opencode-go/beam-free",
+    "opencode-go/claude-haiku-5-5",
+    "opencode-go/deepseek-v4-pro",
+    "opencode-go/deepseek-v4.1-flash",
+    "opencode-go/gemini-4-argon",
+    "opencode-go/glm-5.3",
+    "opencode-go/glm-5.3-flash",
+    "opencode-go/gpt-5.6-luna",
+    "opencode-go/gpt-6-luna",
+    "opencode-go/grok-4.7",
+    "opencode-go/hungerg-free",
+    "opencode-go/hy3",
+    "opencode-go/hy4",
+    "opencode-go/hy4-flash-free",
+    "opencode-go/hy4-preview",
+    "opencode-go/iceman-contributor-free",
+    "opencode-go/kimi-k2.7-code",
+    "opencode-go/kimi-k3",
+    "opencode-go/kimi-k3.1-pro",
+    "opencode-go/longcat-2.5",
+    "opencode-go/mimo-v2.6-flash",
+    "opencode-go/mimo-v2.6-pro",
+    "opencode-go/minimax-m3",
+    "opencode-go/minimax-m3.1-flash",
+    "opencode-go/muse-spark-1.2-contributor",
+    "opencode-go/muse-spark-1.3-contributor",
+    "opencode-go/qwen3.7-plus",
+    "opencode-go/qwen3.8-flash",
+    "opencode-go/qwen3.8-max",
+    "opencode-go/qwen4-max",
+    "opencode-go/step-5-preview",
+)
+
+
+def opencode_groups(models: list[str], t: dict[str, str] | None = None) -> list[dict]:
+    """Group OpenCode models by provider with clear labels for OpenCode Go vs pay-as-you-go."""
+    labels = t or STRINGS["en"]
+    by_provider: dict[str, list[str]] = {}
+    for model in models:
+        provider = model.split("/", 1)[0] if "/" in model else model
+        by_provider.setdefault(provider, []).append(model)
+    order = sorted(
+        by_provider,
+        key=lambda p: (0 if p == "opencode-go" else (1 if p == "opencode" else 2)),
+    )
+    groups = []
+    for provider in order:
+        if provider == "opencode-go":
+            label = labels.get("oc_group_go", STRINGS["en"]["oc_group_go"])
+        elif provider == "opencode":
+            label = labels.get("oc_group_payg", STRINGS["en"]["oc_group_payg"])
+        else:
+            label = provider
+        groups.append({
+            "provider": provider,
+            "label": label,
+            "included": provider == "opencode-go",
+            "payg": provider == "opencode",
+            "models": by_provider[provider],
+        })
+    return groups
+
+
+group_opencode_models = opencode_groups
+
+
+def _model_tokens(slug: str) -> list[str]:
+    return re.findall(r"[a-z]+|\d+(?:\.\d+)?", slug.lower())
+
+
+def _common_prefix_len(a: list[str], b: list[str]) -> int:
+    count = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        count += 1
+    return count
+
+
+def closest_opencode_go_model(model: str, models: list[str] | None = None) -> str:
+    """Return the closest included `opencode-go/...` model for a given model name."""
+    if not model:
+        return ""
+    if model.startswith("opencode-go/"):
+        return model
+    candidates = [m for m in (models or ()) if m.startswith("opencode-go/")]
+    if not candidates:
+        candidates = list(KNOWN_OPENCODE_GO_MODELS)
+    target = model.split("/", 1)[-1].lower()
+    target_tokens = _model_tokens(target)
+    if not target_tokens:
+        return candidates[0]
+
+    def score(candidate: str) -> tuple:
+        slug = candidate.split("/", 1)[-1].lower()
+        cand_tokens = _model_tokens(slug)
+        same_family = bool(cand_tokens and cand_tokens[0] == target_tokens[0])
+        prefix_tokens = _common_prefix_len(target_tokens, cand_tokens)
+        shared_tokens = len(set(target_tokens) & set(cand_tokens))
+        char_prefix = len(os.path.commonprefix([target, slug]))
+        ratio = difflib.SequenceMatcher(None, target, slug).ratio()
+        return (slug == target, prefix_tokens, same_family, shared_tokens, char_prefix, ratio)
+
+    return max(candidates, key=score)
 
 
 def catalog(agent: str) -> dict:

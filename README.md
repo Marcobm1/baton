@@ -281,6 +281,15 @@ Leaving the selection at its default uses the CLI configuration. The task
 history records explicit choices. Docker only offers local agents installed
 inside the container.
 
+For an OpenCode task, Baton groups the model list by provider: **Included in
+OpenCode Go** (`opencode-go/…`, covered by your OpenCode Go plan), **Pay as you
+go (credits)** (`opencode/…`, billed to OpenCode Models credits), and any other
+providers such as local servers (`local-*`). Choosing a pay-as-you-go `opencode/`
+model shows a warning under the selector before launching. If a task fails with
+OpenCode's insufficient-balance error because an `opencode/` model is not
+covered by OpenCode Go, the task page shows a clear message and suggests the
+closest included `opencode-go/` model.
+
 Baton finds the repository's clone under `BATON_LOCAL_ROOT` (by its `origin`
 remote; or `BATON_LOCAL_PATHS`), fetches, and creates a **git worktree** (a
 second working folder of the same repository) on a new branch `baton/<id>`, so

@@ -41,8 +41,8 @@
   {% elif task.status == 'sent' %}
     <p>{{ t.cloud_after }}</p>
   {% else %}
-    <p><strong>{{ t.result }}</strong> · {{ t['failure_' ~ report.failure] if report.failure else task.message or t['st_' ~ task.status] }}</p>
-    {% if report.reason %}<p>{{ t.cli_reason }} · {{ report.reason }}</p>{% endif %}
+    <p><strong>{{ t.result }}</strong> · {{ t['failure_' ~ report.failure] if report.failure else task.message or t['st_' ~ task.status] }}{% if report.suggestion %} {{ t.failure_opencode_go_suggest|format(report.suggestion) }}{% endif %}</p>
+    {% if report.reason %}<p>{{ t.oc_cli_reason if task.agent == 'opencode' else t.cli_reason }} · {{ report.reason }}</p>{% endif %}
     <p><strong>{{ t.agent_summary }}</strong> · {{ report.summary|truncate(240) if report.summary else t.no_summary }}</p>
     <p><strong>{{ t.checks }}</strong> · {{ report.checks|truncate(240) if report.checks else t.no_checks }}</p>
   {% endif %}

@@ -10,6 +10,10 @@ establish that any checks ran.
 
 Claude failure advice uses the CLI response from an unsuccessful agent run.
 The selected model name alone cannot establish account access or remaining quota.
+When an OpenCode task fails because a pay-as-you-go `opencode/` model is not covered
+by OpenCode Go ("Insufficient balance ... OpenCode Go covers only requests to the
+OpenCode Go provider"), the task page explains that the model is not included in
+OpenCode Go and suggests the closest included `opencode-go/` model.
 A later Git or pull request failure keeps Baton's own failure message.
 
 ## Task summary (2026-11-23)

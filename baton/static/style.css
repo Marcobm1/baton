@@ -304,6 +304,7 @@ input[type=radio], input[type=checkbox] { accent-color: var(--accent); }
 .task-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .75rem; margin: .9rem 0; }
 .task-settings p { grid-column: 1 / -1; margin: 0; }
 #oc-settings { margin: .9rem 0; }
+#oc-payg-warning { margin: .45rem 0 0; }
 #priority-settings { display: flex; margin: .9rem 0 .3rem; max-width: 18rem; }
 .cloud { margin-top: 1rem; border-top: 1px dashed var(--line); padding-top: .7rem; }
 .cloud summary { color: var(--muted); }

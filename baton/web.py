@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -130,9 +131,30 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                 pass
             await asyncio.sleep(60)
 
+    def thermal_check():
+        hot = models.check_temperature()
+        try:
+            runner.set_overheated(hot)
+        finally:
+            if hot:
+                models.stop_overheated_models()
+
+    async def thermal_loop(stopping):
+        while not stopping.is_set():
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stopping.wait(), 5)
+            if not stopping.is_set():
+                try:
+                    await asyncio.to_thread(thermal_check)
+                except Exception:
+                    logging.getLogger(__name__).exception("GPU temperature check failed")
+
     @contextlib.asynccontextmanager
     async def lifespan(_app):
+        await asyncio.to_thread(thermal_check)
         await asyncio.to_thread(runner.dispatch)   # the queue left by the last run
+        stopping = asyncio.Event()
+        monitor = asyncio.create_task(thermal_loop(stopping))
         # The loop keeps every quota source at most ~N minutes old (pings when
         # enabled, OpenCode Go when a key is set), not only while pages are open.
         loop_task = (asyncio.create_task(_loop())
@@ -147,7 +169,11 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
             runner.on_finished = finished
             update_task = asyncio.create_task(update_loop())
-        yield
+        try:
+            yield
+        finally:
+            stopping.set()
+            await monitor
         await asyncio.to_thread(agent_chats.close_all)   # no OpenCode left behind
         runner.on_finished = None
         if update_task:

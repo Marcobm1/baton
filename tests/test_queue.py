@@ -80,6 +80,34 @@ def _show(origin, ref):
                           text=True, check=True).stdout
 
 
+def test_thermal_stop_preserves_work_and_holds_queue(tmp_path, monkeypatch):
+    work, _ = make_repo(tmp_path)
+    gates = tmp_path / "gates"
+    store, runner = _runner(tmp_path, {"x/demo": work}, gates)
+    monkeypatch.setattr(runner, "_prompt", lambda task: "")
+    runner.submit(_task("hot"))
+    try:
+        for _ in range(200):
+            with runner._lock:
+                if "hot" in runner._procs:
+                    break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("agent did not start")
+        partial = Path(store.get("hot").worktree) / "partial.txt"
+        partial.write_text("unfinished")
+        runner.submit(_task("next"))
+        runner.set_overheated(True)
+        stopped = _wait_done(store, "hot")
+        assert stopped.status == "cancelled" and "85" in stopped.message
+        assert partial.read_text() == "unfinished"
+        assert store.get("next").status == "queued"
+    finally:
+        _open(gates)
+        runner.set_overheated(False)
+    assert _wait_done(store, "next").status == "done"
+
+
 class MergingGitHub:
     """Tests always pass and "merging" really moves origin's main."""
 

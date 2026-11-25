@@ -516,6 +516,8 @@ class Runner:
         # committing") a single step, so a cancel can never slip in between.
         self._lock = threading.Lock()
         self._updating = False
+        self._overheated = False
+        self._thermal_stops: set[str] = set()
         self.on_finished: Callable[[Task], None] | None = None
         # The same lock also guards the queue: while a task is "queued" the
         # queue is its only writer (start, priority change, cancel), always
@@ -573,7 +575,7 @@ class Runner:
         """Start queued tasks while there are free slots. Called when a task
         is submitted, when one finishes and when Baton starts."""
         with self._lock:
-            if self._updating:
+            if self._updating or self._overheated:
                 return
             busy = {t.repo for t in self._active.values()}
             for task in self.queued():
@@ -635,6 +637,21 @@ class Runner:
         return info
 
     # ------------------------------------------------------------ cancelling
+    def set_overheated(self, hot: bool) -> None:
+        with self._lock:
+            was_hot = self._overheated
+            self._overheated = hot
+            if hot:
+                self._thermal_stops.update(self._active)
+                self._cancelled.update(self._active)
+                processes = list(self._procs.values())
+        if hot:
+            for proc in processes:
+                if proc.poll() is None:
+                    kill_tree(proc)
+        elif was_hot:
+            self.dispatch()
+
     def can_cancel(self, task_id: str) -> bool:
         with self._lock:
             thread = self._threads.get(task_id)
@@ -743,6 +760,7 @@ class Runner:
             if new_sha != sha and tests == "passed":
                 self._wait_for_tests(task, new_sha, step, must_exist=True)
             sha = new_sha
+        self._check_cancelled(task)
         self.github.merge(task.repo, number, sha)
         task.merged = True
         # The merge usually ticks the task in STATUS.md: show it now, not when
@@ -759,6 +777,7 @@ class Runner:
         step(f"Waiting for the repository's tests on GitHub ({sha[:7]})")
         start = time.monotonic()
         while True:
+            self._check_cancelled(task)
             c = self.github.checks(task.repo, sha)
             waited = time.monotonic() - start
             if c["failed"]:
@@ -837,15 +856,23 @@ class Runner:
         group = {} if os.name == "nt" else {"start_new_session": True}
         with (open(log_path, "a", encoding="utf-8") as log,
               Ranking(self.store.dir).worktree_env(_clean_env(), wt, reviewer) as env):
-            proc = subprocess.Popen(self._agent_cmd(rtask, wt), stdin=subprocess.PIPE, stdout=log,
-                                    stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                                    errors="replace", cwd=str(wt), env=env, **group,
-                                    **_NO_WINDOW)
+            with self._lock:
+                if task.id in self._cancelled:
+                    raise Cancelled()
+                proc = subprocess.Popen(self._agent_cmd(rtask, wt), stdin=subprocess.PIPE, stdout=log,
+                                        stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                                        errors="replace", cwd=str(wt), env=env, **group,
+                                        **_NO_WINDOW)
+                self._procs[task.id] = proc
             try:
                 proc.communicate(input=prompt, timeout=self.timeout)
             except subprocess.TimeoutExpired:
                 kill_tree(proc)
                 raise LeftOpen(f"the review took longer than {self.timeout // 60} minutes")
+            finally:
+                with self._lock:
+                    self._procs.pop(task.id, None)
+        self._check_cancelled(task)
         output = self._read_output(log_path, start)
         task.review = extract_summary(output, "BATON_REVIEW")
         if task.agent in ("opencode", "local"):
@@ -1020,10 +1047,12 @@ class Runner:
             body = f"Task from Baton, done by {AGENTS.get(task.agent, task.agent)}.\n\n{task.details}".strip()
             self._write_git(task, repo_dir, *ident, "commit", "-m", f"{task.title}\n\n{body}", cwd=wt)
             step("Changes committed")
+            self._check_cancelled(task)
 
             if task.open_pr:
                 self._write_git(task, repo_dir, "push", "-u", "origin", task.branch, cwd=wt)
                 step("Branch pushed to GitHub")
+                self._check_cancelled(task)
                 after = ("Baton merges it when the repository's tests pass, after a review by "
                          "Claude Code or Codex when one is needed." if self.auto_merge
                          else "Review it before merging.")
@@ -1035,6 +1064,8 @@ class Runner:
                 if self.auto_merge:
                     try:
                         self._finish_pr(task, repo_dir, wt, ident, step)
+                    except Cancelled:
+                        raise
                     except GitLockTimeout:
                         raise
                     except LeftOpen as exc:
@@ -1043,12 +1074,19 @@ class Runner:
                     except Exception as exc:  # the PR is safe on GitHub either way
                         task.message = f"Pull request left open for you: {str(exc)[:300]}"
                         step(f"Not merged: {str(exc)[:300]}")
+                if not task.merged:
+                    self._check_cancelled(task)
                 self._write_git(task, repo_dir, "worktree", "remove", "--force", str(wt), check=False)
                 task.worktree = ""
             else:
                 task.message = f"Done: the changes are on the local branch {task.branch} in {wt}."
             task.status = "done"
         except Cancelled:
+            if task.id in self._thermal_stops:
+                task.status = "cancelled"
+                task.message = "Stopped because GPU temperature exceeded 85 °C. Existing work was preserved."
+                self._log(task, task.message)
+                return
             step("Cancelled: the agent and its subprocesses were stopped")
             task.status = "cancelled"
             try:
@@ -1068,6 +1106,7 @@ class Runner:
             self.store.save(task)
             with self._lock:
                 self._cancelled.discard(task.id)
+                self._thermal_stops.discard(task.id)
                 self._committing.discard(task.id)
                 self._threads.pop(task.id, None)
                 self._active.pop(task.id, None)

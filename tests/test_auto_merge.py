@@ -107,6 +107,31 @@ def test_failing_tests_leave_the_pull_request_open(tmp_path, monkeypatch):
     assert "tests failed" in t.message and t.pr_url
 
 
+def test_thermal_stop_during_review_keeps_pr_open(tmp_path, monkeypatch):
+    work, _ = make_repo(tmp_path)
+    monkeypatch.setattr(runner_mod, "_remote_repo", lambda url: "x/demo" if url.strip() else "")
+    gh = FakeGitHub(PASSED)
+    ready = tmp_path / "review-started"
+    review = f"import pathlib, time; pathlib.Path({str(ready)!r}).touch(); time.sleep(30)"
+    store, runner, _ = _runner(tmp_path, work, gh, review=review)
+    runner.submit(Task(id="review", repo="x/demo", title="Review", details="", agent="opencode",
+                       where="local", created_at=time.time(), branch="baton/review", base="main"))
+    try:
+        deadline = time.monotonic() + 10
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert ready.exists()
+    finally:
+        runner.set_overheated(True)
+    for _ in range(100):
+        task = store.get("review")
+        if task.status == "cancelled":
+            break
+        time.sleep(0.05)
+    assert task.status == "cancelled" and task.worktree and task.pr_url
+    assert not gh.merged
+
+
 def test_opencode_work_is_reviewed_fixed_and_merged(tmp_path, monkeypatch):
     work, origin = make_repo(tmp_path)
     monkeypatch.setattr(runner_mod, "_remote_repo", lambda url: "x/demo" if url.strip() else "")

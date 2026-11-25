@@ -139,6 +139,35 @@ def test_a_crash_shows_the_log(tmp_path, fake_server):
     assert "start" in row["crashed"]          # the log header Baton writes at each start
 
 
+@pytest.mark.parametrize("hot_at_startup", [True, False])
+def test_thermal_guard_without_page_visits(tmp_path, fake_server, monkeypatch, hot_at_startup):
+    readings = models.parse_gpus("First, 0, 0, 100, 85, 0, 0\nSecond, 0, 0, 100, 85, 0, 0")
+    monkeypatch.setattr(models.LocalModels, "gpus", lambda self: readings)
+    write_config(tmp_path, [model_item(tmp_path, "one")])
+    lm = models.LocalModels(tmp_path)
+    lm.start("one")
+    try:
+        if hot_at_startup:
+            readings[1]["temp"] = 86
+        # The web service inherits the loading server from a previous instance.
+        with TestClient(create_app(Settings(data_dir=tmp_path, self_update=False))):
+            readings[1]["temp"] = 86
+            deadline = time.monotonic() + 10
+            while lm._state()["one"].get("pid") and time.monotonic() < deadline:
+                time.sleep(0.05)
+            assert lm.overview()["models"][0]["status"] == "stopped"
+            with pytest.raises(models.ModelError, match="m_err_temperature"):
+                lm.start("one")
+        assert lm.check_temperature()
+        readings[1]["temp"] = None
+        assert lm.check_temperature()
+        readings[1]["temp"] = 85
+        assert not lm.check_temperature()
+    finally:
+        if lm._proc(lm._state()["one"]):
+            lm.stop("one")
+
+
 def test_port_used_by_another_program(tmp_path, monkeypatch):
     with socket.socket() as busy:
         busy.bind(("127.0.0.1", 0))

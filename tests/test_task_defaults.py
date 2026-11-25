@@ -35,7 +35,8 @@ def test_recommendation_line_is_parsed_and_removed():
 def test_initial_choice_order():
     history = [task("claude-code", "opus", "high", 1), task("codex", "gpt-a", "low", 5),
                task("claude-code", at=9, where="cloud")]
-    pick = lambda asked: task_defaults.initial_choice(asked, history, AVAILABLE, CATALOGS, OC)
+    def pick(asked):
+        return task_defaults.initial_choice(asked, history, AVAILABLE, CATALOGS, OC)
     # The draft's recommendation wins.
     r = pick({"agent": "opencode", "model": OC[0], "effort": ""})
     assert (r["agent"], r["model"], r["source"], r["missing"]) == ("opencode", OC[0], "recommended", "")

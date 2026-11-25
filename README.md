@@ -507,6 +507,7 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_AGY_BIN` | PATH or winget's folder | Path to the Antigravity CLI (`agy.exe`) for Gemini. |
 | `BATON_OPENCODE_DB` | `~/.local/share/opencode/opencode.db` | OpenCode's database (tokens spent; read-only). |
 | `BATON_OPENCODE_GO_KEY` | — | Optional: your OpenCode Go key, only to show its quota. Type it yourself. |
+| `BATON_ACCESS_KEY` | — | Optional (recommended when running local agents): locks the web UI and API behind a 30-day signed `HttpOnly` session cookie so local processes on `127.0.0.1` cannot call Baton endpoints. `/healthz` stays open. |
 
 ## CLI
 
@@ -525,8 +526,16 @@ JSON endpoints: `GET /api/projects`, `GET /api/quotas`.
 
 ## Security notes
 
-- The page has no login. Docker publishes it on `127.0.0.1` only; keep it that
-  way, because it can show private repositories.
+- Docker publishes Baton on `127.0.0.1` only; keep it that way, because it can
+  show private repositories.
+- Set `BATON_ACCESS_KEY` in `.env` whenever you run local agents: it protects
+  the web UI and API with a 30-day HMAC-signed `HttpOnly`, `SameSite=Strict`
+  cookie (`Secure` automatically over HTTPS / Tailscale Serve), stopping a
+  restricted local agent from reaching `http://127.0.0.1:8787` to escalate into
+  a full-permission task. `/healthz` stays open. Every agent subprocess runs
+  with a sanitized environment (`agent_env()`) that strips `BATON_*`,
+  `GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_PAT`, `ANTHROPIC_API_KEY` and
+  `OPENCODE_PERMISSION`. See [`docs/security.md`](docs/security.md).
 - Limit the token to the repositories you use. Read-only contents access is sufficient for browsing.
 - The project detail displays STATUS.md text and agent summaries with HTML escaping.
 - Claude Code, Codex and Gemini tasks run with full permissions (no sandbox,

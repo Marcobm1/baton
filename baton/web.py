@@ -23,6 +23,8 @@ from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
 
 from . import __version__, quotas, usage
+from .auth import (COOKIE_NAME, SESSION_MAX_AGE, LoginRateLimiter, check_access_key,
+                   make_session_token, safe_next_path, verify_session_token)
 from .config import Settings
 from .github import GitHubError, Hub
 from .i18n import ordinal, strings
@@ -36,7 +38,8 @@ from .models import LocalModels, ModelError, chat_payload
 from .agent_chat import EFFORTS, MAX_PROMPT_CHARS, MODES, AgentChats, ChatError, is_abliterated
 from .self_update import SelfUpdate
 from .runner import UpdateInProgress
-from .runner import (AGENTS, PRIORITIES, NEXT_TASK_REQUEST, SUMMARY_REQUEST, next_task_request, LocalRepos, Runner, Task, TaskStore,
+from .runner import (AGENTS, PRIORITIES, NEXT_TASK_REQUEST as NEXT_TASK_REQUEST, SUMMARY_REQUEST,
+                     next_task_request, LocalRepos, Runner, Task, TaskStore,
                      extract_summary, find_opencode, new_id, opencode_models, queue_key)
 
 HERE = Path(__file__).parent
@@ -192,20 +195,48 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     # Anti-CSRF: a random value that only pages served by Baton know. A form
     # posted from any other website can't include it, so it is rejected.
     csrf_token = secrets.token_urlsafe(32)
+    # Separate token for /login so an unauthenticated page never exposes csrf_token.
+    login_csrf = secrets.token_urlsafe(32)
+    access_key = settings.access_key
+    auth_enabled = bool(access_key)
+    login_limiter = LoginRateLimiter()
 
-    def check_post(request: Request, token: str) -> None:
-        if not secrets.compare_digest(token or "", csrf_token):
-            raise HTTPException(403, "Invalid form token; reload the page.")
+    def _check_origin(request: Request) -> None:
         origin = request.headers.get("origin")
         if origin:
             hosts = {request.headers.get("host"), request.headers.get("x-forwarded-host")}
             if urlparse(origin).netloc not in hosts:
                 raise HTTPException(403, "Cross-site request refused.")
 
+    def _is_https(request: Request) -> bool:
+        proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+        return request.url.scheme == "https" or proto == "https"
+
+    def check_post(request: Request, token: str) -> None:
+        if not secrets.compare_digest(token or "", csrf_token):
+            raise HTTPException(403, "Invalid form token; reload the page.")
+        _check_origin(request)
+
+    @app.middleware("http")
+    async def require_auth(request: Request, call_next):
+        if not auth_enabled:
+            return await call_next(request)
+        path = request.url.path
+        if (path == "/healthz" or path.startswith("/static/")) and request.method in ("GET", "HEAD"):
+            return await call_next(request)
+        if path == "/login" and request.method in ("GET", "HEAD", "POST"):
+            return await call_next(request)
+        if verify_session_token(request.cookies.get(COOKIE_NAME), access_key):
+            return await call_next(request)
+        if request.method in ("GET", "HEAD") and not path.startswith("/api/"):
+            target = path + (f"?{request.url.query}" if request.url.query else "")
+            return RedirectResponse(f"/login?next={quote(safe_next_path(target), safe='/?=&')}", status_code=303)
+        return JSONResponse({"detail": "Authentication required."}, status_code=401)
+
     t = strings(settings.lang)
     templates.env.globals.update(
         t=t, title=settings.title, version=__version__, lang=settings.lang, csrf=csrf_token,
-        agents=AGENTS,
+        agents=AGENTS, auth_enabled=auth_enabled,
         # Changes whenever any stylesheet or script changes, so browsers (and
         # phones, which cache hard) never keep an old copy after an update.
         css_v=hashlib.sha256(b"".join(
@@ -249,6 +280,63 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     def page(request: Request, name: str, nav: str, **ctx):
         return templates.TemplateResponse(request, name, {"nav": nav, **ctx})
+
+    # ----------------------------------------------------------------- auth
+    @app.get("/login", response_class=HTMLResponse)
+    async def login_page(request: Request, next: str = "/"):
+        if not auth_enabled:
+            return RedirectResponse("/", status_code=303)
+        dest = safe_next_path(next)
+        if verify_session_token(request.cookies.get(COOKIE_NAME), access_key):
+            return RedirectResponse(dest, status_code=303)
+        return templates.TemplateResponse(
+            request, "login.html",
+            {"next_path": dest, "error": "", "login_csrf": login_csrf},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/login")
+    async def login_submit(request: Request, key: str = Form(""), csrf: str = Form(""),
+                           next: str = Form("/")):
+        if not auth_enabled:
+            return RedirectResponse("/", status_code=303)
+        if not secrets.compare_digest(csrf or "", login_csrf):
+            raise HTTPException(403, "Invalid form token; reload the page.")
+        _check_origin(request)
+        dest = safe_next_path(next)
+        client = request.client.host if request.client else "unknown"
+        if login_limiter.is_limited(client):
+            return templates.TemplateResponse(
+                request, "login.html",
+                {"next_path": dest, "error": t["auth_too_many"], "login_csrf": login_csrf},
+                status_code=429, headers={"Cache-Control": "no-store"},
+            )
+        if not check_access_key(key, access_key):
+            login_limiter.record_failure(client)
+            return templates.TemplateResponse(
+                request, "login.html",
+                {"next_path": dest, "error": t["auth_invalid"], "login_csrf": login_csrf},
+                status_code=401, headers={"Cache-Control": "no-store"},
+            )
+        login_limiter.reset(client)
+        response = RedirectResponse(dest, status_code=303)
+        response.set_cookie(
+            COOKIE_NAME,
+            make_session_token(access_key),
+            max_age=SESSION_MAX_AGE,
+            httponly=True,
+            samesite="strict",
+            secure=_is_https(request),
+            path="/",
+        )
+        return response
+
+    @app.post("/logout")
+    async def logout_submit(request: Request, csrf: str = Form("")):
+        check_post(request, csrf)
+        response = RedirectResponse("/login" if auth_enabled else "/", status_code=303)
+        response.delete_cookie(COOKIE_NAME, path="/")
+        return response
 
     # ------------------------------------------------------------- projects
     @app.get("/", response_class=HTMLResponse)
@@ -329,6 +417,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     async def update_now(request: Request, csrf: str = Form("")):
         check_post(request, csrf)
         if updater.enabled:
+            updater.request_manual()
             update_requested.set()
         return RedirectResponse("/quotas#self-update", status_code=303)
 
@@ -372,8 +461,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         check_post(request, csrf)
         try:
             ranking.review(job, "human", fulfillment, correctness, rework, comment)
-        except KeyError:
-            raise HTTPException(404, "Unknown delegation")
+        except KeyError as exc:
+            raise HTTPException(404, "Unknown delegation") from exc
         # Back to the list (same filter, view and page), with a one-time confirmation.
         if back.startswith("/ranking?") or back == "/ranking":
             sep = "&" if "?" in back else "?"
@@ -436,7 +525,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         models, *choices = await asyncio.gather(
             asyncio.to_thread(opencode_models) if not available["opencode"] else asyncio.sleep(0, result=[]),
             *(asyncio.to_thread(catalog, a) for a in agents))
-        catalogs = dict(zip(agents, choices))
+        catalogs = dict(zip(agents, choices, strict=True))
         initial = task_defaults.initial_choice(
             {"agent": agent, "model": model, "effort": effort}, store.all(),
             available, catalogs, models)
@@ -603,8 +692,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         # Queued; it starts now if its repository and a slot are free.
         try:
             runner.submit(task)
-        except UpdateInProgress:
-            raise HTTPException(503, t["update_testing"])
+        except UpdateInProgress as exc:
+            raise HTTPException(503, t["update_testing"]) from exc
         return RedirectResponse(f"/tasks/{task.id}", status_code=303)
 
     # --------------------------------------------------------------- models

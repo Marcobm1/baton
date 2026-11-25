@@ -24,7 +24,7 @@ import json
 import subprocess
 import sys
 
-from .ping import _NO_WINDOW, _clean_env
+from .ping import _NO_WINDOW, agent_env
 from .ranking import cli_ranking
 from .runner import ALWAYS_DENIED, OPENCODE_CONFIG, READ_RULES, _rule, find_opencode, opencode_models
 
@@ -61,7 +61,7 @@ def run(model: str, prompt: str, cwd: str, write: bool = False, timeout: int = 9
             print(f"Model {model!r} isn't available in OpenCode. Run: baton delegate --list",
                   file=sys.stderr)
             return 2
-    env = _clean_env()
+    env = agent_env()
     ranking = cli_ranking()
     job = ranking.start(model, kind, prompt)
     print(f"Delegation #{job} (baton rate {job} --help)", file=sys.stderr, flush=True)

@@ -33,12 +33,17 @@ Decided 2026-11-23.
   it also locks the worktree folder (a process's current directory can't be
   deleted). The test checks this with a fake agent whose child writes a
   heartbeat file: after the cancel the file must stop growing.
-  - Windows: `taskkill /T /F /PID <pid>` (`/T` = the tree, `/F` = force).
-    Called by its full path in `System32` so a `taskkill.exe` elsewhere on
-    `PATH` can't be picked up instead. Limitation: `/T` follows parent→child
-    links, so a grandchild whose parent already exited is not found. A *Job
-    Object* would catch those too, but needs `ctypes` and Win32 calls; not
-    worth it until it shows up in practice.
+  - Windows: each agent process (in `runner.py` and `agent_chat.py`) is
+    assigned to a **Windows Job Object** (`baton/proc.py` via `ctypes` +
+    `kernel32.dll`) with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. When cancelling,
+    `kill_tree()` calls `TerminateJobObject()`, waits until
+    `QueryInformationJobObject` reports `ActiveProcesses == 0`, and closes the
+    job handle—killing grandchildren even when an intermediate venv launcher or
+    shim has already exited. If Job Object creation/assignment fails, Baton
+    falls back to `System32\taskkill.exe /T /F /PID <pid>`. Per-process
+    locking guarantees `kill_tree()` finishes before `_run()` calls `_discard()`,
+    which also falls back to read-only-safe `shutil.rmtree` + `git worktree prune`
+    if `git worktree remove --force` hits a transient Windows lock.
   - Linux/macOS: the agent starts with `start_new_session=True` (its own
     process group) and `os.killpg(pgid, SIGKILL)` stops the whole group.
 - **One writer per task.** Only the task's thread saves the task; `cancel()`

@@ -41,15 +41,15 @@ Everything is written to <data dir>/tasks/<id>.log and tasks.json.
 from __future__ import annotations
 
 import datetime as dt
-import glob
 import json
 import logging
 import os
 import re
 import shutil
 import sqlite3
-import signal
+import stat
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import asdict, dataclass, field, replace
@@ -57,7 +57,8 @@ from pathlib import Path
 from typing import Callable
 
 from .git_lock import GitLockError, GitLockTimeout, is_lock_error, run_locked
-from .ping import _NO_WINDOW, _clean_env, find_agy, find_claude, find_codex
+from .ping import _NO_WINDOW, agent_env, find_agy, find_claude, find_codex
+from .proc import attach_job, close_job, kill_tree
 from .ranking import Ranking, parse_rating, review_verdict
 from .task_models import catalog
 from .usage import record_gemini
@@ -140,7 +141,8 @@ def opencode_models() -> list[str]:
     if exe:
         try:
             r = subprocess.run([exe, "models"], capture_output=True, text=True, encoding="utf-8",
-                               errors="replace", timeout=60, stdin=subprocess.DEVNULL, **_NO_WINDOW)
+                               errors="replace", timeout=60, stdin=subprocess.DEVNULL,
+                               env=agent_env(), **_NO_WINDOW)
             models = [ln.strip() for ln in r.stdout.splitlines()
                       if re.fullmatch(r"[\w.\-]+/[\w.:\-/]+", ln.strip())]
         except (OSError, subprocess.SubprocessError):
@@ -489,33 +491,6 @@ class Cancelled(Exception):
     """Raised inside a task's thread when the owner cancelled it."""
 
 
-def kill_tree(proc: subprocess.Popen) -> None:
-    """Stop a process and every process it started.
-
-    `proc.kill()` only stops the direct child; Claude Code, Codex and OpenCode
-    start their own subprocesses (node, shells, tools) that would keep running.
-    On Windows `taskkill /T` walks the tree of child processes; elsewhere the
-    agent runs in its own process group (start_new_session) and the whole
-    group gets the signal.
-    """
-    if os.name == "nt":
-        taskkill = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "taskkill.exe"
-        try:
-            subprocess.run([str(taskkill), "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
-                           timeout=30, stdin=subprocess.DEVNULL, **_NO_WINDOW)
-        except (OSError, subprocess.SubprocessError):
-            pass
-    else:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        proc.kill()  # last resort: at least the direct child
-
-
 def new_id(title: str) -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + _slug(title)
 
@@ -767,6 +742,25 @@ class Runner:
                 break
             time.sleep(0.5)
         if wt.exists():
+            # Fallback if git worktree remove hit a transient Windows lock or
+            # read-only file: clear read-only attributes and remove directly,
+            # then let `git worktree prune` drop the metadata entry.
+            def _clear_readonly(func, path, _exc):
+                try:
+                    os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+                    func(path)
+                except OSError:
+                    pass
+
+            for _ in range(6):
+                if sys.version_info >= (3, 12):
+                    shutil.rmtree(wt, onexc=_clear_readonly)
+                else:
+                    shutil.rmtree(wt, onerror=_clear_readonly)
+                if not wt.exists():
+                    break
+                time.sleep(0.5)
+        if wt.exists():
             return f"The worktree could not be removed; delete it by hand: {wt}"
         self._write_git(task, repo_dir, "worktree", "prune", check=False)
         self._write_git(task, repo_dir, "branch", "-D", task.branch, check=False)
@@ -891,7 +885,7 @@ class Runner:
         start = log_path.stat().st_size if log_path.exists() else 0
         group = {} if os.name == "nt" else {"start_new_session": True}
         with (open(log_path, "a", encoding="utf-8") as log,
-              Ranking(self.store.dir).worktree_env(_clean_env(), wt, reviewer) as env):
+              Ranking(self.store.dir).worktree_env(agent_env(), wt, reviewer) as env):
             with self._lock:
                 if task.id in self._cancelled:
                     raise Cancelled()
@@ -901,15 +895,23 @@ class Runner:
                                         stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                                         errors="replace", cwd=str(wt), env=env, **group,
                                         **_NO_WINDOW)
+                attach_job(proc)
                 self._procs[task.id] = proc
             try:
                 proc.communicate(input=prompt, timeout=self.timeout)
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as exc:
                 kill_tree(proc)
-                raise LeftOpen(f"the review took longer than {self.timeout // 60} minutes")
+                raise LeftOpen(f"the review took longer than {self.timeout // 60} minutes") from exc
+            except OSError:
+                proc.wait()
             finally:
                 with self._lock:
                     self._procs.pop(task.id, None)
+                    cancelled = task.id in self._cancelled
+                if cancelled:
+                    kill_tree(proc)
+                else:
+                    close_job(proc)
         self._check_cancelled(task)
         output = self._read_output(log_path, start)
         task.review = extract_summary(output, "BATON_REVIEW")
@@ -1050,7 +1052,7 @@ class Runner:
 
             label = AGENTS.get(task.agent, task.agent) + (f" ({task.model})" if task.model else "")
             step(f"Running {label}…")
-            env = _clean_env()
+            env = agent_env()
             if task.agent == "opencode":
                 env["OPENCODE_CONFIG_CONTENT"] = json.dumps(OPENCODE_CONFIG)
             # Claude and Codex read the prompt from stdin; OpenCode and Gemini get
@@ -1072,6 +1074,7 @@ class Runner:
                                             stdout=log, stderr=subprocess.STDOUT, text=True,
                                             encoding="utf-8", errors="replace", cwd=str(wt),
                                             env=env, **group, **_NO_WINDOW)
+                    attach_job(proc)
                     self._procs[task.id] = proc
                 try:
                     proc.communicate(input=stdin_text, timeout=self.timeout)
@@ -1084,6 +1087,13 @@ class Runner:
                 finally:
                     with self._lock:
                         self._procs.pop(task.id, None)
+                        cancelled = task.id in self._cancelled
+                    if cancelled:
+                        # Serialized with cancel(): guarantees full process-tree
+                        # teardown finishes before _discard() removes the worktree.
+                        kill_tree(proc)
+                    else:
+                        close_job(proc)
             # Only the end of this agent run can contain its final report.
             # agy's JSON lines: the whole run, so the first (`init`) and the
             # last (`result`, with the full answer) lines are both complete.

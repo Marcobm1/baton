@@ -56,6 +56,12 @@
           {{ icon(key) }}<span>{{ t['theme_' ~ key] }}</span></button>
         {% endfor %}
       </div>
+      {% if auth_enabled %}
+      <form method="post" action="/logout" class="side-logout">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" class="btn-link">{{ t.auth_sign_out }}</button>
+      </form>
+      {% endif %}
       <p class="side-meta">Baton {{ version }} · <a href="https://github.com/Marcobm1/baton">GitHub</a></p>
     </div>
   </aside>

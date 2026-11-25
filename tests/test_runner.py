@@ -223,7 +223,6 @@ def test_cancel_stops_the_agent_and_its_children(tmp_path, monkeypatch):
 
 
 def test_cancel_from_the_task_page(tmp_path, monkeypatch):
-    import asyncio
     import re
     from fastapi.testclient import TestClient
     from baton import github, web

@@ -37,3 +37,12 @@ the data directory captures helper errors if the server is already down.
 On other native platforms the process replaces itself with the same serve
 command. At startup the new process records its commit as running, so a
 successful test run and a confirmed restart can be distinguished.
+
+When an update fails validation and rolls back, Baton remembers the failed
+`origin/main` commit SHA (both in memory and when restoring `updates.jsonl`
+after a restart). Automatic 5-minute checks skip that same SHA (`skipped`) so
+a broken commit does not loop `pytest -q` and block task submission with HTTP
+503 every five minutes. Validation runs again automatically as soon as
+`origin/main` advances to a new commit, or immediately when you click **Update
+now** (`POST /self-update`).
+

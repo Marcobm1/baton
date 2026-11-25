@@ -9,13 +9,19 @@ Baton is a small FastAPI app (`baton/`) plus a CLI. Read `README.md` first.
 - Run the tests before finishing: `pip install -e ".[dev]" && pytest -q`.
 - Keep dependencies pinned to exact versions in `pyproject.toml`.
 - `baton/statusline.py` and `baton/quotas.py` must stay standard-library only.
-- Baton must never read, store or send AI-provider credentials (Claude, OpenAI).
-  Quota data comes only from what the official CLIs report themselves.
-- Local tasks must keep running agents only inside their own git worktree, with
-  the CLIs' limited permission modes (Claude `auto`, Codex `workspace-write`,
-  OpenCode's `baton` agent: deny everything first, then allow). Never pass a task's text
-  through a shell or a `.cmd` wrapper.
-- `baton/usage.py` reads local logs for numbers only, never conversation text.
+- Baton must never read, store or send AI-provider credentials (Claude, OpenAI,
+  Google). Quota data comes only from what the official CLIs report themselves.
+- Local tasks must start agents only inside their own git worktree. Claude Code,
+  Codex and Gemini run with full permissions (Marco's decision, 2026-11-25; see
+  `docs/auto-merge.md`): Claude `--dangerously-skip-permissions`, Codex
+  `--dangerously-bypass-approvals-and-sandbox`, Gemini (`agy`)
+  `--dangerously-skip-permissions`, and their work merges without a review.
+  OpenCode (its `baton` agent: deny everything first, then allow) and local AI
+  (Codex `workspace-write`) keep limited modes and are reviewed by Claude Code,
+  which reviews in its limited `auto` mode. Abliterated models never get full
+  permissions. Never pass a task's text through a shell or a `.cmd` wrapper.
+- `baton/usage.py` reads local logs for numbers only, never conversation text
+  (Gemini's token counts are written by Baton itself to `gemini-usage.jsonl`).
 - GitHub Actions: `permissions: {}` at the top, minimal per-job permissions,
   only GitHub-made `actions/*` (plus `anthropics/claude-code-action` in
   `claude.yml`), pinned to a full commit SHA with the version in a comment.
@@ -40,7 +46,7 @@ of truth for where the project stands.
     Give it a short title and an indented description of the work and how to
     verify it, even if provisional. Set `next` to the same title.
     Add a line `Recommended: <agent>, <model>, <effort>` to its description
-    (agent: claude-code, codex, opencode or local) with what fits it best;
+    (agent: claude-code, codex, gemini, opencode or local) with what fits it best;
     if it must be done in another repository, add `Repo: <owner/repo>`;
     Prefix completed titles with YYYY-MM-DD when the date is known;
   - update "Blockers" and "Decisions" if they changed;

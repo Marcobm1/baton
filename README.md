@@ -14,7 +14,7 @@ where the previous one left it:
 - **Baton's pages**: **Projects** finds every `STATUS.md` in your GitHub
   account and shows them together (next task, progress, out-of-date warnings);
   **Tasks** sends work to an AI agent with one form; **Quotas** shows your
-  Claude and Codex 5-hour and weekly windows, so you can see what is left to
+  Claude, Codex, Gemini and OpenCode Go windows, so you can see what is left to
   spend before it resets. **Ranking** compares models across OpenCode delegations and
   finished Baton tasks. Switch between agent scores, your scores and their paired
   average, or filter by origin.
@@ -231,6 +231,7 @@ reset with quota left over.
 | **Claude Code** (terminal) | Set Baton as your status line command (below). Claude Code passes `rate_limits.five_hour` and `rate_limits.seven_day` to it, and Baton saves them to `~/.baton/claude-usage.json`. | Claude Code runs status line commands only in the terminal, not in the VS Code extension. Usage on claude.ai counts against the same limits. |
 | **Automatic checks** | Set `BATON_PING_CLAUDE_MINUTES` (and/or `BATON_PING_CODEX_MINUTES`); **5-10 keeps the page fresh**. Every N minutes Baton runs the official CLI with a one-word prompt (`claude -p --model haiku --output-format stream-json --verbose`, `codex exec -`) and records the plan usage it reports. A check is skipped when a fresher reading already exists — you just used the CLI, so its status line or session logs already reported usage — which is why even 5-10 minute intervals cost little extra quota. Also `baton ping [claude\|codex\|all]`. | Needs Baton running natively on the computer where the CLIs are logged in (not in Docker). Each check that runs spends a little quota and opens a 5-hour window if none is open; `BATON_PING_HOURS=8-24` keeps it to your waking hours. Baton removes `ANTHROPIC_API_KEY` from the CLI's environment so the check always uses your plan. |
 | **OpenCode Go** | Its documented usage endpoint, `GET https://opencode.ai/inference/go/v1/usage`, only if you set `BATON_OPENCODE_GO_KEY`. | Free to ask; Baton asks at most every 5 minutes while the server runs, so the card is fresh whenever you look (the page also reloads itself every 5 minutes). |
+| **Gemini** (Antigravity CLI, Google AI plan) | `agy -p /usage --output-format json`: the CLI's own report of the "Gemini Models" 5-hour and weekly windows (percentage left and reset time). | Answered by the CLI without asking any model (0 tokens), so Baton asks at most every 5 minutes while it runs. Only the Gemini group is shown; the separate Claude/GPT allowance inside agy is not used by Baton. |
 
 The newest reading of each window wins. Baton never reads or uses your Claude
 or ChatGPT credentials: the CLIs use their own login. (Reading a subscription
@@ -270,13 +271,22 @@ where it runs:
 
 | Agent | How it runs | Limits |
 |---|---|---|
-| Claude Code | `claude -p --permission-mode auto` | Auto mode: a classifier reviews each action instead of asking you. |
-| Codex | `codex exec -s workspace-write` | Sandbox: it can only write inside the task's folder. |
+| Claude Code | `claude -p --dangerously-skip-permissions` | **Full permissions:** any command, no questions. |
+| Codex | `codex --search exec --dangerously-bypass-approvals-and-sandbox` | **Full permissions, no sandbox:** network and live web search included. |
+| Gemini | `agy -p <task> --output-format stream-json --dangerously-skip-permissions [--model M --effort E]` | **Full permissions.** The [Antigravity CLI](https://antigravity.google) (`agy`, installed with winget) with your Google AI plan; only its Gemini models are offered. Baton reads the report and the tokens from agy's final `result` event. |
 | OpenCode | `opencode run --auto --agent baton -m <model>` | Any model OpenCode lists (free ones, OpenCode Go, your ChatGPT plan, Ollama…). Baton's own `baton` agent starts by denying everything, then allows reading, editing and the terminal, and denies commits, pushes, branch changes, `gh`, MCP tools, Code Mode and subagents. **No OS sandbox:** its terminal runs as you and can write outside the folder (tested), so only send it tasks you wrote. |
-| Local AI | `codex exec --oss --local-provider ollama -m <model>` | Needs `BATON_LOCAL_MODEL` and Ollama or LM Studio. |
+| Local AI | `codex exec --oss --local-provider ollama -s workspace-write -m <model>` | Needs `BATON_LOCAL_MODEL` and Ollama or LM Studio. Keeps the sandbox; abliterated models never get full permissions. |
 
-For a local Claude Code or Codex task, choose a model and then its reasoning
-effort. Both lists come from the installed CLI and are cached for ten minutes.
+Full permissions for Claude Code, Codex and Gemini were Marco's decision on
+2026-11-25: they still start in the task's own worktree, but nothing stops them
+from writing elsewhere or using the network, so send them only tasks you wrote
+(see [`docs/auto-merge.md`](docs/auto-merge.md)).
+
+For a local Claude Code, Codex or Gemini task, choose a model and then its
+reasoning effort. Both lists come from the installed CLI and are cached for ten
+minutes. For Gemini, `agy models` lists one slug per model and level
+(`gemini-4-neon-high`); Baton shows the model once (`gemini-4-neon`) with its
+levels and passes `--model gemini-4-neon --effort high`.
 Leaving the selection at its default uses the CLI configuration. The task
 history records explicit choices. Docker only offers local agents installed
 inside the container.
@@ -299,14 +309,13 @@ or push: Baton commits what changed, pushes the branch and opens a pull request,
 then removes the worktree. With **auto-merge** (`BATON_AUTO_MERGE=1`, the
 default) Baton then merges the pull request by itself:
 
-- Claude Code and Codex work is merged once the repository's tests pass on GitHub.
-- OpenCode and local-AI work, and any work in a repository that runs no tests
-  on GitHub, is first **reviewed** by Claude Code or Codex in the same worktree.
+- Claude Code, Codex and Gemini work is merged **without a review** once the
+  repository's tests pass on GitHub (or at once if it runs no tests).
+- OpenCode and local-AI work is first **reviewed** by Claude Code (Opus,
+  medium effort by default, in its limited `auto` mode) in the same worktree.
   The reviewer fixes what it finds (Baton commits and pushes the fixes, and the
   tests run again) and ends with a verdict: `APPROVE`, `FIXED` or `BLOCK`. Its
-  review is posted on the pull request and shown on the task page. OpenCode
-  work goes to whichever of the two has more of its 5-hour quota left; Claude
-  Code work is reviewed by Codex and the other way round.
+  review is posted on the pull request and shown on the task page.
 - Failing tests, a `BLOCK`, no verdict, no reviewer available or anything
   unexpected leave the pull request open for you, with the reason on the task
   page. Baton merges only the exact commit it checked.
@@ -421,6 +430,14 @@ served by Ollama or LM Studio are grouped as *Local AI*. Only numbers, model
 names and dates are read. Chats on claude.ai or chatgpt.com leave no log on
 your computer, so they are not counted.
 
+Gemini has no such log Baton can read, so Baton writes its own:
+`~/.baton/gemini-usage.jsonl` gets one line (date, model and the input,
+output, thinking and cache-read token counts, never text) at the end of each
+Gemini task (agy's `result` event) and each Agents chat turn (the ACP
+`session/prompt` answer). Gemini used outside Baton (the Antigravity app or
+your own `agy` sessions) is not counted there, but it does show in the quota
+windows above.
+
 ## Local models
 
 The **Models** page shows this computer (CPU, RAM, disk, GPU load, VRAM,
@@ -434,7 +451,7 @@ that file says, always bound to `127.0.0.1`.
 The **Chat** page talks to them from any device (Baton relays and streams the answer;
 the model stays on `127.0.0.1`). See [docs/models.md](docs/models.md).
 
-### Agents chat (OpenCode)
+### Agents chat (OpenCode and Gemini)
 
 On the Chat page, pick **Agent → OpenCode** to chat with OpenCode about one
 folder: one of your local clones or the scratch folder (`BATON_CHAT_SCRATCH`,
@@ -446,6 +463,13 @@ asking; any write, edit, command or access outside the folder shows the exact
 command or diff with **Allow / Deny** (denied after 10 minutes without an
 answer). **All permissions** is disabled until the isolated container exists.
 See [docs/agents-chat.md](docs/agents-chat.md).
+
+**Agent → Gemini** works the same way over `agy acp`, with a model and its
+thinking level (only the levels that model offers). Baton puts agy in its own
+**Default** mode: every terminal command asks first, but agy edits files
+inside the folder without asking, and Baton cannot add its own rules as it does
+for OpenCode (checked with agy 1.5.17). Use the scratch folder or a clone whose
+changes you can review with `git diff`.
 
 ## Configuration
 
@@ -473,14 +497,14 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_TASK_TIMEOUT_MINUTES` | `60` | Stop a local task after this long. |
 | `BATON_GIT_NAME` / `BATON_GIT_EMAIL` | Baton | Commit identity when the clone has none. |
 | `BATON_CLOUD_TASKS` | `1` | `0` hides the GitHub Actions option. |
-| `BATON_AUTO_MERGE` | `1` | Local tasks: merge the pull request when the tests pass, after a review by Claude Code or Codex when needed. `0` leaves a draft for you. |
-| `BATON_REVIEW_CLAUDE_MODEL`, `BATON_REVIEW_CLAUDE_EFFORT` | *(CLI default)* | Model and reasoning effort Claude Code uses when it reviews work before merging, e.g. `opus` and `medium`. A value the CLI doesn't list falls back to its default. |
-| `BATON_REVIEW_CODEX_MODEL`, `BATON_REVIEW_CODEX_EFFORT` | *(CLI default)* | The same for Codex as reviewer. |
+| `BATON_AUTO_MERGE` | `1` | Local tasks: merge the pull request when the tests pass; OpenCode and local-AI work after a review by Claude Code. `0` leaves a draft for you. |
+| `BATON_REVIEW_CLAUDE_MODEL`, `BATON_REVIEW_CLAUDE_EFFORT` | `opus`, `medium` | Model and reasoning effort Claude Code reviews OpenCode and local-AI work with. Empty = the CLI's default. A value the CLI doesn't list falls back to its default. |
 | `BATON_MAX_PARALLEL` | `3` | Local tasks running at the same time on this computer (always one per repository); the rest wait in the queue. |
 | `BATON_SELF_UPDATE` | `1` | Automatically update a native Baton checkout. Set to `0` to disable automatic and manual update checks. |
 | `CODEX_HOME` | `~/.codex` | Where Codex keeps its logs. |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Where Claude Code keeps its logs (tokens spent). |
 | `BATON_OPENCODE_BIN` | found on PATH | Path to `opencode.exe` if it isn't found. |
+| `BATON_AGY_BIN` | PATH or winget's folder | Path to the Antigravity CLI (`agy.exe`) for Gemini. |
 | `BATON_OPENCODE_DB` | `~/.local/share/opencode/opencode.db` | OpenCode's database (tokens spent; read-only). |
 | `BATON_OPENCODE_GO_KEY` | — | Optional: your OpenCode Go key, only to show its quota. Type it yourself. |
 
@@ -505,6 +529,9 @@ JSON endpoints: `GET /api/projects`, `GET /api/quotas`.
   way, because it can show private repositories.
 - Limit the token to the repositories you use. Read-only contents access is sufficient for browsing.
 - The project detail displays STATUS.md text and agent summaries with HTML escaping.
+- Claude Code, Codex and Gemini tasks run with full permissions (no sandbox,
+  no questions). Only send them tasks you wrote; their work merges without a
+  review.
 - OpenCode has no OS sandbox. Baton's rules stop commits, pushes and its extra
   tools, not a terminal command that writes elsewhere. Read-only is the default
   for `baton delegate`.

@@ -2,4 +2,5 @@
 .quotas .q-logo { vertical-align: middle; margin-right: .45em; object-fit: contain; }
 .quota[data-provider="claude"] .q-row:not(.v-fast):not(.v-exhausted) .bar .fill { background: var(--claude); }
 .quota[data-provider="codex"] .q-row:not(.v-fast):not(.v-exhausted) .bar .fill { background: var(--openai); }
+.quota[data-provider="gemini"] .q-row:not(.v-fast):not(.v-exhausted) .bar .fill { background: var(--gemini); }
 .quota[data-provider="opencode"] .q-row:not(.v-fast):not(.v-exhausted) .bar .fill { background: var(--opencode); }

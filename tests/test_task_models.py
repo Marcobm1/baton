@@ -59,8 +59,11 @@ def test_opencode_models_are_grouped_and_payg_warns_in_form(tmp_path, monkeypatc
     assert "billed to OpenCode Models credits" in page_payg
 
 
-@pytest.mark.parametrize("agent", ["codex", "claude-code"])
+@pytest.mark.parametrize("agent", ["codex", "claude-code", "gemini"])
 def test_model_and_effort_reach_local_command(tmp_path, monkeypatch, agent):
+    from baton import runner as runner_mod
+    monkeypatch.setattr(runner_mod, "catalog", lambda a: {})      # no real CLI in the prompt
+    monkeypatch.setattr(runner_mod, "opencode_models", lambda: [])
     async def projects(self, force=False):
         return [SimpleNamespace(repo="x/demo", branch="main")], []
 

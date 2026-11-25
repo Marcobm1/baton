@@ -79,12 +79,10 @@ class Settings:
     self_update: bool = True
     auto_merge: bool = True          # local tasks: merge the PR when tests pass / review allows
     max_parallel: int = 3            # local tasks running at once on this computer
-    # Model and reasoning effort of the agent that reviews work before merging
-    # (empty = that CLI's own default).
-    review_claude_model: str = ""
-    review_claude_effort: str = ""
-    review_codex_model: str = ""
-    review_codex_effort: str = ""
+    # Model and reasoning effort Claude Code uses when it reviews OpenCode and
+    # local-AI work before merging (empty = the CLI's own default).
+    review_claude_model: str = "opus"
+    review_claude_effort: str = "medium"
     # Scratch folder offered by the Agents chat next to the local repositories.
     chat_scratch: str = r"C:\IA\pruebas-opencode" if os.name == "nt" else ""
     claude_home: Path = Path.home() / ".claude"
@@ -130,10 +128,8 @@ class Settings:
             self_update=os.environ.get("BATON_SELF_UPDATE", "1") != "0",
             auto_merge=os.environ.get("BATON_AUTO_MERGE", "1") != "0",
             max_parallel=max(1, int(os.environ.get("BATON_MAX_PARALLEL", "3") or 3)),
-            review_claude_model=os.environ.get("BATON_REVIEW_CLAUDE_MODEL", "").strip(),
-            review_claude_effort=os.environ.get("BATON_REVIEW_CLAUDE_EFFORT", "").strip().lower(),
-            review_codex_model=os.environ.get("BATON_REVIEW_CODEX_MODEL", "").strip(),
-            review_codex_effort=os.environ.get("BATON_REVIEW_CODEX_EFFORT", "").strip().lower(),
+            review_claude_model=os.environ.get("BATON_REVIEW_CLAUDE_MODEL", "opus").strip(),
+            review_claude_effort=os.environ.get("BATON_REVIEW_CLAUDE_EFFORT", "medium").strip().lower(),
             chat_scratch=os.environ.get("BATON_CHAT_SCRATCH",
                                         r"C:\IA\pruebas-opencode" if os.name == "nt" else "").strip(),
             claude_home=Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"),

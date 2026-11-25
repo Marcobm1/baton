@@ -9,6 +9,8 @@ Sources, all local and passive (Baton never reads or sends your credentials):
   * OpenCode Go: its documented usage endpoint, only if you put your Go key
     in BATON_OPENCODE_GO_KEY (the one exception to the rule above; optional).
     The answer (percentages and dates, never the key) goes to opencode-go.json.
+  * Gemini (Antigravity CLI): what `agy -p /usage` reports itself (no model
+    is asked), saved by ping.fetch_gemini_quota() in gemini-quota.json.
 The newest reading of each window wins.
 """
 
@@ -218,18 +220,40 @@ def opencode_go_windows(data_dir: Path) -> list[Window]:
     return out
 
 
+# ------------------------------------------------------- Gemini (agy CLI)
+
+def gemini_windows(data_dir: Path) -> list[Window]:
+    f = data_dir / "gemini-quota.json"
+    try:
+        snap = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    out = []
+    for kind in ("5h", "week"):
+        w = (snap.get("windows") or {}).get(kind)
+        if not isinstance(w, dict) or w.get("left") is None:
+            continue
+        try:
+            resets = _iso_to_ts(w["resets_at"]) if w.get("resets_at") else None
+        except ValueError:
+            resets = None
+        out.append(Window("gemini", kind, 100.0 - float(w["left"]), resets,
+                          float(snap.get("seen_at") or 0), "agy-usage"))
+    return out
+
+
 # ---------------------------------------------------------------- combined
 
 def all_windows(data_dir: Path, codex_home: Path) -> list[dict[str, Any]]:
     readings = (codex_windows(codex_home) + claude_statusline_windows(data_dir)
-                + opencode_go_windows(data_dir))
+                + opencode_go_windows(data_dir) + gemini_windows(data_dir))
     best: dict[tuple[str, str], Window] = {}
     for w in readings:
         k = (w.provider, w.kind)
         if k not in best or best[k].seen_at < w.seen_at:
             best[k] = w
     now = time.time()
-    order = {"claude": 0, "codex": 1, "opencode": 2}
+    order = {"claude": 0, "codex": 1, "gemini": 2, "opencode": 3}
     views = [w.view(now) for w in best.values()]
     views.sort(key=lambda v: (order.get(v["provider"], 9), v["provider"], list(MINUTES).index(v["kind"])))
     return views

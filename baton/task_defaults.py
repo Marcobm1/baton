@@ -24,7 +24,7 @@ def _usable(choice: dict, available: dict, catalogs: dict, oc_models: list) -> d
     if not agent or available.get(agent, "missing"):
         return {}
     model, effort = choice.get("model", ""), choice.get("effort", "")
-    if agent in ("claude-code", "codex"):
+    if agent in ("claude-code", "codex", "gemini"):
         options = catalogs.get(agent) or {}
         if model not in options:
             model, effort = "", ""

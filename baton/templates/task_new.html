@@ -24,8 +24,8 @@
     <p class="muted small">{{ t.where_local_help }}</p>
     <div class="choices">
       {% set first = namespace(done=false) %}
-      {% for key in ['claude-code', 'codex', 'opencode', 'local'] %}
-      {% set why = available[key] %}
+      {% for key in ['claude-code', 'codex', 'gemini', 'opencode', 'local'] %}
+      {% set why = available.get(key, 'not available') %}
       {% set pick = (key == initial.agent) if initial.agent else not first.done %}
       <label class="choice {% if why %}off{% endif %}">
         <input type="radio" name="where" value="local:{{ key }}" {% if why %}disabled{% elif pick and not first.done %}checked{% set first.done = true %}{% endif %}>

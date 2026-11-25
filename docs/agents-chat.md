@@ -106,6 +106,43 @@ isolated container exists.
   could resume it with `session/load`; not wired yet).
 - Only OpenCode; Claude Code and Codex are phase 2.
 
+## Gemini over `agy acp` (2026-11-25)
+
+**Agent → Gemini** uses the same code with a second profile
+(`baton/agent_chat.py`, `PROFILES`): Baton starts `agy acp` (the Antigravity CLI,
+never with `--dangerously-skip-permissions`) and speaks the same ACP.
+
+- **Models and effort.** The picker lists the Gemini models from `agy models`
+  (`gemini-4-*`, `gemini-3.8-flash`, the Orchestrators), once per model; each
+  option carries the thinking levels that model offers (`data-efforts`), and
+  the effort list shows only those. On the server the model must be in that
+  catalog. Baton sets `mode`, `model` and agy's `thought_level` option with
+  `session/set_config_option` and checks each answer, like for OpenCode.
+- **Permissions: agy's own "Default" mode, not Baton's rules.** agy offers the
+  modes `default`, `accept-edits`, `auto` and `plan`; Baton sets `default`
+  (fail closed: the conversation is refused if agy keeps another one). Checked
+  with agy 1.5.17 on Marco's PC:
+  - a terminal command (`echo hola-baton`) sent `session/request_permission`
+    with `allow_once` / `reject_once`; denying it stopped the command;
+  - a file write inside the folder (`b.txt`) ran **without asking**, and
+    reading files did too.
+  So for Gemini the Confirm boundary covers commands, not edits inside the
+  folder; the page says so under "Confirm". Baton cannot pass per-path rules
+  as it does for OpenCode (`agy acp` has no `--settings` option, and Baton
+  does not edit agy's own `settings.json`). Pick the scratch folder or a clone
+  whose changes you can check with `git diff`.
+- **Environment:** the same as OpenCode's minus OpenCode's inline config:
+  no `BATON_*`, `GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_PAT`. agy keeps its
+  Google login in its own files; Baton never reads them.
+- **Tokens.** Each `session/prompt` answer from agy carries `usage`
+  (`inputTokens`, `outputTokens`, `thoughtTokens`, `cachedReadTokens`); Baton
+  appends those numbers and the model to `gemini-usage.jsonl` for the Quotas
+  page. agy's input count leaves out cached input (input + output + cache read
+  = total in the checked answers).
+- **Tests:** `tests/test_gemini.py` runs the chat against the fake ACP agent in
+  its `--gemini` role (starts in `auto`, so the test proves Baton switches to
+  `default`).
+
 ## Next: isolated container for All permissions
 
 Docker Desktop is installed. Run the agent in a container that mounts only the

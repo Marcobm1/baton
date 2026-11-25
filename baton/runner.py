@@ -5,15 +5,22 @@ Flow for one task:
   2. `git fetch` and create a *worktree* (a second working folder of the same
      repository) on a new branch `baton/<id>`, so the agent never touches the
      folder you work in;
-  3. run the agent there with limited permissions:
-       claude-code  `claude -p --permission-mode auto` (a classifier reviews actions)
-       codex        `codex exec -s workspace-write` (sandbox: writes only there)
-       local        `codex exec --oss` with a local model (Ollama or LM Studio)
+  3. run the agent there. Claude Code, Codex and Gemini get full permissions
+     (the owner's decision, 2026-11-25: they work unattended in the worktree);
+     OpenCode and local AI keep Baton's limits:
+       claude-code  `claude -p --dangerously-skip-permissions`
+       codex        `codex --search exec --dangerously-bypass-approvals-and-sandbox`
+                    (no sandbox: network and live web search included)
+       gemini       `agy -p <prompt> --output-format stream-json --dangerously-skip-permissions`
+       opencode     `opencode run --agent baton` (deny-everything-then-allow rules)
+       local        `codex exec --oss -s workspace-write` with a local model
   4. Baton commits what changed, pushes the branch and opens a pull request;
   5. with auto-merge on (the default), Baton waits for the repository's tests
-     on GitHub. Work by OpenCode or local AI, and any work in a repository
-     without tests, is first reviewed by Claude Code or Codex, which fixes what
-     it finds. Then Baton merges the pull request (see docs/auto-merge.md);
+     on GitHub. Work by Claude Code, Codex or Gemini is merged without a review
+     (with or without tests). Work by OpenCode or local AI is first reviewed by
+     Claude Code (Opus, medium effort by default, in its limited `auto` mode),
+     which fixes what it finds. Then Baton merges the pull request (see
+     docs/auto-merge.md);
   6. the worktree is removed once the branch is safe on GitHub.
 
 Tasks wait in a queue: one task at a time per repository and at most
@@ -50,13 +57,15 @@ from pathlib import Path
 from typing import Callable
 
 from .git_lock import GitLockError, GitLockTimeout, is_lock_error, run_locked
-from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
+from .ping import _NO_WINDOW, _clean_env, find_agy, find_claude, find_codex
 from .ranking import Ranking, parse_rating, review_verdict
 from .task_models import catalog
+from .usage import record_gemini
 
 AGENTS = {
     "claude-code": "Claude Code",
     "codex": "Codex",
+    "gemini": "Gemini",
     "opencode": "OpenCode",
     "local": "IA local",
 }
@@ -138,6 +147,37 @@ def opencode_models() -> list[str]:
             models = []
     _models_cache = (time.time(), models)
     return models
+
+
+# Agents whose work Claude Code reviews (and rates) before it is merged. The
+# others (Claude Code, Codex, Gemini) run with full permissions and merge alone.
+REVIEWED_AGENTS = ("opencode", "local")
+
+
+def agy_events(output: str) -> tuple[str, dict]:
+    """The model of agy's `init` event and its last `result` event.
+
+    With `--output-format stream-json` agy writes one JSON object per line:
+    `init` (model, tools, permission mode), `step_update` (text deltas, tool
+    steps) and finally `result` (status, the whole `response` text and the
+    token `usage`). The final report sits inside `response` as an escaped
+    JSON string, so it is read from there rather than from the raw lines.
+    """
+    model, result = "", {}
+    for line in output.splitlines():
+        if not line.startswith("{") or '"event"' not in line:
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        if ev.get("event") == "init" and isinstance(ev.get("init"), dict):
+            model = str(ev["init"].get("model") or model)
+        elif ev.get("event") == "result" and isinstance(ev.get("result"), dict):
+            result = ev["result"]
+    return model, result
 
 
 def cached_opencode_models() -> list[str]:
@@ -535,6 +575,7 @@ class Runner:
         out["claude-code"] = "" if find_claude() else "Claude Code CLI not found"
         codex = find_codex()
         out["codex"] = "" if codex else "Codex CLI not found"
+        out["gemini"] = "" if find_agy() else "Antigravity CLI (agy) not found"
         out["opencode"] = "" if find_opencode() else "OpenCode CLI not found"
         out["local"] = ("" if (codex and self.local_model)
                         else "set BATON_LOCAL_MODEL (and install Ollama or LM Studio)")
@@ -738,12 +779,12 @@ class Runner:
             f.write(text if text.endswith("\n") else text + "\n")
 
     @staticmethod
-    def _read_output(log_path: Path, start: int) -> str:
-        """The tail of the output written by this agent run."""
+    def _read_output(log_path: Path, start: int, limit: int = 65536) -> str:
+        """The tail (last `limit` bytes) of the output written by this agent run."""
         try:
             with open(log_path, "rb") as log:
                 end = log.seek(0, 2)
-                log.seek(max(start, end - 65536))
+                log.seek(max(start, end - limit))
                 return log.read().decode("utf-8", errors="replace")
         except OSError:
             return ""
@@ -754,7 +795,9 @@ class Runner:
         number = pr_number(task.pr_url)
         sha = self._git(wt, "rev-parse", "HEAD")
         tests = self._wait_for_tests(task, sha, step)
-        if task.agent in ("opencode", "local") or tests == "none":
+        # Claude Code, Codex and Gemini are trusted to merge on their own
+        # (also in a repository without tests); OpenCode and local AI are not.
+        if task.agent in REVIEWED_AGENTS:
             reviewer = self._pick_reviewer(task)
             new_sha = self._review(task, repo_dir, wt, reviewer, number, ident, step)
             if new_sha != sha and tests == "passed":
@@ -795,22 +838,15 @@ class Runner:
             time.sleep(self.ci_poll)
 
     def _pick_reviewer(self, task: Task) -> str:
-        """Claude Code or Codex. For OpenCode/local work, the one with more 5 h
-        quota left; for Claude Code or Codex work, the other one."""
-        available = [a for a, why in self.agents_available().items()
-                     if not why and a in ("claude-code", "codex")]
-        if task.agent in ("claude-code", "codex"):
-            other = "codex" if task.agent == "claude-code" else "claude-code"
-            if other not in available:
-                raise LeftOpen(f"this repository has no tests and {AGENTS[other]} is not "
-                               "available to review the work")
-            return other
-        left = {a: (self.quota_left(a) if self.quota_left else None) for a in available}
-        usable = [a for a in available if left[a] is None or left[a] > 0]
-        if not usable:
-            raise LeftOpen("neither Claude Code nor Codex is available (or has quota left) to review")
-        # Most quota left first; an unknown reading counts as 1 %; ties go to Claude Code.
-        return max(usable, key=lambda a: (1.0 if left[a] is None else left[a], a == "claude-code"))
+        """Claude Code reviews OpenCode and local-AI work (Opus, medium effort
+        unless BATON_REVIEW_CLAUDE_* say otherwise). Without it, or without
+        quota left in its 5-hour window, the pull request stays open."""
+        if self.agents_available().get("claude-code", "missing"):
+            raise LeftOpen("Claude Code is not available to review the work")
+        left = self.quota_left("claude-code") if self.quota_left else None
+        if left is not None and left <= 0:
+            raise LeftOpen("Claude Code has no quota left to review the work")
+        return "claude-code"
 
     def reviewer_model(self, reviewer: str) -> tuple[str, str]:
         """The configured model and effort for a reviewer, if its CLI lists them.
@@ -842,7 +878,7 @@ class Runner:
         prompt = REVIEW_PROMPT.format(author=AGENTS.get(task.agent, task.agent), repo=task.repo,
                                       branch=task.branch, base=task.base, title=task.title,
                                       details=task.details or "(no more details)")
-        if task.agent in ("opencode", "local"):
+        if task.agent in REVIEWED_AGENTS:
             prompt += (
                 "\nAfter the marked review, rate the original delivery before your fixes. "
                 "Put BATON_RATING_BEGIN and BATON_RATING_END on separate lines around one JSON "
@@ -859,7 +895,9 @@ class Runner:
             with self._lock:
                 if task.id in self._cancelled:
                     raise Cancelled()
-                proc = subprocess.Popen(self._agent_cmd(rtask, wt), stdin=subprocess.PIPE, stdout=log,
+                # The reviewer reads work by a less trusted model: limited mode.
+                proc = subprocess.Popen(self._agent_cmd(rtask, wt, restricted=True),
+                                        stdin=subprocess.PIPE, stdout=log,
                                         stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                                         errors="replace", cwd=str(wt), env=env, **group,
                                         **_NO_WINDOW)
@@ -875,7 +913,7 @@ class Runner:
         self._check_cancelled(task)
         output = self._read_output(log_path, start)
         task.review = extract_summary(output, "BATON_REVIEW")
-        if task.agent in ("opencode", "local"):
+        if task.agent in REVIEWED_AGENTS:
             task.review_rating = parse_rating(extract_summary(output, "BATON_RATING", after="BATON_REVIEW_END"))
         verdict = review_verdict(task.review)
         step(f"Review finished (exit code {proc.returncode}, verdict {verdict or 'none'})")
@@ -915,20 +953,41 @@ class Runner:
                 raise RuntimeError(message)
         return r.stdout.strip()
 
-    def _agent_cmd(self, task: Task, wt: Path) -> list[str]:
+    def _agent_cmd(self, task: Task, wt: Path, restricted: bool = False) -> list[str]:
+        """The agent's command line (a list: no shell ever parses it).
+
+        Tasks by Claude Code, Codex and Gemini run with full permissions;
+        `restricted` (reviews) keeps Claude Code in `auto` mode and Codex in
+        its sandbox. OpenCode and local AI are always limited.
+        """
         if task.agent == "opencode":
             # The prompt goes as the message argument (opencode.exe directly, no shell).
             return [find_opencode() or "opencode", "run", "--standalone", "--auto", "--agent", "baton",
                     "-m", task.model, "--title", f"Baton {task.id}", self._prompt(task)]
+        if task.agent == "gemini":
+            # agy.exe directly (never a .cmd), the prompt as the -p argument.
+            cmd = [find_agy() or "agy", "-p", self._prompt(task), "--output-format", "stream-json",
+                   "--dangerously-skip-permissions"]
+            if task.model:
+                cmd.extend(["--model", task.model])
+            if task.effort:
+                cmd.extend(["--effort", task.effort])
+            return cmd
         if task.agent == "claude-code":
-            cmd = [find_claude() or "claude", "-p", "--permission-mode", "auto"]
+            mode = ["--permission-mode", "auto"] if restricted else ["--dangerously-skip-permissions"]
+            cmd = [find_claude() or "claude", "-p", *mode]
             if task.model:
                 cmd.extend(["--model", task.model])
             if task.effort:
                 cmd.extend(["--effort", task.effort])
             return cmd
         codex = find_codex() or "codex"
-        cmd = [codex, "exec", "-s", "workspace-write", "--color", "never", "-C", str(wt)]
+        if task.agent == "codex" and not restricted:
+            # No sandbox and no approvals: network and live web search included.
+            cmd = [codex, "--search", "exec", "--dangerously-bypass-approvals-and-sandbox",
+                   "--color", "never", "-C", str(wt)]
+        else:
+            cmd = [codex, "exec", "-s", "workspace-write", "--color", "never", "-C", str(wt)]
         if task.agent == "local":
             cmd[2:2] = ["--oss", "--local-provider", self.local_provider, "-m", task.model]
         elif task.agent == "codex":
@@ -944,7 +1003,7 @@ class Runner:
         for agent, reason in self.agents_available().items():
             if reason:
                 continue
-            if agent in ("claude-code", "codex"):
+            if agent in ("claude-code", "codex", "gemini"):
                 models = [f"{m} ({'/'.join(v['efforts'])})" if v["efforts"] else m
                           for m, v in catalog(agent).items()]
                 parts.append(f"{agent}: {'; '.join(models)}" if models else agent)
@@ -994,19 +1053,22 @@ class Runner:
             env = _clean_env()
             if task.agent == "opencode":
                 env["OPENCODE_CONFIG_CONTENT"] = json.dumps(OPENCODE_CONFIG)
-            # Claude and Codex read the prompt from stdin; OpenCode gets it as an
-            # argument, and its stdin is closed so it never waits for input.
-            stdin_text = "" if task.agent == "opencode" else self._prompt(task)
+            # Claude and Codex read the prompt from stdin; OpenCode and Gemini get
+            # it as an argument, and their stdin is closed so they never wait.
+            stdin_text = "" if task.agent in ("opencode", "gemini") else self._prompt(task)
             # Popen (not run) so that cancel() can reach the process while it works.
             group = {} if os.name == "nt" else {"start_new_session": True}
             log_path = self.store.log_path(task.id)
             start = log_path.stat().st_size if log_path.exists() else 0
+            # Built before taking the lock: the prompt lists the models, which may
+            # run `opencode models` / `agy models` when their cache has expired.
+            cmd = self._agent_cmd(task, wt)
             with (open(log_path, "a", encoding="utf-8") as log,
                   Ranking(self.store.dir).worktree_env(env, wt, task.agent) as env):
                 with self._lock:
                     if task.id in self._cancelled:
                         raise Cancelled()
-                    proc = subprocess.Popen(self._agent_cmd(task, wt), stdin=subprocess.PIPE,
+                    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                                             stdout=log, stderr=subprocess.STDOUT, text=True,
                                             encoding="utf-8", errors="replace", cwd=str(wt),
                                             env=env, **group, **_NO_WINDOW)
@@ -1023,7 +1085,16 @@ class Runner:
                     with self._lock:
                         self._procs.pop(task.id, None)
             # Only the end of this agent run can contain its final report.
-            task.summary = extract_summary(self._read_output(log_path, start))
+            # agy's JSON lines: the whole run, so the first (`init`) and the
+            # last (`result`, with the full answer) lines are both complete.
+            output = self._read_output(log_path, start, 16 * 2**20 if task.agent == "gemini" else 65536)
+            if task.agent == "gemini":
+                model, result = agy_events(output)
+                task.summary = extract_summary(str(result.get("response") or "")) or extract_summary(output)
+                if record_gemini(self.store.dir, task.model or model, result.get("usage") or {}, "task"):
+                    self._log(task, "== Gemini tokens recorded for the Quotas page")
+            else:
+                task.summary = extract_summary(output)
             self._check_cancelled(task)
             step(f"Agent finished (exit code {proc.returncode})")
             if proc.returncode != 0:
@@ -1053,9 +1124,13 @@ class Runner:
                 self._write_git(task, repo_dir, "push", "-u", "origin", task.branch, cwd=wt)
                 step("Branch pushed to GitHub")
                 self._check_cancelled(task)
-                after = ("Baton merges it when the repository's tests pass, after a review by "
-                         "Claude Code or Codex when one is needed." if self.auto_merge
-                         else "Review it before merging.")
+                if not self.auto_merge:
+                    after = "Review it before merging."
+                elif task.agent in REVIEWED_AGENTS:
+                    after = ("Baton merges it when the repository's tests pass, after a review "
+                             "by Claude Code.")
+                else:
+                    after = "Baton merges it when the repository's tests pass, without a review."
                 pr_body = (f"Task sent from Baton to **{AGENTS.get(task.agent, task.agent)}** "
                            f"on my computer.\n\n**Task:** {task.title}\n\n{task.details}\n\n{after}")
                 task.pr_url = self.open_pr(task.repo, task.branch, task.base, task.title, pr_body)

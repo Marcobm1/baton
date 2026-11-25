@@ -290,9 +290,14 @@ def test_page_and_actions(tmp_path, monkeypatch, lang):
     assert client.post("/models/one/explode", data={"csrf": csrf}).status_code == 422
 
 
-def test_flat_order_matches_family_groups_with_two_models_in_use(tmp_path, fake_server):
+def test_flat_order_matches_family_groups_with_two_models_in_use(tmp_path, fake_server, monkeypatch):
     # models.js reloads the page when the API order differs from the cards'
     # order, so the flat list must follow the grouped order.
+    # A fake 16 GiB card: without one (GitHub's runners have no GPU) the second
+    # start is refused because Baton can't tell whether both models fit.
+    monkeypatch.setattr(models.LocalModels, "gpus", lambda self: [
+        {"name": "GPU", "util": 10.0, "vram_used_mib": 2048.0, "vram_total_mib": 16384.0,
+         "temp": 50.0, "power": 80.0, "power_limit": 285.0}])
     write_config(tmp_path, [
         model_item(tmp_path, "inkling-a", name="Inkling A", vram=1.0),
         model_item(tmp_path, "qwen-a", name="Qwen A", vram=1.0),

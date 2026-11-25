@@ -1,4 +1,4 @@
-// Agents chat (OpenCode over ACP). Baton keeps the conversation on the server:
+// Agents chat (OpenCode or Gemini over ACP). Baton keeps the conversation on the server:
 // this page sends messages and permission answers (always with the CSRF
 // token) and replays the conversation's events (server-sent events), so a
 // reload or a phone that went to sleep picks up where it was.
@@ -12,7 +12,21 @@
   var log = $("[data-log]"), empty = $("[data-empty]"), form = $("[data-form]"), text = $("[data-text]");
   var send = $("[data-send]"), modelSel = $("[data-oc-model]"), effortSel = $("[data-oc-effort]");
   var folderSel = $("[data-oc-folder]"), payg = $("[data-payg-warn]"), fixed = $("[data-fixed]");
-  var STORE = "baton-agents-chat", PREFS = "baton-agents-prefs";
+  // Each agent remembers its own open conversation and last choices.
+  var agent = root.dataset.agent || "opencode";
+  var suffix = agent === "opencode" ? "" : "-" + agent;
+  var STORE = "baton-agents-chat" + suffix, PREFS = "baton-agents-prefs" + suffix;
+  // Gemini: each model offers its own thinking levels; OpenCode: all of them.
+  var effortsByModel = modelSel.dataset.efforts ? JSON.parse(modelSel.dataset.efforts) : null;
+  var allEfforts = Array.from(effortSel.options).map(function (o) { return o.cloneNode(true); });
+  function setEfforts() {
+    if (!effortsByModel) return;
+    var allowed = effortsByModel[modelSel.value] || [], was = effortSel.value;
+    effortSel.replaceChildren.apply(effortSel, allEfforts.filter(function (o) {
+      return o.value === "default" || allowed.indexOf(o.value) >= 0;
+    }).map(function (o) { return o.cloneNode(true); }));
+    if (effortSel.querySelector('option[value="' + CSS.escape(was) + '"]')) effortSel.value = was;
+  }
   var chat = null, after = 0, source = null, busy = false, current = null, tools = {}, perms = {};
   var refused = false;   // a request was denied in this turn: OpenCode then ends it as "cancelled"
 
@@ -58,6 +72,7 @@
     }
     modelSel.replaceChildren(...matching);
     if (model) modelSel.value = model;
+    setEfforts();
     buttons.forEach(function (button, id) {
       button.setAttribute("aria-pressed", String(id === key));
       button.classList.toggle("ghost", id !== key);
@@ -102,7 +117,10 @@
     payg.hidden = !(o && o.hasAttribute("data-payg"));
   }
   [modelSel, effortSel, folderSel].forEach(function (s) {
-    s.addEventListener("change", function () { savePrefs(); showPayg(); });
+    s.addEventListener("change", function () {
+      if (s === modelSel) setEfforts();
+      savePrefs(); showPayg();
+    });
   });
   function lock(info) {
     // Model, effort, folder and mode are fixed on the server for the conversation.
@@ -114,6 +132,7 @@
       restoreModel(info.model);
       // A resumed session can use a model that has since left the catalog.
       modelSel.value = info.model;
+      setEfforts();
       effortSel.value = info.effort;
       fixed.textContent = T.fixed.replace("{model}", info.model).replace("{folder}", info.folder);
     } else if (!modelSel.value && groups.length) {
@@ -298,7 +317,7 @@
       if (!chat) {
         var mode = root.querySelector("[data-mode]:checked");
         note("muted small ag-starting", T.starting);
-        chat = await api("/api/agents", { agent: "opencode", model: modelSel.value, effort: effortSel.value,
+        chat = await api("/api/agents", { agent: agent, model: modelSel.value, effort: effortSel.value,
                                           folder: folderSel.value, mode: mode ? mode.value : "confirm" });
         var s = log.querySelector(".ag-starting"); if (s) s.remove();
         try { localStorage.setItem(STORE, JSON.stringify({ id: chat.id })); } catch (e) {}

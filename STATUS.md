@@ -2,7 +2,7 @@
 name: Baton (hub + quotas)
 status: active
 priority: high
-summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
+summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: Isolated Docker container for the All permissions mode
 updated: 2026-11-25
 updated_by: claude-code
@@ -21,6 +21,16 @@ links:
 - [x] 2026-11-25 Stop local models and active tasks above 85 °C
 - [x] 2026-11-25 Serialize task and updater Git writes in the same clone
 - [x] 2026-11-25 Separate Go and pay-as-you-go models in the OpenCode chat picker
+- [x] 2026-11-25 Gemini models (Antigravity CLI) and full permissions for Claude Code, Codex and Gemini
+  New `gemini` agent (`agy -p … --output-format stream-json --dangerously-skip-permissions`,
+  `--model`/`--effort` from `agy models`), Claude/Codex tasks with full permissions,
+  merge without review except OpenCode/local AI (Claude Code, Opus medium), Gemini
+  quota from `agy /usage` and tokens per day/week/model, Gemini in the Agents chat
+  ([auto-merge](docs/auto-merge.md), [chat](docs/agents-chat.md)).
+- [ ] (Marco) Send a first real Gemini task from Baton
+  New task → Gemini, model `gemini-3.8-flash` (low) on a small change in this
+  repository; check that the PR merges without a review, that the task page shows
+  the summary, and that Quotas shows the Gemini windows and the task's tokens.
 - [ ] Isolated Docker container for the All permissions mode
   Run the Agents chat's OpenCode inside a Docker container (Docker Desktop is
   installed) that mounts only the chosen folder: no Baton data, no Docker
@@ -34,6 +44,11 @@ links:
   agent covers the mode switch. Replaces the earlier "Prototype folder
   confinement" item.
   Recommended: claude-code, opus, high
+- [ ] Readable log for Gemini tasks
+  The task page shows a Gemini run as raw `stream-json` lines. Render it like
+  the other agents: the text deltas joined, tool steps as one line each, and
+  the final `result` (status, tokens). Check with a saved agy log in a test.
+  Recommended: gemini, gemini-4-neon, medium
 - [x] (Marco) Check the Agents chat from the phone
   Through Tailscale open Chat, pick Agent: OpenCode, model
   `local-inkling/inkling-2-mini` (start Inkling on Models first) and folder
@@ -174,11 +189,13 @@ links:
   Recommended: claude-code, opus, high
 
 ## Blockers
-- The Agents chat's All permissions mode needs the isolated container (next task); Confirm mode relies on Marco's approval, and an approved command runs as his Windows user.
+- The Agents chat's All permissions mode needs the isolated container (next task); Confirm mode relies on Marco's approval, and an approved command runs as his Windows user. For Gemini, Confirm covers commands only: agy edits files inside the folder without asking.
 - Adding a Codex cloud form option depends on the live test above.
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-25: Marco gave Claude Code, Codex and Gemini full permissions in tasks (`--dangerously-skip-permissions`, `--dangerously-bypass-approvals-and-sandbox` + `--search`); their work merges without a review, also in repositories without tests. Only OpenCode and local AI keep restricted rules and are reviewed, always by Claude Code (Opus, medium; the reviewer stays in `auto` mode). Abliterated models never get full permissions (docs/auto-merge.md).
+- 2026-11-25: Gemini runs through the Antigravity CLI (`agy`), offering only its Gemini models (base model + `--effort`). Its quota comes from `agy -p /usage --output-format json` (no model call, 0 tokens); its tokens are written by Baton from agy's own `result` / ACP `usage` numbers to `gemini-usage.jsonl`. In the Agents chat Gemini uses agy's "Default" mode: commands ask, but edits inside the folder don't (docs/agents-chat.md).
 - 2026-11-25: local models are grouped and badged by family (e.g. Inkling, Qwen) with filter chips, variant (`Abliterated`) and context-size (`-c` / `--ctx-size`) badges, and the model currently in use is placed in the first position on `/models` and in the `/chat` model selectors (docs/models.md).
 - 2026-11-25: Agents chat phase 1 talks to OpenCode over ACP on stdio (`opencode acp`, one process per conversation, no port) instead of `opencode serve`; Baton's `baton-chat` agent reads freely inside the folder and asks for every edit, command, `.env` read and outside-folder access; Allow sends "allow once" only; no answer in 10 minutes denies; All permissions is refused on the server until the container exists (docs/agents-chat.md).
 - 2026-11-25: OpenCode models are grouped by provider with `opencode-go/` ("Included in OpenCode Go") first, `opencode/` ("Pay as you go (credits)") second with an inline warning when selected, and other providers (`local-*`, etc.) after; tasks failing with OpenCode's Go balance error explain the cause and suggest the closest `opencode-go/` model (docs/task-details.md).
@@ -215,6 +232,8 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (claude-code): Fixed the two tests that failed on GitHub's Linux runner (`find_agy` built a WindowsPath when pretending to be Windows; the two-models test had no fake GPU), added the Gemini logo and colour to Quotas and Gemini names to the ranking labels. Suite: 173 passed.
+- 2026-11-25 (claude-code): Added Gemini through the Antigravity CLI (tasks, task form, Agents chat, quota windows from `agy /usage`, tokens per day/week/model), full permissions for Claude Code, Codex and Gemini tasks with merge without review, and Claude Code (Opus, medium) as the only reviewer of OpenCode/local-AI work. Checked live with agy 1.5.17 (task command, report, tokens, quota, ACP chat). Suite: 172 passed.
 - 2026-11-25 (claude-code): Review of the family grouping: kept model ids without dots, and made the flat model order follow the family groups so `/models` no longer reloads every 5 s with two models in use (new regression test). Suite: 160 passed.
 - 2026-11-25 (opencode): Grouped local models by family (Inkling, Qwen, etc.) with family filter chips, distinct family badges, Abliterated variant badge and context window size, and placed the model currently in use in the first position on `/models` and in `/chat` selectors (docs/models.md).
 - 2026-11-25 (codex): Added [automatic GPU shutdown](docs/models.md#automatic-gpu-shutdown). Four tests covered 85/86 °C, model and reviewer shutdown, work preservation and queue recovery. Windows suite: 155 passed, three failed. Both manual cancellation cleanup failures reproduced on the base revision. The chat process-close test passed on retry.

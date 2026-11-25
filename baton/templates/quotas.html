@@ -3,7 +3,7 @@
 {% block styles %}<link rel="stylesheet" href="/static/quotas.css?v={{ css_v }}">{% endblock %}
 {% block main %}
 {% macro logo(provider) -%}
-  {% set brand = {'claude': 'anthropic', 'claude-code': 'anthropic', 'codex': 'openai', 'opencode': 'opencode'}.get(provider) %}
+  {% set brand = {'claude': 'anthropic', 'claude-code': 'anthropic', 'codex': 'openai', 'gemini': 'gemini', 'opencode': 'opencode'}.get(provider) %}
   {% if brand %}<img class="q-logo" src="/static/{{ brand }}.svg" width="22" height="22" alt="">{% endif %}
 {%- endmacro %}
 <section class="quotas">
@@ -12,7 +12,7 @@
 {% if providers %}
 <div class="quota-grid">
   {% for pv in providers %}
-  {% set provider_name = {'claude': 'Claude', 'codex': 'Codex', 'opencode': 'OpenCode'}.get(pv.provider, pv.provider|capitalize) %}
+  {% set provider_name = {'claude': 'Claude', 'codex': 'Codex', 'gemini': 'Gemini', 'opencode': 'OpenCode'}.get(pv.provider, pv.provider|capitalize) %}
   <article class="quota" data-provider="{{ pv.provider }}">
     <div class="q-head">
       <strong class="q-provider">
@@ -43,6 +43,7 @@
 {% endif %}
 
 {% if go_error %}<p class="small"><span class="stale">OpenCode Go: {{ go_error }}</span></p>{% endif %}
+{% if gemini_error %}<p class="small"><span class="stale">Gemini: {{ gemini_error }}</span></p>{% endif %}
 
 <p class="muted small">{{ t.auto }}:
   {% if sched.enabled %}

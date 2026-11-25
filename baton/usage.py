@@ -4,6 +4,9 @@ Sources (all read-only, all on this computer):
   * Claude Code: ~/.claude/projects/**/*.jsonl  (each answer's `message.usage`)
   * Codex:       ~/.codex/sessions/**/*.jsonl   (`token_count` events)
   * OpenCode:    ~/.local/share/opencode/opencode.db (`session_message.data.tokens`)
+  * Gemini:      <data dir>/gemini-usage.jsonl, written by Baton itself from the
+                 token counts of agy's own `result` event (tasks) and of the
+                 ACP `session/prompt` answer (Agents chat); see record_gemini().
 Only numbers, model names and dates are read; never the text of a conversation.
 
 What is NOT counted: chats on claude.ai or chatgpt.com, which leave no log on
@@ -24,12 +27,16 @@ import glob
 import json
 import os
 import sqlite3
+import threading
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
 LOCAL_PROVIDERS = {"ollama", "lmstudio", "oss", "llama.cpp", "llamacpp"}
-APPS = ("claude-code", "codex", "opencode", "local")
+APPS = ("claude-code", "codex", "gemini", "opencode", "local")
+GEMINI_LOG = "gemini-usage.jsonl"
+_gemini_lock = threading.Lock()
 
 
 @dataclass
@@ -190,8 +197,65 @@ def read_opencode(db: Path, since: float, usage: Usage) -> None:
             output=int(out or 0) + int(reas or 0)))
 
 
+def record_gemini(data_dir: Path, model: str, tokens: dict, source: str = "task",
+                  ts: float | None = None) -> bool:
+    """Append one agy run's token counts (numbers and the model name only).
+
+    `tokens` is agy's `usage` object, from `agy -p --output-format stream-json`
+    (input_tokens, output_tokens, thinking_tokens, cache_read_tokens) or from
+    ACP (inputTokens, outputTokens, thoughtTokens, cachedReadTokens). In both,
+    the input count leaves out the cached input (checked 2026-11-25: input +
+    output + cache read = total).
+    """
+    if not isinstance(tokens, dict):
+        return False
+
+    def num(*keys: str) -> int:
+        for key in keys:
+            if tokens.get(key) is not None:
+                try:
+                    return max(0, int(tokens[key]))
+                except (TypeError, ValueError):
+                    return 0
+        return 0
+
+    row = {"ts": ts or time.time(), "model": str(model or "?")[:100], "source": source,
+           "input": num("input_tokens", "inputTokens"), "output": num("output_tokens", "outputTokens"),
+           "thinking": num("thinking_tokens", "thoughtTokens"),
+           "cache_read": num("cache_read_tokens", "cachedReadTokens")}
+    if not any(row[k] for k in ("input", "output", "thinking", "cache_read")):
+        return False
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        with _gemini_lock, open(data_dir / GEMINI_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except OSError:
+        return False
+    return True
+
+
+def read_gemini(data_dir: Path | None, since: float, usage: Usage) -> None:
+    if data_dir is None:
+        return
+    try:
+        fh = open(data_dir / GEMINI_LOG, encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    with fh:
+        for line in fh:
+            try:
+                row = json.loads(line)
+                ts = float(row["ts"])
+                t = Tokens(fresh=int(row.get("input") or 0), cache=int(row.get("cache_read") or 0),
+                           output=int(row.get("output") or 0) + int(row.get("thinking") or 0))
+            except (ValueError, KeyError, TypeError):
+                continue
+            if ts >= since:
+                usage.add("gemini", str(row.get("model") or ""), _day(ts), t)
+
+
 def collect(claude_home: Path, codex_home: Path, opencode_db: Path, days: int = 7,
-            today: dt.date | None = None) -> dict:
+            today: dt.date | None = None, data_dir: Path | None = None) -> dict:
     """Summary for the page: per app, today / last `days` days, a daily series and models."""
     today = today or dt.date.today()
     first = today - dt.timedelta(days=days - 1)
@@ -200,6 +264,7 @@ def collect(claude_home: Path, codex_home: Path, opencode_db: Path, days: int = 
     read_claude_code(claude_home, since, usage)
     read_codex(codex_home, since, usage)
     read_opencode(opencode_db, since, usage)
+    read_gemini(data_dir, since, usage)
 
     span = [first + dt.timedelta(days=i) for i in range(days)]
     apps: dict[str, dict] = {}

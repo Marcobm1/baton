@@ -8,6 +8,10 @@ Prompts it understands:
   anything else          answers "turn N: <text> (previous: <last text>)"
 It offers the `baton-chat` mode only when Baton's inline config defines that
 agent with "ask" for edits, like the real OpenCode loads it.
+
+With `--gemini` it acts like `agy acp` instead: Gemini models, the effort as
+`thought_level`, agy's modes (starting in "auto", so Baton must pick
+"default") and token usage in each `session/prompt` answer.
 """
 import json
 import os
@@ -21,9 +25,17 @@ CWD = Path.cwd()
 config = json.loads(os.environ.get("OPENCODE_CONFIG_CONTENT") or "{}")
 agent = (config.get("agents") or {}).get("baton-chat") or {}
 asks_edit = any(r == {"action": "edit", "resource": "*", "effect": "ask"} for r in agent.get("permissions", []))
-MODES = ["build", "plan"] + (["baton-chat"] if asks_edit else [])
-MODELS = ["opencode-go/glm-5.3", "local-inkling/inkling-2-mini", "local-test/inkling-abliterated"]
-state = {"model": "opencode-go/glm-5.3", "mode": "build", "effort": "default"}
+GEMINI = "--gemini" in sys.argv
+if GEMINI:
+    MODES = ["default", "accept-edits", "auto", "plan"]
+    MODELS = ["gemini-4-neon", "gemini-3.8-flash", "gemini-pro-orchestrator"]
+    EFFORT, EFFORTS = "thought_level", ["low", "medium", "high"]
+    state = {"model": "gemini-4-neon", "mode": "auto", EFFORT: "high"}
+else:
+    MODES = ["build", "plan"] + (["baton-chat"] if asks_edit else [])
+    MODELS = ["opencode-go/glm-5.3", "local-inkling/inkling-2-mini", "local-test/inkling-abliterated"]
+    EFFORT, EFFORTS = "effort", ["none", "low", "high", "default"]
+    state = {"model": "opencode-go/glm-5.3", "mode": "build", EFFORT: "default"}
 history = []
 next_id = [1000]
 
@@ -36,8 +48,8 @@ def send(msg):
 def options():
     return [{"id": "model", "category": "model", "type": "select", "currentValue": state["model"],
              "options": [{"value": m, "name": m} for m in MODELS]},
-            {"id": "effort", "category": "effort", "type": "select", "currentValue": state["effort"],
-             "options": [{"value": e} for e in ("none", "low", "high", "default")]},
+            {"id": EFFORT, "category": EFFORT, "type": "select", "currentValue": state[EFFORT],
+             "options": [{"value": e} for e in EFFORTS]},
             {"id": "mode", "category": "mode", "type": "select", "currentValue": state["mode"],
              "options": [{"value": m, "name": m} for m in MODES]}]
 
@@ -109,7 +121,10 @@ def prompt(sid, text):
         previous = history[-2] if len(history) > 1 else "-"
         update(sid, sessionUpdate="agent_thought_chunk", content={"type": "text", "text": "hmm"})
         say(sid, f"turn {len(history)}: {text} (previous: {previous}, model {state['model']},"
-                 f" effort {state['effort']}, mode {state['mode']})")
+                 f" effort {state[EFFORT]}, mode {state['mode']})")
+    if GEMINI:
+        return {"stopReason": "end_turn", "usage": {"inputTokens": 120, "outputTokens": 30,
+                                                    "cachedReadTokens": 400, "thoughtTokens": 5}}
     return {"stopReason": "end_turn"}
 
 
@@ -124,7 +139,7 @@ for line in sys.stdin:
         send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": options()}})
     elif method == "session/set_config_option":
         key, value = params["configId"], params["value"]
-        allowed = {"model": MODELS, "mode": MODES, "effort": ["none", "low", "high", "default"]}[key]
+        allowed = {"model": MODELS, "mode": MODES, EFFORT: EFFORTS}[key]
         if value not in allowed:
             send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": f"{key} not found"}})
             continue

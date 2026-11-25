@@ -9,6 +9,10 @@ sees or touches the credentials.
 Codex: `codex exec` writes the plan's rate limits to its session logs, which
 Baton already reads; a ping just makes them fresh.
 
+Gemini (Antigravity CLI, `agy`): `agy -p /usage --output-format json` prints
+the plan's 5-hour and weekly windows without asking any model (0 tokens), so
+Baton can read it as often as it likes; see fetch_gemini_quota().
+
 Side effects to know about:
   * each ping spends a little quota (one tiny request);
   * if no 5-hour window is open, the ping opens one (the clock starts then);
@@ -67,6 +71,86 @@ def find_codex() -> str | None:
         if found:
             return found
     return None
+
+
+def find_agy() -> str | None:
+    """The Antigravity CLI (`agy.exe`), never a .cmd/.ps1 wrapper.
+
+    winget installs it in its own Packages folder and adds it to PATH only for
+    new terminals, so a Baton started before the install still finds it there.
+    """
+    explicit = os.environ.get("BATON_AGY_BIN")
+    if explicit:
+        return explicit
+    found = shutil.which("agy")
+    if found and not found.lower().endswith((".cmd", ".ps1", ".bat")):
+        return found
+    local = os.environ.get("LOCALAPPDATA")
+    if os.name == "nt" and local:
+        # os.path, not Path: Path picks its Windows or POSIX class from the
+        # system, so a test that pretends to be Windows on Linux can't build one.
+        winget = os.path.join(local, "Microsoft", "WinGet")
+        matches = sorted(glob.glob(os.path.join(winget, "Packages", "Google.AntigravityCLI_*", "agy.exe")))
+        link = os.path.join(winget, "Links", "agy.exe")
+        if matches:
+            return matches[-1]
+        if os.path.isfile(link):
+            return link
+    return None
+
+
+def parse_agy_usage(text: str) -> dict | None:
+    """The Gemini group of `agy -p /usage --output-format json`.
+
+    Returns {"5h": {"left": 99.9, "resets_at": "..."}, "week": {...}}: the
+    percentage *left* (agy reports a remaining fraction) and the reset time.
+    Only the "Gemini Models" group is kept: Baton offers only Gemini models
+    through agy, and the Claude/GPT group there is a separate allowance.
+    """
+    try:
+        data = json.loads(text)
+        groups = data["command"]["data"]["groups"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    out: dict = {}
+    for group in groups if isinstance(groups, list) else []:
+        buckets = [b for b in group.get("buckets") or [] if isinstance(b, dict)]
+        if not any(str(b.get("id", "")).startswith("gemini") for b in buckets):
+            continue
+        for b in buckets:
+            kind = {"5h": "5h", "weekly": "week"}.get(str(b.get("window")))
+            if kind and b.get("remaining_fraction") is not None:
+                reset = str(b.get("reset_time") or "")
+                out[kind] = {"left": max(0.0, min(100.0, float(b["remaining_fraction"]) * 100)),
+                             "resets_at": "" if reset.startswith("1970") else reset}
+    return out or None
+
+
+def fetch_gemini_quota(data_dir: Path, binary: str | None = None,
+                       timeout: int = 60) -> tuple[bool, str]:
+    """Save the Gemini windows that agy reports itself (gemini-quota.json).
+
+    `/usage` is answered by the CLI from its own account data: no prompt,
+    no model, no quota spent. Baton keeps only percentages and dates.
+    """
+    binary = binary or find_agy()
+    if not binary:
+        return False, "Antigravity CLI (agy) not found (install it or set BATON_AGY_BIN)"
+    cmd = [binary, "-p", "/usage", "--output-format", "json", "--print-timeout", f"{timeout}s"]
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=timeout + 15, cwd=tmp,
+                               stdin=subprocess.DEVNULL, env=_clean_env(), **_NO_WINDOW)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"could not run agy: {exc.__class__.__name__}"
+    windows = parse_agy_usage(r.stdout)
+    if not windows:
+        return False, f"agy gave no Gemini quota (exit code {r.returncode}; logged in with Google?)"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "gemini-quota.json").write_text(
+        json.dumps({"seen_at": time.time(), "windows": windows}), encoding="utf-8")
+    return True, "ok"
 
 
 def parse_claude_stream(text: str) -> dict | None:

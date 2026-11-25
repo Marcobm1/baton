@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 # names can contain "/" or ".").
 _recommended = re.compile(r"^\s*(?:recommended|recomendado)\s*:\s*(.+?)\s*$", re.I | re.M)
 _agent_names = {"claude": "claude-code", "claude code": "claude-code", "claude-code": "claude-code",
-                "codex": "codex", "opencode": "opencode", "local": "local", "local ai": "local",
-                "ia local": "local"}
+                "codex": "codex", "gemini": "gemini", "antigravity": "gemini", "agy": "gemini",
+                "opencode": "opencode", "local": "local", "local ai": "local", "ia local": "local"}
 
 
 def recommendation(detail: str) -> tuple[dict, str]:

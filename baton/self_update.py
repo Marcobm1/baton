@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 
+from .git_lock import GitLockError, is_lock_error, run_locked
 from .runner import _remote_repo
 
 
@@ -23,6 +24,8 @@ def command(root, argv, label, timeout=120):
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"{label} timed out") from None
     if result.returncode:
+        if argv[0] == "git" and is_lock_error(result.stderr):
+            raise GitLockError(f"{label} (exit {result.returncode}): Git lock contention")
         detail = ""
         if label == "pytest -q":
             # Only test identifiers, never parameter values or captured output.
@@ -78,7 +81,7 @@ class SelfUpdate:
             self.record(last.get("old"), self.running, "running")
 
     def git(self, *args):
-        return command(self.root, ["git", *args], "git " + args[0])
+        return run_locked(self.root, lambda: command(self.root, ["git", *args], "git " + args[0]))
 
     def record(self, old, new, result):
         self.history.parent.mkdir(parents=True, exist_ok=True)

@@ -5,7 +5,15 @@ Quotas form and the task completion callback wake the same worker. The
 checkout is identified from the loaded Baton package so starting the service
 from another directory cannot update an unrelated repository.
 
-A fetch can run alongside tasks. Before changing files the updater reserves
+The updater can fetch while an agent works. Its Git commands and task Git
+writes share a thread lock keyed by the resolved clone path, including writes
+from linked task worktrees. This prevents a newly dispatched task and the
+updater from writing `origin/main` at the same time. Each command waits up
+to 120 seconds for its clone. If Git reports a ref lock conflict or an
+existing lock file, Baton retries after one second, up to three attempts in
+total. The task log records each retry.
+
+Before changing files the updater reserves
 the local queue under the same lock used to submit and dispatch tasks. It
 checks both persisted tasks and active workers, including cleanup after a
 merge. A local task submitted during validation receives HTTP 503 and can be

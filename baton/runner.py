@@ -49,6 +49,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
+from .git_lock import GitLockError, GitLockTimeout, is_lock_error, run_locked
 from .ping import _NO_WINDOW, _clean_env, find_claude, find_codex
 from .ranking import Ranking, parse_rating, review_verdict
 from .task_models import catalog
@@ -703,14 +704,14 @@ class Runner:
             return f"The branch {task.branch} {why}, so its worktree and branch were kept."
         # Windows may keep files of the killed processes open for a moment.
         for _ in range(10):
-            self._git(repo_dir, "worktree", "remove", "--force", str(wt), check=False)
+            self._write_git(task, repo_dir, "worktree", "remove", "--force", str(wt), check=False)
             if not wt.exists():
                 break
             time.sleep(0.5)
         if wt.exists():
             return f"The worktree could not be removed; delete it by hand: {wt}"
-        self._git(repo_dir, "worktree", "prune", check=False)
-        self._git(repo_dir, "branch", "-D", task.branch, check=False)
+        self._write_git(task, repo_dir, "worktree", "prune", check=False)
+        self._write_git(task, repo_dir, "branch", "-D", task.branch, check=False)
         task.worktree = ""
         return "Nothing was committed or pushed; the worktree and the local branch were removed."
 
@@ -731,14 +732,14 @@ class Runner:
             return ""
 
     # ------------------------------------------------------------ auto-merge
-    def _finish_pr(self, task: Task, wt: Path, ident: list[str], step) -> None:
+    def _finish_pr(self, task: Task, repo_dir: Path, wt: Path, ident: list[str], step) -> None:
         """Tests, review when needed, merge. Raises LeftOpen to stop."""
         number = pr_number(task.pr_url)
         sha = self._git(wt, "rev-parse", "HEAD")
         tests = self._wait_for_tests(task, sha, step)
         if task.agent in ("opencode", "local") or tests == "none":
             reviewer = self._pick_reviewer(task)
-            new_sha = self._review(task, wt, reviewer, number, ident, step)
+            new_sha = self._review(task, repo_dir, wt, reviewer, number, ident, step)
             if new_sha != sha and tests == "passed":
                 self._wait_for_tests(task, new_sha, step, must_exist=True)
             sha = new_sha
@@ -810,7 +811,7 @@ class Runner:
             return "", effort
         return model, effort if effort in options[model]["efforts"] else ""
 
-    def _review(self, task: Task, wt: Path, reviewer: str, number: int, ident: list[str],
+    def _review(self, task: Task, repo_dir: Path, wt: Path, reviewer: str, number: int, ident: list[str],
                 step) -> str:
         """Run the reviewer in the task's worktree; returns the commit to merge."""
         task.reviewer = reviewer
@@ -864,18 +865,27 @@ class Runner:
         if not verdict:
             raise LeftOpen(f"{AGENTS[reviewer]} gave no verdict")
         if changed:
-            self._git(wt, "add", "-A")
-            self._git(wt, *ident, "commit", "-m", f"Review fixes by {AGENTS[reviewer]}\n\n"
-                      f"Baton review of the task: {task.title}")
-            self._git(wt, "push", "origin", task.branch)
+            self._write_git(task, repo_dir, "add", "-A", cwd=wt)
+            message = f"Review fixes by {AGENTS[reviewer]}\n\nBaton review of the task: {task.title}"
+            self._write_git(task, repo_dir, *ident, "commit", "-m", message, cwd=wt)
+            self._write_git(task, repo_dir, "push", "origin", task.branch, cwd=wt)
             step("Review fixes committed and pushed")
         return self._git(wt, "rev-parse", "HEAD")
+
+    def _write_git(self, task: Task, repo_dir: Path, *args: str, cwd: Path | None = None,
+                   check: bool = True) -> str:
+        return run_locked(repo_dir, lambda: self._git(cwd or repo_dir, *args, check=check),
+                          lambda n: self._log(task, f"Git lock contention: retrying git {args[0]} (attempt {n}/3)"))
 
     def _git(self, cwd: Path, *args: str, check: bool = True) -> str:
         r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=300, **_NO_WINDOW)
-        if check and r.returncode != 0:
-            raise RuntimeError(f"git {' '.join(args[:2])} failed: {r.stderr.strip()[:300]}")
+        if r.returncode:
+            message = f"git {' '.join(args[:2])} failed: {r.stderr.strip()[:300]}"
+            if is_lock_error(r.stderr):
+                raise GitLockError(message)
+            if check:
+                raise RuntimeError(message)
         return r.stdout.strip()
 
     def _agent_cmd(self, task: Task, wt: Path) -> list[str]:
@@ -943,11 +953,11 @@ class Runner:
             if not repo_dir:
                 raise RuntimeError("No local clone of this repository (check BATON_LOCAL_ROOT).")
             step(f"Local clone: {repo_dir}")
-            self._git(repo_dir, "fetch", "origin", task.base)
+            self._write_git(task, repo_dir, "fetch", "origin", task.base)
             self._check_cancelled(task)
             path = self.store.dir / "worktrees" / f"{task.repo.split('/')[1]}-{task.id}"
             path.parent.mkdir(parents=True, exist_ok=True)
-            self._git(repo_dir, "worktree", "add", "-b", task.branch, str(path), f"origin/{task.base}")
+            self._write_git(task, repo_dir, "worktree", "add", "-b", task.branch, str(path), f"origin/{task.base}")
             wt = path
             task.worktree = str(wt)
             step(f"Worktree on branch {task.branch} (from origin/{task.base})")
@@ -995,24 +1005,24 @@ class Runner:
             if not self._git(wt, "status", "--porcelain"):
                 task.status = "no-changes"
                 task.message = "The agent finished without changing anything."
-                self._git(repo_dir, "worktree", "remove", "--force", str(wt), check=False)
-                self._git(repo_dir, "branch", "-D", task.branch, check=False)
+                self._write_git(task, repo_dir, "worktree", "remove", "--force", str(wt), check=False)
+                self._write_git(task, repo_dir, "branch", "-D", task.branch, check=False)
                 task.worktree = ""
                 return
             with self._lock:
                 if task.id in self._cancelled:
                     raise Cancelled()
                 self._committing.add(task.id)  # from here on, cancel() says no
-            self._git(wt, "add", "-A")
+            self._write_git(task, repo_dir, "add", "-A", cwd=wt)
             ident = []
             if not self._git(wt, "config", "user.email", check=False):
                 ident = ["-c", f"user.name={self.git_name}", "-c", f"user.email={self.git_email}"]
             body = f"Task from Baton, done by {AGENTS.get(task.agent, task.agent)}.\n\n{task.details}".strip()
-            self._git(wt, *ident, "commit", "-m", f"{task.title}\n\n{body}")
+            self._write_git(task, repo_dir, *ident, "commit", "-m", f"{task.title}\n\n{body}", cwd=wt)
             step("Changes committed")
 
             if task.open_pr:
-                self._git(wt, "push", "-u", "origin", task.branch)
+                self._write_git(task, repo_dir, "push", "-u", "origin", task.branch, cwd=wt)
                 step("Branch pushed to GitHub")
                 after = ("Baton merges it when the repository's tests pass, after a review by "
                          "Claude Code or Codex when one is needed." if self.auto_merge
@@ -1024,14 +1034,16 @@ class Runner:
                 task.message = "Done: review the pull request."
                 if self.auto_merge:
                     try:
-                        self._finish_pr(task, wt, ident, step)
+                        self._finish_pr(task, repo_dir, wt, ident, step)
+                    except GitLockTimeout:
+                        raise
                     except LeftOpen as exc:
                         task.message = f"Pull request left open for you: {exc}"
                         step(f"Not merged: {exc}")
                     except Exception as exc:  # the PR is safe on GitHub either way
                         task.message = f"Pull request left open for you: {str(exc)[:300]}"
                         step(f"Not merged: {str(exc)[:300]}")
-                self._git(repo_dir, "worktree", "remove", "--force", str(wt), check=False)
+                self._write_git(task, repo_dir, "worktree", "remove", "--force", str(wt), check=False)
                 task.worktree = ""
             else:
                 task.message = f"Done: the changes are on the local branch {task.branch} in {wt}."

@@ -182,7 +182,7 @@ def test_delegate_strips_secrets_while_keeping_ranking(tmp_path, monkeypatch):
         assert key not in seen_env, f"{key} leaked into delegate subprocess"
     assert "OPENCODE_CONFIG_CONTENT" in seen_env
     # The parent delegate process still read BATON_DELEGATION_DIR to store the job.
-    assert (ranking_dir / "ranking.sqlite3").is_file()
+    assert (ranking_dir / "baton.sqlite3").is_file()
 
 
 def test_ping_codex_strips_secrets(monkeypatch):

@@ -11,6 +11,7 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 
 from .config import configured_data_dir
+from .db import DB_NAME, connect as db_connect, db_path
 
 CRITERIA = ("fulfillment", "correctness", "rework")
 
@@ -65,26 +66,12 @@ def cli_ranking():
 
 class Ranking:
     def __init__(self, data_dir: Path):
-        self.path = data_dir / "ranking.sqlite3"
+        self.data_dir = Path(data_dir)
+        self.path = db_path(self.data_dir)
 
     @contextmanager
     def database(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self.path)) as db, db:
-            db.row_factory = sqlite3.Row
-            db.execute("PRAGMA foreign_keys = ON")
-            db.execute("""CREATE TABLE IF NOT EXISTS jobs (
-                id INTEGER PRIMARY KEY, model TEXT NOT NULL, started REAL NOT NULL,
-                kind TEXT NOT NULL, prompt TEXT NOT NULL, outcome TEXT, result TEXT)""")
-            db.execute("""CREATE TABLE IF NOT EXISTS reviews (
-                job INTEGER NOT NULL REFERENCES jobs(id), role TEXT NOT NULL,
-                reviewer TEXT NOT NULL, fulfillment INTEGER NOT NULL CHECK(fulfillment BETWEEN 1 AND 10),
-                correctness INTEGER NOT NULL CHECK(correctness BETWEEN 1 AND 10),
-                rework INTEGER NOT NULL CHECK(rework BETWEEN 1 AND 10),
-                comment TEXT NOT NULL CHECK(length(comment)<=500), PRIMARY KEY(job, role))""")
-            db.execute("""CREATE TABLE IF NOT EXISTS task_jobs (
-                task_id TEXT PRIMARY KEY, job INTEGER UNIQUE NOT NULL REFERENCES jobs(id),
-                title TEXT NOT NULL, merged INTEGER NOT NULL, report TEXT NOT NULL)""")
+        with db_connect(self.data_dir) as db:
             yield db
 
     def start(self, model, kind, prompt):
@@ -115,30 +102,35 @@ class Ranking:
                 rework=excluded.rework, comment=excluded.comment""",
                        (job, role, reviewer, fulfillment, correctness, rework, comment.strip()))
 
-    def record_task(self, task):
+    def record_task(self, task, conn: sqlite3.Connection | None = None):
         outcome = task.status
         if task.where == "cloud" and outcome == "sent" and task.summary:
             outcome = "done"
         if outcome not in ("done", "no-changes", "failed", "cancelled"):
             return None
+        if conn is not None:
+            return self._record_task_on(conn, task, outcome)
         with self.database() as db:
             db.execute("BEGIN IMMEDIATE")
-            existing = db.execute("SELECT job FROM task_jobs WHERE task_id=?", (task.id,)).fetchone()
-            if existing:
-                return existing["job"]
-            prompt = "\n\n".join(filter(None, (task.title, task.details)))
-            result = "\n\n".join(filter(None, (task.message, task.summary)))
-            model = task.model or (f"{task.agent}/default" if task.agent else "default")
-            job = db.execute("""INSERT INTO jobs(model, started, kind, prompt, outcome, result)
-                VALUES (?, ?, 'Baton task', ?, ?, ?)""",
-                (model, task.started_at or task.created_at, prompt, outcome, result)).lastrowid
-            db.execute("INSERT INTO task_jobs VALUES (?, ?, ?, ?, ?)",
-                       (task.id, job, task.title, task.merged, task.review))
-            rating = task.review_rating
-            if rating and task.reviewer in ("codex", "claude-code"):
-                db.execute("INSERT INTO reviews VALUES (?, 'agent', ?, ?, ?, ?, ?)",
-                           (job, task.reviewer, *(rating[k] for k in CRITERIA), rating["comment"]))
-            return job
+            return self._record_task_on(db, task, outcome)
+
+    def _record_task_on(self, db: sqlite3.Connection, task, outcome: str):
+        existing = db.execute("SELECT job FROM task_jobs WHERE task_id=?", (task.id,)).fetchone()
+        if existing:
+            return existing["job"]
+        prompt = "\n\n".join(filter(None, (task.title, task.details)))
+        result = "\n\n".join(filter(None, (task.message, task.summary)))
+        model = task.model or (f"{task.agent}/default" if task.agent else "default")
+        job = db.execute("""INSERT INTO jobs(model, started, kind, prompt, outcome, result)
+            VALUES (?, ?, 'Baton task', ?, ?, ?)""",
+            (model, task.started_at or task.created_at, prompt, outcome, result)).lastrowid
+        db.execute("INSERT INTO task_jobs VALUES (?, ?, ?, ?, ?)",
+                   (task.id, job, task.title, task.merged, task.review))
+        rating = task.review_rating
+        if rating and task.reviewer in ("codex", "claude-code"):
+            db.execute("INSERT INTO reviews VALUES (?, 'agent', ?, ?, ?, ?, ?)",
+                       (job, task.reviewer, *(rating[k] for k in CRITERIA), rating["comment"]))
+        return job
 
     def overview(self, origin="all"):
         # Existing delegation databases need no migration. Only Baton tasks have a link.
@@ -191,20 +183,21 @@ class Ranking:
             try:
                 yield {**env, "BATON_DELEGATION_DIR": str(root)}
             finally:
-                path = root / "ranking.sqlite3"
-                if path.is_file() and path.resolve() == path:
-                    self._collect(path, reviewer)
+                for filename in (DB_NAME, "ranking.sqlite3"):
+                    path = root / filename
+                    if path.is_file() and path.resolve() == path:
+                        self._collect(path, reviewer)
 
     def _collect(self, path, reviewer):
         # The task controls its own files. Only import new jobs and agent reviews,
         # using a read-only source and explicit columns in a single transaction.
-        uri = path.as_uri() + "?mode=ro&immutable=1"
+        uri = path.resolve().as_uri() + "?mode=ro"
         with closing(sqlite3.connect(uri, uri=True)) as source, self.database() as db:
             source.execute("PRAGMA trusted_schema = OFF")
             for row in source.execute("SELECT id, model, started, kind, prompt, outcome, result FROM jobs"):
-                db.execute("INSERT INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?)", row)
+                db.execute("INSERT OR IGNORE INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?)", row)
                 review = source.execute("""SELECT fulfillment, correctness, rework, comment
                     FROM reviews WHERE job=? AND role='agent'""", (row[0],)).fetchone()
                 if review:
-                    db.execute("INSERT INTO reviews VALUES (?, 'agent', ?, ?, ?, ?, ?)",
+                    db.execute("INSERT OR IGNORE INTO reviews VALUES (?, 'agent', ?, ?, ?, ?, ?)",
                                (row[0], reviewer, *review))

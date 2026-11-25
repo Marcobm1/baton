@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "Hardening Phase 3B: unified SQLite WAL storage"
+next: "Hardening Phase 3C: task SSE, readable Gemini logs, background usage and STATUS.md archive"
 updated: 2026-11-25
 updated_by: gemini
 open_source: true
@@ -58,14 +58,12 @@ links:
   lines) into eight FastAPI `APIRouter` modules under `baton/routes/` with an
   isolated per-app `AppContext` (`app.state.ctx`); preserved backward-compatible
   re-exports and added isolation + stdlib-only tests (`tests/test_modularization.py`).
-- [ ] Hardening Phase 3B: unified SQLite WAL storage
-  Consolidate `tasks.json` and `ranking.sqlite3` into a single `baton.sqlite3`
-  database in WAL mode (`PRAGMA busy_timeout=30000`, schema initialized once on
-  open) via a shared `baton/db.py`, keeping `TaskStore` and `Ranking` APIs intact
-  with automatic one-time migration from legacy `tasks.json` / `ranking.sqlite3`
-  (preserving legacy files untouched as backup). Verify with `pytest -q` and
-  `ruff check baton tests`.
-  Recommended: claude-code, opus, high
+- [x] 2026-11-25 Hardening Phase 3B: unified SQLite WAL storage
+  Consolidated `tasks.json` and `ranking.sqlite3` into a single `baton.sqlite3`
+  database in WAL mode (`PRAGMA busy_timeout=30000`, `PRAGMA synchronous=NORMAL`,
+  schema initialized once per DB file) via `baton/db.py`, keeping `TaskStore` and
+  `Ranking` APIs intact with automatic one-time idempotent migration from legacy
+  `tasks.json` and `ranking.sqlite3` (originals preserved untouched as backup).
 - [ ] Hardening Phase 3C: task SSE, readable Gemini logs, background usage and STATUS.md archive
   Add live SSE streaming (`GET /api/tasks/{task_id}/events` + `task-live.js`) on
   `/tasks/{id}`, format Gemini `stream-json` logs into readable text/tool/result
@@ -241,6 +239,7 @@ links:
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-25: Phase 3B storage: tasks and rankings now live in a single `<data_dir>/baton.sqlite3` database in WAL mode (`PRAGMA busy_timeout=30000`, `PRAGMA synchronous=NORMAL`, `PRAGMA foreign_keys=ON`, schema initialized once per file identity via `baton/db.py`); legacy `tasks.json` and `ranking.sqlite3` are imported automatically on first sight (leaving the originals untouched as backup), eliminating whole-file JSON rewrites and Windows `PermissionError` replace races.
 - 2026-11-25: Phase 3A modularization: `baton/runner.py` delegates to `task_store.py`, `worktree.py`, `agents.py`, and `review_merge.py` while keeping backward-compatible re-exports; `baton/web.py` mounts eight FastAPI `APIRouter` modules under `baton/routes/` sharing an isolated per-app `AppContext` stored on `app.state.ctx` (injected via module-level `CTX = Depends(get_ctx)` to satisfy ruff B008 and preserve multi-instance test isolation).
 - 2026-11-25: Phase 2 hardening: `usage.py` keeps max/final token counts per Claude Code `(message.id, requestId)` and opens OpenCode SQLite via `db.resolve().as_uri() + "?mode=ro"`; `quotas.py` uses stdlib `urllib.request` (no `httpx`); `ranking.py` uses 52-bit JS-safe IDs and records resolved models (or `<agent>/default`); `runner.py` casefolds repo keys, narrows `_committing` to Git write/merge windows so tasks can be cancelled during CI wait and AI review (waking `_wait_for_tests()` immediately), and deletes merged `baton/*` branches locally and remotely; `models.py` checks VRAM budget inside `self.lock`, skips unchanged state writes (retrying Windows `PermissionError`), and keeps `chat_port()` lightweight; `agent_chat.py` reaps idle sessions periodically and cancels timed-out turns; `github.py` stamps `updated:`/`updated_by: human` on web ticks, caches permanent 401/403/404 `open_pulls()` errors only (never transient 5xx/network failures), and bounds `Hub.load()` with `asyncio.Semaphore(8)`.
 - 2026-11-25: all agent subprocesses receive `agent_env()` (stripping `BATON_*`, `GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_PAT`, `ANTHROPIC_API_KEY`, `OPENCODE_PERMISSION`); optional `BATON_ACCESS_KEY` locks the UI/API (except `/healthz`, `/login`, `/static/*`) behind a 30-day HMAC-signed `HttpOnly`, `SameSite=Strict` cookie (`Secure` over HTTPS) rather than trusting spoofable loopback `Tailscale-User-Login` headers (docs/security.md).
@@ -283,6 +282,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (gemini): Completed hardening roadmap Phase 3B (unified SQLite WAL storage): added `baton/db.py` (`baton.sqlite3` in WAL mode with `PRAGMA busy_timeout=30000`, one-time schema initialization, automatic idempotent migration from legacy `tasks.json` and `ranking.sqlite3` keeping originals untouched), migrated `TaskStore` and `Ranking` onto the shared database with atomic `SAVEPOINT` task+ranking commits, and added `tests/test_db.py`. Linux VM suite: 219 passed, ruff and JS checks clean.
 - 2026-11-25 (gemini): Completed hardening roadmap Phase 3A (modularization): split `baton/runner.py` (1,253 → 590 lines) into `task_store.py`, `worktree.py`, `agents.py`, `review_merge.py`, and `runner.py`; split `baton/web.py` (935 → 276 lines) into eight `APIRouter` modules under `baton/routes/` with isolated per-app `AppContext` (`app.state.ctx`); added `tests/test_modularization.py`. Linux VM suite: 214 passed, ruff and JS checks clean.
 - 2026-11-25 (gemini): Completed hardening roadmap Phase 2 (data accuracy, concurrency & repo hygiene): Claude Code streaming token max-per-key + OpenCode read-only SQLite URI (`usage.py`), stdlib `urllib.request` in `quotas.py`, resolved models + 52-bit IDs (`ranking.py`), generalized `GEMINI_MODEL` (`task_models.py`), casefolded repo dispatch + cancellation during CI wait/review + merged `baton/*` branch cleanup (`runner.py`), locked VRAM checks + skip-unchanged/retry state save + lightweight `chat_port()` (`models.py`), periodic idle reaper + turn timeout (`agent_chat.py`), and `updated:`/`updated_by:` stamping + transient GraphQL failure handling + `Semaphore(8)` (`github.py`). Linux VM suite: 211 passed, ruff and JS checks clean.
 - 2026-11-25 (gemini): Completed hardening roadmap Phase 1 (1.1–1.6): shared `agent_env()`, optional `BATON_ACCESS_KEY` session-cookie auth (`baton/auth.py`, `/login`, `/logout`), Windows Job Objects and fallback worktree cleanup (`baton/proc.py`), `SelfUpdate` failed-SHA retry skip (`updates.jsonl`), native `codex.exe` resolution in `find_codex()`, and `windows-latest` + `ruff`/`node --check` CI. Linux VM suite: 198 passed, ruff and JS checks clean, `test_runner.py` 5/5 passed; live Windows verification pending CI/PC run.

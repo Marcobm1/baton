@@ -1,4 +1,4 @@
-"""Task data model, queue ordering, and persistent TaskStore."""
+"""Task data model, queue ordering, and SQLite-backed TaskStore."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ import logging
 import re
 import sqlite3
 import threading
-import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from .db import connect as db_connect, db_path, migrate_legacy_tasks
 from .ranking import Ranking
 
 
@@ -88,58 +88,140 @@ def new_id(title: str) -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + _slug(title)
 
 
+def _task_from_row(row: sqlite3.Row) -> Task:
+    try:
+        steps = json.loads(row["steps"]) if row["steps"] else []
+    except ValueError:
+        steps = []
+    try:
+        rating = json.loads(row["review_rating"]) if row["review_rating"] else None
+    except ValueError:
+        rating = None
+    return Task(
+        id=row["id"],
+        repo=row["repo"],
+        title=row["title"],
+        details=row["details"],
+        agent=row["agent"],
+        where=row["where_kind"],
+        created_at=row["created_at"],
+        status=row["status"],
+        branch=row["branch"],
+        base=row["base"],
+        worktree=row["worktree"],
+        pr_url=row["pr_url"],
+        issue_url=row["issue_url"],
+        message=row["message"],
+        finished_at=row["finished_at"],
+        open_pr=bool(row["open_pr"]),
+        model=row["model"],
+        steps=steps if isinstance(steps, list) else [],
+        effort=row["effort"],
+        summary=row["summary"],
+        issue_number=row["issue_number"],
+        reviewer=row["reviewer"],
+        review=row["review"],
+        reviewer_model=row["reviewer_model"],
+        reviewer_effort=row["reviewer_effort"],
+        merged=bool(row["merged"]),
+        priority=row["priority"],
+        started_at=row["started_at"],
+        review_rating=rating if isinstance(rating, dict) else None,
+    )
+
+
+_UPSERT_SQL = """INSERT INTO tasks(
+    id, repo, title, details, agent, where_kind, created_at, status, branch, base,
+    worktree, pr_url, issue_url, message, finished_at, open_pr, model, steps, effort,
+    summary, issue_number, reviewer, review, reviewer_model, reviewer_effort, merged,
+    priority, started_at, review_rating
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    repo = excluded.repo,
+    title = excluded.title,
+    details = excluded.details,
+    agent = excluded.agent,
+    where_kind = excluded.where_kind,
+    created_at = excluded.created_at,
+    status = excluded.status,
+    branch = excluded.branch,
+    base = excluded.base,
+    worktree = excluded.worktree,
+    pr_url = excluded.pr_url,
+    issue_url = excluded.issue_url,
+    message = excluded.message,
+    finished_at = excluded.finished_at,
+    open_pr = excluded.open_pr,
+    model = excluded.model,
+    steps = excluded.steps,
+    effort = excluded.effort,
+    summary = excluded.summary,
+    issue_number = excluded.issue_number,
+    reviewer = excluded.reviewer,
+    review = excluded.review,
+    reviewer_model = excluded.reviewer_model,
+    reviewer_effort = excluded.reviewer_effort,
+    merged = excluded.merged,
+    priority = excluded.priority,
+    started_at = excluded.started_at,
+    review_rating = excluded.review_rating"""
+
+
 class TaskStore:
     def __init__(self, data_dir: Path):
-        self.dir = data_dir
-        self.file = data_dir / "tasks.json"
-        self.ranking = Ranking(data_dir)
-        self.logs = data_dir / "tasks"
+        self.dir = Path(data_dir)
+        self.db_path = db_path(self.dir)
+        self.file = self.dir / "tasks.json"  # legacy path (migrated automatically if present)
+        self.ranking = Ranking(self.dir)
+        self.logs = self.dir / "tasks"
         self.lock = threading.Lock()
+        self._legacy_migrated = False
+
+    def _maybe_migrate(self, conn: sqlite3.Connection) -> None:
+        if not self._legacy_migrated and self.file.is_file():
+            migrate_legacy_tasks(self.dir, conn)
+            self._legacy_migrated = True
 
     def all(self) -> list[Task]:
-        # Reads take the lock too: on Windows, replacing tasks.json fails
-        # ("Access denied") while another thread has it open for reading.
-        with self.lock:
-            return self._load()
-
-    def _load(self) -> list[Task]:
-        try:
-            rows = json.loads(self.file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return []
-        out = []
-        for r in rows:
-            try:
-                out.append(Task(**r))
-            except TypeError:
-                continue
-        return sorted(out, key=lambda t: t.created_at, reverse=True)
+        with db_connect(self.dir) as conn:
+            self._maybe_migrate(conn)
+            rows = conn.execute("SELECT * FROM tasks ORDER BY created_at DESC").fetchall()
+        return [_task_from_row(r) for r in rows]
 
     def get(self, task_id: str) -> Task | None:
-        return next((t for t in self.all() if t.id == task_id), None)
+        with db_connect(self.dir) as conn:
+            self._maybe_migrate(conn)
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        return _task_from_row(row) if row else None
 
     def save(self, task: Task) -> None:
+        params = (
+            task.id, task.repo, task.title, task.details, task.agent, task.where,
+            task.created_at, task.status, task.branch, task.base, task.worktree,
+            task.pr_url, task.issue_url, task.message, task.finished_at,
+            1 if task.open_pr else 0, task.model, json.dumps(task.steps), task.effort,
+            task.summary, task.issue_number, task.reviewer, task.review,
+            task.reviewer_model, task.reviewer_effort, 1 if task.merged else 0,
+            task.priority, task.started_at,
+            json.dumps(task.review_rating) if task.review_rating is not None else None,
+        )
         with self.lock:
-            tasks = {t.id: t for t in self._load()}
-            tasks[task.id] = task
-            self.dir.mkdir(parents=True, exist_ok=True)
-            tmp = self.file.with_suffix(".tmp")
-            tmp.write_text(json.dumps([asdict(t) for t in tasks.values()], indent=1), encoding="utf-8")
-            for attempt in range(20):
+            with db_connect(self.dir) as conn:
+                self._maybe_migrate(conn)
+                conn.execute(_UPSERT_SQL, params)
                 try:
-                    tmp.replace(self.file)
-                    break
-                except PermissionError:  # another program (antivirus, indexer) has it open
-                    if attempt == 19:
-                        raise
-                    time.sleep(0.05)
-            self.record_task(task)
+                    conn.execute("SAVEPOINT record_task")
+                    self.ranking.record_task(task, conn=conn)
+                    conn.execute("RELEASE SAVEPOINT record_task")
+                except sqlite3.Error as exc:
+                    conn.execute("ROLLBACK TO SAVEPOINT record_task")
+                    conn.execute("RELEASE SAVEPOINT record_task")
+                    logging.getLogger(__name__).warning("Could not index task %s: %s", task.id, exc)
 
     def record_task(self, task: Task):
         try:
             return self.ranking.record_task(task)
         except sqlite3.Error as exc:
-            # tasks.json is durable. Recovery retries without holding up the queue.
             logging.getLogger(__name__).warning("Could not index task %s: %s", task.id, exc)
             return None
 

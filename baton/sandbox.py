@@ -45,6 +45,9 @@ def find_hardlinks(folder: Path, *, limit: int = 3) -> list[str]:
     shares an inode with a file outside `/workspace` and remains readable from
     inside a bind-mounted Docker container. Refusing Full permissions when any
     hardlink is present closes that host-side exposure.
+
+    Note: calls `os.lstat(entry.path)` rather than `entry.stat()`, because on
+    Windows `DirEntry.stat()` reads `WIN32_FIND_DATA` where `st_nlink` is 0.
     """
     found: list[str] = []
     root = Path(os.path.realpath(folder))
@@ -55,17 +58,16 @@ def find_hardlinks(folder: Path, *, limit: int = 3) -> list[str]:
             with os.scandir(current) as it:
                 for entry in it:
                     try:
-                        st = entry.stat(follow_symlinks=False)
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(Path(entry.path))
+                        elif entry.is_file(follow_symlinks=False):
+                            st = os.lstat(entry.path)
+                            if stat.S_ISREG(st.st_mode) and st.st_nlink > 1:
+                                found.append(os.path.relpath(entry.path, root))
+                                if len(found) >= limit:
+                                    break
                     except OSError:
                         continue
-                    mode = st.st_mode
-                    if stat.S_ISDIR(mode):
-                        stack.append(Path(entry.path))
-                    elif stat.S_ISREG(mode) and st.st_nlink > 1:
-                        rel = os.path.relpath(entry.path, root)
-                        found.append(rel)
-                        if len(found) >= limit:
-                            break
         except OSError:
             continue
     return found

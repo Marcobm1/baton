@@ -75,8 +75,9 @@ class SelfUpdate:
                     continue
                 if isinstance(entry, dict) and isinstance(entry.get("result"), str):
                     last = entry
-                    if last["result"] not in ("validated", "running"):
-                        self.error = last["result"]
+                    # Only the newest failure counts: a later successful update
+                    # clears it, so Quotas doesn't show an old error as current.
+                    self.error = "" if last["result"] in ("validated", "running") else last["result"]
         if last.get("result") == "validated" and last.get("new") == self.running:
             self.record(last.get("old"), self.running, "running")
 

@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Isolated Docker container for the All permissions mode
 updated: 2026-11-25
-updated_by: codex
+updated_by: opencode
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,7 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] 2026-11-25 Group local models by family and put the model in use first
 - [x] 2026-11-25 Stop local models and active tasks above 85 °C
 - [x] 2026-11-25 Serialize task and updater Git writes in the same clone
 - [x] 2026-11-25 Separate Go and pay-as-you-go models in the OpenCode chat picker
@@ -178,6 +179,7 @@ links:
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-25: local models are grouped and badged by family (e.g. Inkling, Qwen) with filter chips, variant (`Abliterated`) and context-size (`-c` / `--ctx-size`) badges, and the model currently in use is placed in the first position on `/models` and in the `/chat` model selectors (docs/models.md).
 - 2026-11-25: Agents chat phase 1 talks to OpenCode over ACP on stdio (`opencode acp`, one process per conversation, no port) instead of `opencode serve`; Baton's `baton-chat` agent reads freely inside the folder and asks for every edit, command, `.env` read and outside-folder access; Allow sends "allow once" only; no answer in 10 minutes denies; All permissions is refused on the server until the container exists (docs/agents-chat.md).
 - 2026-11-25: OpenCode models are grouped by provider with `opencode-go/` ("Included in OpenCode Go") first, `opencode/` ("Pay as you go (credits)") second with an inline warning when selected, and other providers (`local-*`, etc.) after; tasks failing with OpenCode's Go balance error explain the cause and suggest the closest `opencode-go/` model (docs/task-details.md).
 - 2026-11-24: the chat goes through Baton (`/api/chat/<id>`, streamed) instead of opening the model's port: works from the phone, the model stays on 127.0.0.1, and only text plus reasoning effort is forwarded (docs/models.md).
@@ -213,6 +215,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (opencode): Grouped local models by family (Inkling, Qwen, etc.) with family filter chips, distinct family badges, Abliterated variant badge and context window size, and placed the model currently in use in the first position on `/models` and in `/chat` selectors (docs/models.md).
 - 2026-11-25 (codex): Added [automatic GPU shutdown](docs/models.md#automatic-gpu-shutdown). Four tests covered 85/86 °C, model and reviewer shutdown, work preservation and queue recovery. Windows suite: 155 passed, three failed. Both manual cancellation cleanup failures reproduced on the base revision. The chat process-close test passed on retry.
 - 2026-11-25 (codex): Serialized task and updater Git writes per clone with a 120-second wait limit and logged task retries. All six new regression cases passed. Windows suite had 152 passes and two cancellation cleanup failures, both reproduced on the unchanged base.
 - 2026-11-25 (codex): Added Go, pay-as-you-go and other-provider buttons to OpenCode chat. Checked switching, the credit warning and session restoration in Edge. Windows suite: 146 passed, two known cancellation cleanup failures.

@@ -626,7 +626,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         oc = {"available": False, "groups": [], "folders": []}
         if agent == "opencode" and find_opencode():
             oc_list = await asyncio.to_thread(opencode_models)
-            oc = {"available": True, "groups": opencode_groups(oc_list, t),
+            active_families = {m["family_key"] for m in view["models"] if m["uses_gpu"]}
+            oc = {"available": True, "groups": opencode_groups(oc_list, t, active_families=active_families),
                   "folders": await asyncio.to_thread(chat_folders)}
         return page(request, "chat.html", "chat", view=view, selected=selected, error=error[:300],
                     agent=agent, oc=oc, efforts=EFFORTS)

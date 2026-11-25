@@ -206,6 +206,67 @@ def test_every_error_has_text():
                                      error="e").text(strings(lang))
 
 
+def test_family_distinction_and_running_model_in_first_position(tmp_path, fake_server, monkeypatch):
+    async def no_projects(self, force=False):
+        return [], []
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    monkeypatch.setattr(models.LocalModels, "gpus", lambda self: [
+        {"name": "GPU", "util": 40.0, "vram_used_mib": 14500.0, "vram_total_mib": 16384.0,
+         "temp": 55.0, "power": 110.0, "power_limit": 285.0}])
+
+    assert models.model_family("Inkling 2 Mini (oficial)", "inkling-2-mini") == ("inkling", "Inkling")
+    assert models.model_family("Qwen 3.8 27B", "qwen3.8-27b") == ("qwen", "Qwen")
+    assert models.model_family("DeepSeek R1 Distill Qwen 14B", "deepseek-r1") == ("deepseek", "DeepSeek")
+    assert models.model_family("Custom", "custom-1", explicit="Inkling") == ("inkling", "Inkling")
+
+    write_config(tmp_path, [
+        model_item(tmp_path, "inkling-2-mini", name="Inkling 2 Mini (oficial)", args=["-c", "32768"]),
+        model_item(tmp_path, "qwen3.8-27b", name="Qwen 3.8 27B (oficial)", args=["--ctx-size", "16384"]),
+        model_item(tmp_path, "inkling-2-mini-abliterated", name="Inkling 2 Mini (abliterated)"),
+        model_item(tmp_path, "qwen3.8-27b-abliterated", name="Qwen 3.8 27B (abliterated)"),
+    ])
+    lm = models.LocalModels(tmp_path)
+    view = lm.overview("es")
+    # Stopped: grouped by family in appearance order (Inkling first, Qwen second).
+    assert [m["id"] for m in view["models"]] == [
+        "inkling-2-mini",
+        "inkling-2-mini-abliterated",
+        "qwen3.8-27b",
+        "qwen3.8-27b-abliterated",
+    ]
+    assert [g["label"] for g in view["groups"]] == ["Inkling", "Qwen"]
+    assert view["models"][0]["ctx"] == 32768 and view["show"]["m.inkling-2-mini.ctx"] == "32 768"
+    assert not view["models"][0]["abliterated"] and view["models"][1]["abliterated"]
+
+    # Starting the last model puts it in first position (and its family first).
+    lm.start("qwen3.8-27b-abliterated")
+    try:
+        wait_for(lm, "qwen3.8-27b-abliterated", "running")
+        active_view = lm.overview("es")
+        assert [m["id"] for m in active_view["models"]] == [
+            "qwen3.8-27b-abliterated",
+            "qwen3.8-27b",
+            "inkling-2-mini",
+            "inkling-2-mini-abliterated",
+        ]
+        assert [g["key"] for g in active_view["groups"]] == ["qwen", "inkling"]
+        assert active_view["groups"][0]["active"] == 1 and active_view["groups"][1]["active"] == 0
+
+        client = TestClient(create_app(Settings(data_dir=tmp_path, lang="es", self_update=False)))
+        models_html = client.get("/models").text
+        # The running Qwen model appears before Inkling on the rendered page.
+        assert models_html.index('data-model="qwen3.8-27b-abliterated"') < models_html.index('data-model="inkling-2-mini"')
+        assert 'data-family-filter="qwen"' in models_html and 'data-family-filter="inkling"' in models_html
+        assert "En uso" in models_html and "Abliterated" in models_html and "32 768" in models_html
+
+        chat_html = client.get("/chat").text
+        assert '<optgroup label="Qwen">' in chat_html and '<optgroup label="Inkling">' in chat_html
+        assert chat_html.index('<optgroup label="Qwen">') < chat_html.index('<optgroup label="Inkling">')
+        assert "● Qwen 3.8 27B (abliterated)" in chat_html
+    finally:
+        lm.stop("qwen3.8-27b-abliterated")
+
+
 @pytest.mark.parametrize("lang", ["en", "es"])
 def test_page_and_actions(tmp_path, monkeypatch, lang):
     async def no_projects(self, force=False):

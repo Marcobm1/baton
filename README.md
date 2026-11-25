@@ -426,8 +426,11 @@ your computer, so they are not counted.
 The **Models** page shows this computer (CPU, RAM, disk, GPU load, VRAM,
 temperature and power draw), a VRAM budget and one card per local
 `llama-server` model with Start/Stop, generation and prompt speed and tokens
-served. It updates every 5 seconds. List your models in `~/.baton/models.json`;
-Baton only ever runs what that file says, always bound to `127.0.0.1`.
+served. Models are grouped and badged by family (such as **Inkling** or **Qwen**)
+with family filter chips, variant badges (**Abliterated**) and context size, and
+the model currently in use is placed in the first position. It updates every 5
+seconds. List your models in `~/.baton/models.json`; Baton only ever runs what
+that file says, always bound to `127.0.0.1`.
 The **Chat** page talks to them from any device (Baton relays and streams the answer;
 the model stays on `127.0.0.1`). See [docs/models.md](docs/models.md).
 

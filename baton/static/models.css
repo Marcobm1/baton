@@ -9,7 +9,35 @@
 .m-budget { height: 10px; margin: .8rem 0 .6rem; }
 .m-parts { list-style: none; padding: 0; margin: .4rem 0; }
 .m-parts li { display: flex; justify-content: space-between; gap: .6rem; padding: .3rem 0; border-bottom: 1px solid var(--line); }
-.m-title { margin-top: 0; }
+.m-section-head { display: flex; justify-content: space-between; align-items: center; gap: .8rem; flex-wrap: wrap; margin-bottom: .8rem; }
+.m-title { margin: 0; }
+.m-filters button.chip { font: 550 .85rem var(--sans); color: var(--ink) !important; background: var(--panel); border-color: var(--line); }
+.m-filters button.chip:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); filter: none; }
+.m-filters button.chip[aria-current="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent) !important; }
+.m-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }
+.m-filters button.chip[aria-current="true"] .m-dot { background: var(--on-accent); }
+.m-family-group + .m-family-group { margin-top: 1.4rem; }
+.m-family-group[hidden] { display: none; }
+.m-family-head { margin: 1.1rem 0 .7rem; }
+.m-family-count { font: 600 .72rem var(--mono); color: var(--muted); }
+.m-head-main { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+.m-badges { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.badge.m-family { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+                  background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
+.badge.m-family[data-family="qwen"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+                                      background: color-mix(in srgb, var(--ok) 9%, var(--panel)); }
+.badge.m-family[data-family="deepseek"] { color: var(--openai); border-color: color-mix(in srgb, var(--openai) 45%, var(--line));
+                                          background: color-mix(in srgb, var(--openai) 10%, var(--panel)); }
+.badge.m-family[data-family="llama"] { color: var(--claude); border-color: color-mix(in srgb, var(--claude) 45%, var(--line));
+                                       background: color-mix(in srgb, var(--claude) 10%, var(--panel)); }
+.badge.m-ablit { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+                 background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+.badge.m-active-badge { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+                        background: color-mix(in srgb, var(--ok) 12%, var(--panel)); }
+.m-model.is-active { border-color: color-mix(in srgb, var(--ok) 50%, var(--line));
+                     background: color-mix(in srgb, var(--ok) 4%, var(--panel)); }
+.m-model.is-active::before { content: ""; position: absolute; left: 0; top: 1rem; bottom: 1rem; width: 3px;
+                             border-radius: 0 3px 3px 0; background: var(--ok); }
 .m-facts, .m-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: .55rem 1rem; margin: .6rem 0; }
 .m-facts .wide { grid-column: 1 / -1; }
 .m-facts dd, .m-stats dd { margin: .15rem 0 0; overflow-wrap: anywhere; }

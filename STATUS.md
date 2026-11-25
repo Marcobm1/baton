@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Agents chat for OpenCode, Claude Code and Codex in Baton, with tools
 updated: 2026-11-25
-updated_by: opencode
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -185,6 +185,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (claude-code): review of the OpenCode Go grouping: the task page now uses the cached OpenCode model list (no `opencode models` run inside a request), kept the old log parsing for runs without an agent step; 137 tests passed on Windows.
 - 2026-11-25 (opencode): grouped OpenCode models by provider ("Included in OpenCode Go" for `opencode-go/`, "Pay as you go (credits)" for `opencode/`, provider name for `local-*` and others), added a warning under the selector when an `opencode/` model is chosen, and added OpenCode Go insufficient-balance error detection on the task page with the closest included `opencode-go/` model suggestion, en/es strings, README note and tests; 137 tests passed on Windows.
 - 2026-11-24 (claude-code): Chat page (nav tab) relaying /v1/chat/completions with streaming, reasoning shown apart, safe Markdown, per-model history in the browser, start a model from the chat; fixed the dead Start button; checked live with Inkling 2 Mini (~57 tok/s through Baton) at desktop and 375 px.
 - 2026-11-24 (claude-code): Models page (`/models`, nav tab): this PC's CPU/RAM/disk/GPU readings, VRAM budget, Start/Stop for the llama-server models in `~/.baton/models.json`, live speed and tokens served from `--metrics`; detects servers started outside Baton; new dependency psutil 7.2.2; 130 tests passed on Windows (the two cancellation tests passed too); checked at 800 px dark and 375 px light.

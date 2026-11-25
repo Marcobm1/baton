@@ -2,7 +2,7 @@
 
 import re
 
-from .runner import Task, opencode_models
+from .runner import Task, cached_opencode_models
 from .task_models import closest_opencode_go_model
 
 
@@ -61,7 +61,7 @@ def _agent_lines(output: str, agent: str) -> list[str]:
 
 def task_report(task: Task, log: str) -> dict:
     start = re.search(r"^== Running [^\n]*\n", log, re.M)
-    output = log[start.end():] if start else re.sub(r"^== .*", "", log, flags=re.M)
+    output = log[start.end():] if start else ""
     finish = re.search(r"== Agent finished \(exit code (-?\d+)\)", output, re.M)
     output = output[:finish.start()] if finish else output
     output = re.sub(r"^!! .*", "", output, flags=re.M)
@@ -78,7 +78,7 @@ def task_report(task: Task, log: str) -> dict:
                 m = re.search(r"\(([^()\s]+/[^()\s]+)\)", start[0])
                 model = m[1] if m else ""
             if model:
-                suggestion = closest_opencode_go_model(model, opencode_models())
+                suggestion = closest_opencode_go_model(model, cached_opencode_models())
         elif task.agent == "claude-code" and finish and int(finish[1]):
             reason = " ".join(lines[-4:])[-1000:]
             if reason:

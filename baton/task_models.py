@@ -75,9 +75,6 @@ def opencode_groups(models: list[str], t: dict[str, str] | None = None) -> list[
     return groups
 
 
-group_opencode_models = opencode_groups
-
-
 def _model_tokens(slug: str) -> list[str]:
     return re.findall(r"[a-z]+|\d+(?:\.\d+)?", slug.lower())
 

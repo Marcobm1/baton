@@ -79,7 +79,7 @@ def test_git_failure_after_claude_success(detail):
 def test_opencode_go_insufficient_balance_error_and_suggestion(tmp_path, monkeypatch):
     from baton import task_report as tr
 
-    monkeypatch.setattr(tr, "opencode_models", lambda: [
+    monkeypatch.setattr(tr, "cached_opencode_models", lambda: [
         "opencode-go/gemini-4-argon",
         "opencode-go/glm-5.3",
         "opencode/gemini-4-neon",

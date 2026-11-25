@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "Hardening Phase 3: modularization, SQLite storage and live UX"
+next: "Hardening Phase 3B: unified SQLite WAL storage"
 updated: 2026-11-25
 updated_by: gemini
 open_source: true
@@ -52,17 +52,27 @@ links:
   generalized `GEMINI_MODEL`, added merged `baton/*` branch cleanup, avoided
   caching transient GraphQL failures, and bounded `Hub.load()` concurrency with
   an `asyncio.Semaphore`.
-- [ ] Hardening Phase 3: modularization, SQLite storage and live UX
-  Implement Phase 3 of [the hardening roadmap](docs/hardening-roadmap.md): split
-  `baton/web.py` into FastAPI `APIRouter` modules (`routes/`), split
-  `baton/runner.py` into focused modules (`task_store.py`, `worktree.py`,
-  `agents.py`, `review_merge.py`, `runner.py`), consolidate `tasks.json` +
-  `ranking.sqlite3` into a single SQLite database in WAL mode
-  (`busy_timeout=30000`, schema initialized once), stream task progress and logs
-  via SSE on `/tasks/{id}` (plus readable rendering for Gemini `stream-json`
-  logs), compute `usage.collect()` in the background loop instead of blocking
-  `/quotas`, and archive old `STATUS.md` history to keep it concise. Verify with
-  `pytest -q`, `ruff check baton tests`, and `node --check baton/static/*.js`.
+- [x] 2026-11-25 Hardening Phase 3A: modularize runner.py and web.py
+  Split `baton/runner.py` (1,253 → 590 lines) into `task_store.py`, `worktree.py`,
+  `agents.py`, `review_merge.py`, and `runner.py`; split `baton/web.py` (935 → 276
+  lines) into eight FastAPI `APIRouter` modules under `baton/routes/` with an
+  isolated per-app `AppContext` (`app.state.ctx`); preserved backward-compatible
+  re-exports and added isolation + stdlib-only tests (`tests/test_modularization.py`).
+- [ ] Hardening Phase 3B: unified SQLite WAL storage
+  Consolidate `tasks.json` and `ranking.sqlite3` into a single `baton.sqlite3`
+  database in WAL mode (`PRAGMA busy_timeout=30000`, schema initialized once on
+  open) via a shared `baton/db.py`, keeping `TaskStore` and `Ranking` APIs intact
+  with automatic one-time migration from legacy `tasks.json` / `ranking.sqlite3`
+  (preserving legacy files untouched as backup). Verify with `pytest -q` and
+  `ruff check baton tests`.
+  Recommended: claude-code, opus, high
+- [ ] Hardening Phase 3C: task SSE, readable Gemini logs, background usage and STATUS.md archive
+  Add live SSE streaming (`GET /api/tasks/{task_id}/events` + `task-live.js`) on
+  `/tasks/{id}`, format Gemini `stream-json` logs into readable text/tool/result
+  output in `task_report.py`, compute `usage.collect()` in the background loop so
+  `/quotas` never blocks on disk log scans, and archive old `STATUS.md` history
+  to `docs/history.md` to keep `STATUS.md` under 100 lines. Verify with `pytest -q`,
+  `ruff check baton tests`, and `node --check baton/static/*.js`.
   Recommended: claude-code, opus, high
 - [ ] (Marco) Send a first real Gemini task from Baton
   New task → Gemini, model `gemini-3.8-flash` (low) on a small change in this
@@ -231,6 +241,7 @@ links:
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-25: Phase 3A modularization: `baton/runner.py` delegates to `task_store.py`, `worktree.py`, `agents.py`, and `review_merge.py` while keeping backward-compatible re-exports; `baton/web.py` mounts eight FastAPI `APIRouter` modules under `baton/routes/` sharing an isolated per-app `AppContext` stored on `app.state.ctx` (injected via module-level `CTX = Depends(get_ctx)` to satisfy ruff B008 and preserve multi-instance test isolation).
 - 2026-11-25: Phase 2 hardening: `usage.py` keeps max/final token counts per Claude Code `(message.id, requestId)` and opens OpenCode SQLite via `db.resolve().as_uri() + "?mode=ro"`; `quotas.py` uses stdlib `urllib.request` (no `httpx`); `ranking.py` uses 52-bit JS-safe IDs and records resolved models (or `<agent>/default`); `runner.py` casefolds repo keys, narrows `_committing` to Git write/merge windows so tasks can be cancelled during CI wait and AI review (waking `_wait_for_tests()` immediately), and deletes merged `baton/*` branches locally and remotely; `models.py` checks VRAM budget inside `self.lock`, skips unchanged state writes (retrying Windows `PermissionError`), and keeps `chat_port()` lightweight; `agent_chat.py` reaps idle sessions periodically and cancels timed-out turns; `github.py` stamps `updated:`/`updated_by: human` on web ticks, caches permanent 401/403/404 `open_pulls()` errors only (never transient 5xx/network failures), and bounds `Hub.load()` with `asyncio.Semaphore(8)`.
 - 2026-11-25: all agent subprocesses receive `agent_env()` (stripping `BATON_*`, `GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_PAT`, `ANTHROPIC_API_KEY`, `OPENCODE_PERMISSION`); optional `BATON_ACCESS_KEY` locks the UI/API (except `/healthz`, `/login`, `/static/*`) behind a 30-day HMAC-signed `HttpOnly`, `SameSite=Strict` cookie (`Secure` over HTTPS) rather than trusting spoofable loopback `Tailscale-User-Login` headers (docs/security.md).
 - 2026-11-25: Windows agent processes run inside kernel Job Objects (`baton/proc.py`, `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) with serialized `kill_tree()` before worktree cleanup and read-only `rmtree` fallback (docs/cancelling-tasks.md); `SelfUpdate` remembers a failed target SHA across restarts and skips automatic retries until `origin/main` advances or **Update now** is clicked (docs/self-update.md); `find_codex()` resolves native `codex.exe` before falling back to `.cmd` wrappers; CI tests both `ubuntu-latest` and `windows-latest` plus `ruff` and JS syntax checks.
@@ -272,6 +283,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (gemini): Completed hardening roadmap Phase 3A (modularization): split `baton/runner.py` (1,253 → 590 lines) into `task_store.py`, `worktree.py`, `agents.py`, `review_merge.py`, and `runner.py`; split `baton/web.py` (935 → 276 lines) into eight `APIRouter` modules under `baton/routes/` with isolated per-app `AppContext` (`app.state.ctx`); added `tests/test_modularization.py`. Linux VM suite: 214 passed, ruff and JS checks clean.
 - 2026-11-25 (gemini): Completed hardening roadmap Phase 2 (data accuracy, concurrency & repo hygiene): Claude Code streaming token max-per-key + OpenCode read-only SQLite URI (`usage.py`), stdlib `urllib.request` in `quotas.py`, resolved models + 52-bit IDs (`ranking.py`), generalized `GEMINI_MODEL` (`task_models.py`), casefolded repo dispatch + cancellation during CI wait/review + merged `baton/*` branch cleanup (`runner.py`), locked VRAM checks + skip-unchanged/retry state save + lightweight `chat_port()` (`models.py`), periodic idle reaper + turn timeout (`agent_chat.py`), and `updated:`/`updated_by:` stamping + transient GraphQL failure handling + `Semaphore(8)` (`github.py`). Linux VM suite: 211 passed, ruff and JS checks clean.
 - 2026-11-25 (gemini): Completed hardening roadmap Phase 1 (1.1–1.6): shared `agent_env()`, optional `BATON_ACCESS_KEY` session-cookie auth (`baton/auth.py`, `/login`, `/logout`), Windows Job Objects and fallback worktree cleanup (`baton/proc.py`), `SelfUpdate` failed-SHA retry skip (`updates.jsonl`), native `codex.exe` resolution in `find_codex()`, and `windows-latest` + `ruff`/`node --check` CI. Linux VM suite: 198 passed, ruff and JS checks clean, `test_runner.py` 5/5 passed; live Windows verification pending CI/PC run.
 - 2026-11-25 (claude-code): Quotas → Baton updates no longer shows an old update failure as the last error once a later update has succeeded. Suite: 174 passed.

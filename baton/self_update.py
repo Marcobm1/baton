@@ -9,7 +9,7 @@ import sys
 import time
 
 from .git_lock import GitLockError, is_lock_error, run_locked
-from .runner import _remote_repo
+from .worktree import _remote_repo
 
 
 def command(root, argv, label, timeout=120):

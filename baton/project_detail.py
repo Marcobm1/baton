@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from markdown_it import MarkdownIt
 
 if TYPE_CHECKING:
-    from .runner import Task
+    from .task_store import Task
 
 
 # A line in a Next item's description that names the agent to use:

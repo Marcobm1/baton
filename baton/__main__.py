@@ -147,7 +147,7 @@ def cmd_ping(args) -> int:
 
 def cmd_delegate(args) -> int:
     from . import delegate
-    from .runner import opencode_models
+    from .agents import opencode_models
 
     if args.list:
         print("\n".join(opencode_models()) or "No models (is OpenCode installed?)")

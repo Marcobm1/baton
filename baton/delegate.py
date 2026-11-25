@@ -26,7 +26,7 @@ import sys
 
 from .ping import _NO_WINDOW, agent_env
 from .ranking import cli_ranking
-from .runner import ALWAYS_DENIED, OPENCODE_CONFIG, READ_RULES, _rule, find_opencode, opencode_models
+from .agents import ALWAYS_DENIED, OPENCODE_CONFIG, READ_RULES, _rule, find_opencode, opencode_models
 
 WEB_RULES = [_rule("webfetch", "allow"), _rule("websearch", "allow")]
 

@@ -37,7 +37,7 @@ from typing import Any, Callable
 from . import __version__
 from .ping import _NO_WINDOW, agent_env, find_agy
 from .proc import attach_job, close_job, kill_tree
-from .runner import ALWAYS_DENIED, NO_GIT_CHANGES, _rule, find_opencode
+from .agents import ALWAYS_DENIED, NO_GIT_CHANGES, _rule, find_opencode
 from .usage import record_gemini
 
 CHAT_AGENT = "baton-chat"

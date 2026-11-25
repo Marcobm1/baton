@@ -2,7 +2,8 @@
 
 import re
 
-from .runner import Task, cached_opencode_models
+from .agents import cached_opencode_models
+from .task_store import Task
 from .task_models import closest_opencode_go_model
 
 

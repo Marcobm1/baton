@@ -167,20 +167,73 @@ def test_full_mode_switch_with_fake_acp_and_server_guards(tmp_path, monkeypatch)
         assert "leaked: none" in full_text
 
 
+def test_full_mode_refuses_hardlinked_files(tmp_path, monkeypatch):
+    """Pre-existing hardlinks (st_nlink > 1) inside a folder must block Full mode."""
+    async def no_projects(self, force=False):
+        return [], []
+
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    monkeypatch.setattr(web, "opencode_models", lambda: MODELS)
+    monkeypatch.setattr(web, "find_opencode", lambda: "opencode")
+
+    sibling = tmp_path / "sibling"
+    sibling.mkdir()
+    secret = sibling / "secret.txt"
+    secret.write_text("SIBLING_SECRET\n", encoding="utf-8")
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    hardlink = scratch / "leaked_hardlink.txt"
+    os.link(str(secret), str(hardlink))
+    assert sandbox.find_hardlinks(scratch) == ["leaked_hardlink.txt"]
+
+    app = create_app(Settings(data_dir=tmp_path / "data", lang="en", self_update=False,
+                              chat_scratch=str(scratch)))
+    chats = app.state.agent_chats
+    chats.sandbox_command = lambda folder, cname, cfg_json: [sys.executable, str(FAKE_ACP)]
+
+    with TestClient(app) as client:
+        page = client.get("/chat?agent=opencode").text
+        csrf = page.split('data-csrf="')[1].split('"')[0]
+        r = client.post("/api/agents", json={
+            "agent": "opencode", "model": "local-inkling/inkling-2-mini",
+            "effort": "low", "folder": "scratch", "mode": "full",
+        }, headers={"X-Baton-CSRF": csrf})
+        assert r.status_code == 403
+        assert EN["ag_full_hardlink"] in r.json()["detail"]
+        assert "leaked_hardlink.txt" in r.json()["detail"]
+
+
 @pytest.mark.skipif(
     not sandbox.docker_available("alpine:3.20"),
     reason="Real Docker daemon with alpine:3.20 image not available on this runner",
 )
 def test_real_docker_container_confines_workspace_and_blocks_sibling_and_symlink(tmp_path):
-    """Acceptance check from docs/agents-chat.md: two temporary sibling folders + symlink."""
+    """Acceptance check from docs/agents-chat.md: two temporary sibling folders + symlink/junction."""
     workspace = tmp_path / "workspace"
     sibling = tmp_path / "sibling"
     workspace.mkdir()
     sibling.mkdir()
     secret = sibling / "secret.txt"
     secret.write_text("TOP_SECRET_SIBLING_DATA\n", encoding="utf-8")
+
+    escape_target = "/workspace/escape_link"
     escape_link = workspace / "escape_link"
-    os.symlink(str(secret), str(escape_link))
+    try:
+        os.symlink(str(secret), str(escape_link))
+    except OSError:
+        if os.name == "nt":
+            # Without Windows Developer Mode, os.symlink raises WinError 1314;
+            # use a directory junction (`mklink /J`) which needs no elevation.
+            j = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(escape_link), str(sibling)],
+                capture_output=True, text=True,
+            )
+            if j.returncode != 0:
+                pytest.skip(f"Could not create symlink or junction: {j.stderr.strip()}")
+            escape_target = "/workspace/escape_link/secret.txt"
+        else:
+            pytest.skip("Could not create symlink in workspace")
 
     script = (
         "set -eu\n"
@@ -188,8 +241,8 @@ def test_real_docker_container_confines_workspace_and_blocks_sibling_and_symlink
         "sh -c 'echo from-child > /workspace/by-child.txt'\n"
         "if cat ../sibling/secret.txt 2>/dev/null; then echo LEAK_REL; exit 2; fi\n"
         f"if cat {str(secret)!r} 2>/dev/null; then echo LEAK_ABS; exit 3; fi\n"
-        "if cat /workspace/escape_link 2>/dev/null; then echo LEAK_LINK; exit 4; fi\n"
-        "if sh -c 'cat /workspace/escape_link 2>/dev/null'; then echo LEAK_CHILD_LINK; exit 5; fi\n"
+        f"if cat {escape_target} 2>/dev/null; then echo LEAK_LINK; exit 4; fi\n"
+        f"if sh -c 'cat {escape_target} 2>/dev/null'; then echo LEAK_CHILD_LINK; exit 5; fi\n"
         "if [ -e /var/run/docker.sock ]; then echo LEAK_SOCK; exit 6; fi\n"
         "if [ -n \"${GITHUB_TOKEN:-}\" ] || [ -n \"${BATON_ACCESS_KEY:-}\" ]; then echo LEAK_ENV; exit 7; fi\n"
         "echo CONFINED_OK\n"

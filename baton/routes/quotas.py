@@ -16,10 +16,8 @@ router = APIRouter()
 
 @router.get("/quotas", response_class=HTMLResponse)
 async def quotas_page(request: Request, ctx: AppContext = CTX):
-    go_error, gemini_error = await asyncio.gather(
-        asyncio.to_thread(ctx.refresh_go),
-        asyncio.to_thread(ctx.refresh_gemini),
-    )
+    go_error = await asyncio.to_thread(ctx.refresh_go)
+    gemini_error = ctx.gemini_error()
     return ctx.page(
         request, "quotas.html", "quotas",
         go_error=go_error,

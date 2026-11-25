@@ -92,6 +92,10 @@ def _resolve_codex_native(wrapper: str) -> str | None:
         arch, triple = "x64", "x86_64-pc-windows-msvc"
     root = os.path.join(os.path.dirname(wrapper), "node_modules", "@openai")
     candidates = (
+        os.path.join(root, f"codex-win32-{arch}", "vendor", triple, "bin", "codex.exe"),
+        os.path.join(root, "codex", "node_modules", "@openai", f"codex-win32-{arch}",
+                     "vendor", triple, "bin", "codex.exe"),
+        os.path.join(root, "codex", "vendor", triple, "bin", "codex.exe"),
         os.path.join(root, f"codex-win32-{arch}", "vendor", triple, "codex", "codex.exe"),
         os.path.join(root, "codex", "node_modules", "@openai", f"codex-win32-{arch}",
                      "vendor", triple, "codex", "codex.exe"),

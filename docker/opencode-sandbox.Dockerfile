@@ -9,7 +9,7 @@ FROM node:22-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git python3 ripgrep \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g @opencode/cli \
+    && npm install -g @opencode/cli@2.4.1 \
     && npm cache clean --force \
     && useradd -m -s /bin/bash agent \
     && mkdir -p /workspace \

@@ -158,6 +158,7 @@ def test_quotas_does_not_block_on_slow_usage_collect(tmp_path, monkeypatch):
 
     monkeypatch.setattr(usage, "collect", slow_collect)
     app = web.create_app(Settings(data_dir=tmp_path, lang="en"))
+    app.state.ctx.find_agy_fn = lambda: None
     client = TestClient(app)
 
     # First /quotas returns immediately even while usage.collect() is blocked in background.
@@ -180,3 +181,35 @@ def test_quotas_does_not_block_on_slow_usage_collect(tmp_path, monkeypatch):
     assert r2.status_code == 200
     assert "gemini-4-neon" in r2.text
     assert calls == 1
+
+
+def test_quotas_does_not_block_on_slow_gemini_refresh(tmp_path, monkeypatch):
+    from baton.routes import deps as deps_mod
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_gemini(data_dir):
+        started.set()
+        release.wait(5.0)
+        return True, "ok"
+
+    monkeypatch.setattr(deps_mod, "fetch_gemini_quota", slow_gemini)
+    monkeypatch.setattr(usage, "collect", lambda *a, **kw: {"days": 7, "apps": []})
+    app = web.create_app(Settings(data_dir=tmp_path, lang="en"))
+    app.state.ctx.find_agy_fn = lambda: "agy"
+    client = TestClient(app)
+
+    t0 = time.monotonic()
+    resp = client.get("/quotas")
+    elapsed = time.monotonic() - t0
+    assert resp.status_code == 200
+    assert elapsed < 1.0
+    assert started.wait(2.0)
+
+    release.set()
+    deadline = time.time() + 5.0
+    while time.time() < deadline and app.state.ctx.gemini_state["at"] == 0.0:
+        time.sleep(0.02)
+    assert app.state.ctx.gemini_state["at"] > 0.0
+    assert app.state.ctx.gemini_state["msg"] == ""

@@ -455,6 +455,23 @@ def test_find_codex_resolves_nested_arm64_native_exe(tmp_path, monkeypatch):
     assert ping.find_codex() == str(native)
 
 
+def test_find_codex_resolves_vendor_bin_codex_exe(tmp_path, monkeypatch):
+    """codex-cli 0.171.0 ships codex.exe under vendor/<triple>/bin/codex.exe."""
+    npm = tmp_path / "npm"
+    wrapper = npm / "codex.CMD"
+    native = (npm / "node_modules" / "@openai" / "codex" / "node_modules" / "@openai"
+              / "codex-win32-x64" / "vendor" / "x86_64-pc-windows-msvc" / "bin" / "codex.exe")
+    native.parent.mkdir(parents=True)
+    wrapper.write_text("")
+    native.write_text("")
+    monkeypatch.delenv("BATON_CODEX_BIN", raising=False)
+    monkeypatch.setattr(ping.os, "name", "nt")
+    monkeypatch.setattr(ping.platform, "machine", lambda: "AMD64")
+    monkeypatch.setattr(ping.shutil, "which", lambda name: None if name == "codex.exe" else str(wrapper))
+
+    assert ping.find_codex() == str(native)
+
+
 def test_find_codex_falls_back_to_cmd_only_when_no_native_binary_exists(tmp_path, monkeypatch):
     wrapper = tmp_path / "codex.cmd"
     wrapper.write_text("")

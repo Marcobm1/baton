@@ -118,9 +118,9 @@ async def agents_create(request: Request, ctx: AppContext = CTX):
         chat = await asyncio.to_thread(ctx.agent_chats.create, path, folder["label"], model, effort, mode,
                                        agent, local_models=local_models)
     except ChatError as exc:
-        status = 403 if exc.key in ("ag_full_off", "ag_full_abliterated", "ag_full_local_only") else (
-            502 if exc.key == "ag_err_start" else 409
-        )
+        status = 403 if exc.key in (
+            "ag_full_off", "ag_full_abliterated", "ag_full_local_only", "ag_full_hardlink"
+        ) else (502 if exc.key == "ag_err_start" else 409)
         raise _agent_error(ctx, exc, status) from exc
     return JSONResponse(chat.info())
 

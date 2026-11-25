@@ -170,12 +170,20 @@ models (`local-*`) only**:
 - **Visible warning and badge:** selecting All permissions shows a red alert
   banner before starting; active All permissions sessions carry a red
   `ALL PERMISSIONS · DOCKER` badge and still log every tool call.
+- **Hardlink guard (`find_hardlinks()`):** before starting a Full-permissions
+  container, Baton scans the folder for regular files with `st_nlink > 1`
+  (NTFS or POSIX hardlinks) and refuses with `403` if any exist, because a
+  pre-existing hardlink to a sibling file shares its inode and remains readable
+  inside a bind mount.
 - **Verification (`tests/test_sandbox.py`):** unit tests verify the hardened
-  `docker run` command, `FULL_RULES` defense-in-depth, and fake-ACP mode switch
-  + server-side 403 guards; a real Docker acceptance test verifies two sibling
-  folders + symlink escape attempt (both parent and child process edit
-  `/workspace` and are denied access to the sibling, symlink, Docker socket,
-  and host secrets).
+  `docker run` command, `FULL_RULES` defense-in-depth, hardlink refusal, and
+  fake-ACP mode switch + server-side 403 guards; a real Docker acceptance test
+  verifies two sibling folders + symlink (or Windows directory junction when
+  `os.symlink` lacks Developer Mode privilege): both parent and child process
+  edit `/workspace` and are denied access to the sibling, symlink/junction,
+  Docker socket, and host secrets. Verified 2026-11-25 on both Linux Docker
+  Engine and Windows Docker Desktop (`opencode v2.4.1`, `CapEff=0`,
+  `NoNewPrivs=1`).
 
 ## Working directory and permissions (background)
 
@@ -185,8 +193,26 @@ Run the tool process and its descendants inside an OS boundary with the selected
 
 Verify isolation with two temporary sibling directories, one mounted as the workspace and one holding a marker. An approved command and a child process should each be able to edit the workspace and be denied access to the sibling, including through a junction. Repeat in Full mode. Disable tool execution if the boundary cannot be established.
 
-## Phase 2 notes: Claude Code and Codex
+## Phase 2 notes: Claude Code and Codex (verified on Windows 2026-11-25)
 
-The Windows PATH check found neither a Claude ACP adapter nor a Codex ACP adapter. Codex exec supports stdin, JSON events and session resume. Its help did not advertise a bidirectional approval channel. Verify the approval exchange with a real client before exposing Confirm mode. A log event emitted after a command starts is too late for authorization. Verify Claude's streaming permission exchange separately.
+Neither Claude Code nor Codex ships an ACP adapter on PATH. Verified live in
+`C:\IA\pruebas-opencode\baton-fase2`:
 
-Full mode should preapprove calls only inside the same boundary. Display a red warning and conversation badge, and reject Full on the server for abliterated models, including when selected via their OpenCode provider alias. Fake agents can verify the chat protocol and UI state. Host confinement and phone access require separate acceptance checks.
+- **Claude Code (`claude.exe` 2.1.331):** bidirectional JSONL over stdio using
+  `claude -p --input-format stream-json --output-format stream-json --verbose --permission-mode manual --permission-prompt-tool stdio --strict-mcp-config --setting-sources local --disallowedTools AskUserQuestion`.
+  Handshake via `control_request` (`initialize`) → `control_response`; interactive
+  approvals arrive as `control_request` (`can_use_tool`) and answer via
+  `control_response` (`allow` with `updatedInput` or `deny` with `message`).
+  Resume works across process restarts via `--resume <session_id>`. Never store
+  or log `account` or `credential_expires_at` fields.
+- **Codex (`codex-cli` 0.171.0):** `codex exec --json` has no interactive
+  approval channel (Full permissions only). Interactive Confirm mode uses
+  `codex app-server` (JSON-RPC 2.0 over stdio): `initialize` → `initialized` →
+  `thread/start` (`sandbox: "read-only"`, `approvalPolicy: "untrusted"`) →
+  `turn/start`, answering `item/commandExecution/requestApproval` and
+  `item/fileChange/requestApproval` with `decision: "accept"` or `"decline"`.
+  Resume uses `thread/resume` with `excludeTurns: true`. Caveat on Windows: an
+  approved command runs with write access as Marco's user even under
+  `sandbox: "read-only"`. Never store or log `account/*` or `planType`.
+
+Full mode should preapprove calls only inside an isolated boundary. Display a red warning and conversation badge, and reject Full on the server for abliterated models, including when selected via their OpenCode provider alias. Fake agents can verify the chat protocol and UI state. Host confinement and phone access require separate acceptance checks.

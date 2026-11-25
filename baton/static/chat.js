@@ -22,60 +22,7 @@
   }
   try { var eff = localStorage.getItem("baton-chat-effort"); if (eff) effortSel.value = eff; } catch (e) {}
 
-  // ----------------------------------------------------------- markdown
-  // A small, safe subset: everything is escaped first, then code, headings,
-  // lists, bold, italics and http(s) links are added back.
-  function esc(s) {
-    return s.replace(/[&<>"']/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-    });
-  }
-  function inline(raw) {
-    return raw.split(/(`[^`\n]+`)/).map(function (part, i) {
-      if (i % 2) return "<code>" + esc(part.slice(1, -1)) + "</code>";
-      return esc(part)
-        .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-        .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>")
-        .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
-                 '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-    }).join("");
-  }
-  function md(src) {
-    var out = [], lines = src.replace(/\r/g, "").split("\n"), i = 0, list = null, para = [];
-    function flush() {
-      if (para.length) { out.push("<p>" + para.map(inline).join("<br>") + "</p>"); para = []; }
-    }
-    function close() { if (list) { out.push("</" + list + ">"); list = null; } }
-    while (i < lines.length) {
-      var line = lines[i], fence = line.match(/^\s*```\s*([\w+#.-]*)/);
-      if (fence) {
-        flush(); close();
-        var code = [];
-        for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) code.push(lines[i]);
-        i++;
-        out.push("<pre><code>" + esc(code.join("\n")) + "</code></pre>");
-        continue;
-      }
-      var h = line.match(/^(#{1,4})\s+(.*)/), ul = line.match(/^\s*[-*+]\s+(.*)/), ol = line.match(/^\s*\d+[.)]\s+(.*)/);
-      if (h) {
-        flush(); close();
-        var n = h[1].length + 2;
-        out.push("<h" + n + ">" + inline(h[2]) + "</h" + n + ">");
-      } else if (ul || ol) {
-        flush();
-        var tag = ul ? "ul" : "ol";
-        if (list !== tag) { close(); out.push("<" + tag + ">"); list = tag; }
-        out.push("<li>" + inline((ul || ol)[1]) + "</li>");
-      } else if (!line.trim()) {
-        flush(); close();
-      } else {
-        close(); para.push(line);
-      }
-      i++;
-    }
-    flush(); close();
-    return out.join("");
-  }
+  var md = window.BatonChat.md;   // chat-common.js
 
   // ----------------------------------------------------------- messages
   function scrollDown() { window.scrollTo(0, document.body.scrollHeight); }

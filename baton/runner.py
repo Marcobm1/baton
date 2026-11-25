@@ -368,6 +368,12 @@ class LocalRepos:
             self._cache = (time.time(), self._scan())
         return self._cache[1].get(repo)
 
+    def all(self) -> dict[str, Path]:
+        """Every local clone Baton knows: owner/repo (lower case) -> folder."""
+        if not self._cache or time.time() - self._cache[0] > 300:
+            self._cache = (time.time(), self._scan())
+        return {**self._cache[1], **self.overrides}
+
 
 class TaskStore:
     def __init__(self, data_dir: Path):

@@ -40,3 +40,42 @@
 .chat-input button[data-busy] { background: var(--panel-2); color: var(--bad) !important; border-color: var(--line); }
 .chat-hint { margin: -.3rem 0 0; text-align: center; }
 @media (min-width: 900px) { .chat-input { bottom: 1rem; } }
+
+/* Agents chat: permission modes, tool calls and permission requests. */
+.ag-mode { border: 1px solid var(--line); border-radius: var(--radius); padding: .5rem .8rem .6rem; margin: 0;
+           display: flex; flex-direction: column; gap: .35rem; background: var(--panel); }
+.ag-mode legend { padding: 0 .3rem; }
+.ag-mode label { display: flex; gap: .5rem; align-items: baseline; }
+.ag-full { color: var(--muted); }
+.ag-full .small { color: var(--bad); }
+.ag-fixed { margin: 0; }
+.ag-note { margin: 0; }
+.ag-tool { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2);
+           padding: .35rem .7rem; font-size: .88rem; }
+.ag-tool summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: baseline; }
+.ag-kind { font: 600 .66rem var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
+.ag-title { font-family: var(--mono); overflow-wrap: anywhere; flex: 1; min-width: 0; }
+.ag-status { font-size: .75rem; color: var(--muted); }
+.ag-status.ag-completed { color: var(--ok); } .ag-status.ag-failed { color: var(--bad); }
+.ag-block { margin-top: .45rem; }
+.ag-block pre { margin: .2rem 0 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
+                padding: .5rem .6rem; overflow: auto; max-height: 20rem; font: .8rem/1.45 var(--mono); white-space: pre-wrap;
+                overflow-wrap: anywhere; }
+.ag-diff .add { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); display: block; }
+.ag-diff .del { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); display: block; }
+.ag-diff span { white-space: pre-wrap; }
+.ag-perm { border: 2px solid var(--warn); border-radius: var(--radius); padding: .7rem .9rem;
+           background: color-mix(in srgb, var(--warn) 8%, var(--panel)); }
+.ag-perm .ag-cmd { font-weight: 600; }
+.ag-perm-actions { display: flex; flex-wrap: wrap; gap: .5rem .8rem; align-items: center; margin-top: .6rem; }
+.ag-perm-actions .btn { min-width: 6.5rem; min-height: 2.6rem; }
+.ag-perm-allowed { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 6%, var(--panel)); }
+.ag-perm-denied, .ag-perm-timeout, .ag-perm-cancelled, .ag-perm-expired { border-color: var(--line); background: var(--panel); }
+.ag-outcome { margin: .5rem 0 0; font-weight: 600; }
+.ag-perm-allowed .ag-outcome { color: var(--ok); } .ag-perm-denied .ag-outcome, .ag-perm-timeout .ag-outcome { color: var(--bad); }
+/* Phones: long model and folder names must not widen the page. */
+.chat, .chat-head, .chat-controls { min-width: 0; max-width: 100%; }
+.chat-controls label { min-width: 0; max-width: 100%; }
+.chat-controls select { max-width: min(16rem, 100%); text-overflow: ellipsis; }
+.ag-mode { min-width: 0; }
+.ag-path { font: .78rem var(--mono); color: var(--muted); overflow-wrap: anywhere; }

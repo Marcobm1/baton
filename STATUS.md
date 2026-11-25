@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Prototype folder confinement for agent chat
+next: Isolated Docker container for the All permissions mode
 updated: 2026-11-25
-updated_by: codex
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,15 +17,32 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
-- [ ] Prototype folder confinement for agent chat
-  Build an isolated worker prototype with a fake agent and two disposable
-  sibling directories. Verify the workspace and child-process checks in
-  [the chat design](docs/agents-chat.md) before connecting real tools.
-  Recommended: codex, gpt-6.2-astra, high
+- [ ] Isolated Docker container for the All permissions mode
+  Run the Agents chat's OpenCode inside a Docker container (Docker Desktop is
+  installed) that mounts only the chosen folder: no Baton data, no Docker
+  socket, no host profile. Start with the local models (`local-inkling`,
+  `local-qwen`), which need no credentials; the container reaches the host's
+  llama-server. Then enable "All permissions" for that path only (red warning
+  and conversation badge), still refused for abliterated models on the server.
+  Check with two temporary sibling folders as in [the chat design](docs/agents-chat.md):
+  an approved command and its child process can edit the mounted folder and
+  cannot see the sibling, also through a junction; a test with the fake ACP
+  agent covers the mode switch. Replaces the earlier "Prototype folder
+  confinement" item.
+  Recommended: claude-code, opus, high
+- [ ] (Marco) Check the Agents chat from the phone
+  Through Tailscale open Chat, pick Agent: OpenCode, model
+  `local-inkling/inkling-2-mini` (start Inkling on Models first) and folder
+  `C:\IA\pruebas-opencode (pruebas)`. Ask it to read `baton-fase1/nota.txt`
+  (no question asked), then to create a file twice: allow once, deny once.
+- [x] 2026-11-25 Agents chat, phase 1: OpenCode over ACP with Confirm mode
+  [Design and limits](docs/agents-chat.md). Verified on this PC with OpenCode
+  2.4.1 and local Inkling (read without asking, write allowed and denied,
+  outside-folder read asked first); phone check pending (above).
 - [x] 2026-11-25 Check existing chat runner isolation and CLI transports
 - [ ] Agents chat for OpenCode, Claude Code and Codex in Baton, with tools
   Priority for Marco (asked 2026-11-24). Turn the Chat page into an "Agents" chat: one page with three selectors, **agent** (Local model, OpenCode, Claude Code, Codex), **model** and **reasoning effort**, whose options change with the agent (reuse `task_models.catalog` for Claude Code/Codex and the OpenCode model list; the local models from `models.json`).
-  - **Phase 1, OpenCode** (also covers the local llama-server models, already set up as OpenCode providers `local-inkling` / `local-qwen`): Baton starts `opencode serve` (or uses ACP, `opencode acp`; pick one and record why in docs/) and keeps one OpenCode session per conversation. Stream the answer and show every tool call (tool, arguments, result) in the chat.
+  - **Phase 1, OpenCode** — done 2026-11-25 over ACP, Confirm mode only (see above). (Also covers the local llama-server models, already set up as OpenCode providers `local-inkling` / `local-qwen`): Baton starts `opencode serve` (or uses ACP, `opencode acp`; pick one and record why in docs/) and keeps one OpenCode session per conversation. Stream the answer and show every tool call (tool, arguments, result) in the chat.
   - **Phase 2, Claude Code and Codex**: the same chat through their CLIs: `codex exec --json` + `codex exec resume <id>`; Claude Code non-interactive with streaming JSON output and session resume. Check whether ACP adapters for both exist on this PC; if they do, consider ACP for all three.
   - **Working folder per conversation**: choose one of Baton's local repos or `C:\IA\pruebas-opencode`; never the whole disk.
   - **Two permission modes, chosen per conversation:**
@@ -153,11 +170,12 @@ links:
   Recommended: claude-code, opus, high
 
 ## Blockers
-- Tool-enabled chat needs OS-level folder confinement for terminal commands in both modes.
+- The Agents chat's All permissions mode needs the isolated container (next task); Confirm mode relies on Marco's approval, and an approved command runs as his Windows user.
 - Adding a Codex cloud form option depends on the live test above.
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-25: Agents chat phase 1 talks to OpenCode over ACP on stdio (`opencode acp`, one process per conversation, no port) instead of `opencode serve`; Baton's `baton-chat` agent reads freely inside the folder and asks for every edit, command, `.env` read and outside-folder access; Allow sends "allow once" only; no answer in 10 minutes denies; All permissions is refused on the server until the container exists (docs/agents-chat.md).
 - 2026-11-25: OpenCode models are grouped by provider with `opencode-go/` ("Included in OpenCode Go") first, `opencode/` ("Pay as you go (credits)") second with an inline warning when selected, and other providers (`local-*`, etc.) after; tasks failing with OpenCode's Go balance error explain the cause and suggest the closest `opencode-go/` model (docs/task-details.md).
 - 2026-11-24: the chat goes through Baton (`/api/chat/<id>`, streamed) instead of opening the model's port: works from the phone, the model stays on 127.0.0.1, and only text plus reasoning effort is forwarded (docs/models.md).
 - 2026-11-24: local models run as one detached `llama-server` per model from `~/.baton/models.json`, not router mode: each keeps its tuned options, a 16 GB card fits one large model anyway, and models survive Baton restarts (docs/models.md).
@@ -192,6 +210,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (claude-code): Agents chat phase 1: Chat page Agent selector (Local model / OpenCode), OpenCode over ACP with model, effort and folder fixed on the server, tool calls with arguments and results, Allow/Deny with exact command or diff (CSRF, bound to one request of one conversation, 10-minute deny), All permissions disabled; fake ACP agent tests; checked live with OpenCode 2.4.1 and local Inkling and through the web API; 148 tests passed on Windows (11 new).
 - 2026-11-25 (codex): Documented the folder confinement requirement, proposed ACP transport and acceptance checks for Agents chat. Implementation and phone verification are pending.
 - 2026-11-25 (claude-code): review of the OpenCode Go grouping: the task page now uses the cached OpenCode model list (no `opencode models` run inside a request), kept the old log parsing for runs without an agent step; 137 tests passed on Windows.
 - 2026-11-25 (opencode): grouped OpenCode models by provider ("Included in OpenCode Go" for `opencode-go/`, "Pay as you go (credits)" for `opencode/`, provider name for `local-*` and others), added a warning under the selector when an `opencode/` model is chosen, and added OpenCode Go insufficient-balance error detection on the task page with the closest included `opencode-go/` model suggestion, en/es strings, README note and tests; 137 tests passed on Windows.

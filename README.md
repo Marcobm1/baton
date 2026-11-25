@@ -431,6 +431,19 @@ Baton only ever runs what that file says, always bound to `127.0.0.1`.
 The **Chat** page talks to them from any device (Baton relays and streams the answer;
 the model stays on `127.0.0.1`). See [docs/models.md](docs/models.md).
 
+### Agents chat (OpenCode)
+
+On the Chat page, pick **Agent → OpenCode** to chat with OpenCode about one
+folder: one of your local clones or the scratch folder (`BATON_CHAT_SCRATCH`,
+`C:\IA\pruebas-opencode` by default on Windows). Any model OpenCode lists works,
+including the local `local-inkling` / `local-qwen` providers. Baton talks to
+OpenCode over ACP (stdin/stdout, no port) and shows every tool call with its
+arguments and result. In **Confirm** mode reads inside the folder run without
+asking; any write, edit, command or access outside the folder shows the exact
+command or diff with **Allow / Deny** (denied after 10 minutes without an
+answer). **All permissions** is disabled until the isolated container exists.
+See [docs/agents-chat.md](docs/agents-chat.md).
+
 ## Configuration
 
 All settings are environment variables (or a `.env` file); see
@@ -452,6 +465,7 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_DATA_DIR` | `~/.baton` | Quota readings, tasks, logs and task worktrees. |
 | `BATON_LOCAL_ROOT` | — | Folder that contains your clones (for local tasks). |
 | `BATON_LOCAL_PATHS` | — | `owner/repo=path;...` when a clone isn't found automatically. |
+| `BATON_CHAT_SCRATCH` | `C:\IA\pruebas-opencode` (Windows) | Scratch folder offered by the Agents chat next to your clones (empty = none). |
 | `BATON_LOCAL_MODEL` | — | Model for the Local AI agent (e.g. an Ollama model name). |
 | `BATON_TASK_TIMEOUT_MINUTES` | `60` | Stop a local task after this long. |
 | `BATON_GIT_NAME` / `BATON_GIT_EMAIL` | Baton | Commit identity when the clone has none. |
@@ -491,6 +505,8 @@ JSON endpoints: `GET /api/projects`, `GET /api/quotas`.
 - OpenCode has no OS sandbox. Baton's rules stop commits, pushes and its extra
   tools, not a terminal command that writes elsewhere. Read-only is the default
   for `baton delegate`.
+- In the Agents chat your approval is the boundary: an approved command runs as
+  you and can reach anything you can. Read the command or diff before Allow.
 
 ## License
 

@@ -156,3 +156,18 @@ def test_update_button_csrf(tmp_path, monkeypatch, checkout):
         assert client.post("/self-update", data={"csrf": token}, follow_redirects=False).status_code == 303
         assert checked.wait(5)
     assert update.check.call_count >= 2
+
+
+def test_a_later_successful_update_clears_an_old_error(tmp_path):
+    work, _ = make_repo(tmp_path)
+    _, runner = _runner(tmp_path, {}, tmp_path / "gates")
+    history = runner.store.dir / "updates.jsonl"
+    history.parent.mkdir(parents=True, exist_ok=True)
+    rows = [dict(date="d", old="a", new="b", result="pytest -q (exit 1): x (rolled back)"),
+            dict(date="d", old="a", new="c", result="validated"),
+            dict(date="d", old="a", new="c", result="running")]
+    history.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    assert SelfUpdate(work, runner, True, Mock()).error == ""
+    with history.open("a", encoding="utf-8") as log:
+        log.write(json.dumps(dict(date="d", old="c", new="e", result="boom")) + "\n")
+    assert SelfUpdate(work, runner, True, Mock()).error == "boom"

@@ -210,7 +210,7 @@ def test_next_task_and_grouping():
 
 
 def test_task_endpoint_csrf_and_issue(tmp_path, monkeypatch):
-    import asyncio, re
+    import re
     from fastapi.testclient import TestClient
     from baton import github, web
     from baton.config import Settings

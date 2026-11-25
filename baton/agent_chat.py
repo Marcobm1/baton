@@ -35,8 +35,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import __version__
-from .ping import _NO_WINDOW, _clean_env, find_agy
-from .runner import ALWAYS_DENIED, NO_GIT_CHANGES, _rule, find_opencode, kill_tree
+from .ping import _NO_WINDOW, agent_env, find_agy
+from .proc import attach_job, close_job, kill_tree
+from .runner import ALWAYS_DENIED, NO_GIT_CHANGES, _rule, find_opencode
 from .usage import record_gemini
 
 CHAT_AGENT = "baton-chat"
@@ -95,11 +96,7 @@ def chat_config() -> dict:
 def chat_env(agent: str = "opencode") -> dict[str, str]:
     """The environment the agent gets: Baton's own settings and GitHub tokens
     stay out (an approved `echo %GITHUB_TOKEN%` must find nothing)."""
-    env = _clean_env()
-    for key in list(env):
-        if key.upper().startswith("BATON_") or key.upper() in (
-                "GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT", "OPENCODE_PERMISSION"):
-            env.pop(key)
+    env = agent_env()
     if agent == "opencode":
         env["OPENCODE_CONFIG_CONTENT"] = json.dumps(chat_config())
     return env
@@ -190,6 +187,7 @@ class AcpClient:
         self.proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE, cwd=str(cwd), env=env,
                                      **group, **_NO_WINDOW)
+        attach_job(self.proc)
         self._on_message, self._on_exit = on_message, on_exit
         self._lock = threading.Lock()
         self._write = threading.Lock()
@@ -219,6 +217,7 @@ class AcpClient:
                     waiter["reply"] = msg
                     waiter["event"].set()
         self.proc.wait()
+        close_job(self.proc)
         with self._lock:
             for waiter in self._waiting.values():
                 waiter["event"].set()
@@ -271,6 +270,8 @@ class AcpClient:
     def close(self) -> None:
         if self.proc.poll() is None:
             kill_tree(self.proc)
+        else:
+            close_job(self.proc)
 
 
 @dataclass

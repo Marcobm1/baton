@@ -26,10 +26,12 @@ from __future__ import annotations
 import glob
 import json
 import os
+import platform
 import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 from .quotas import claude_statusline_windows, codex_windows
@@ -39,13 +41,29 @@ from .statusline import save
 # On Windows, don't flash a console window for each check when Baton runs hidden.
 _NO_WINDOW = {"creationflags": 0x08000000} if os.name == "nt" else {}
 
+# Exact variable names (matched case-insensitively) that must never leak to any
+# agent subprocess, in addition to every BATON_* setting.
+AGENT_STRIPPED_VARS = frozenset({
+    "ANTHROPIC_API_KEY",   # would bill the API instead of Claude's subscription
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "GITHUB_PAT",
+    "OPENCODE_PERMISSION", # could override Baton's deny-first OpenCode rules
+})
 
-def _clean_env() -> dict[str, str]:
-    env = dict(os.environ)
-    # With ANTHROPIC_API_KEY set, Claude Code bills the API instead of the plan,
-    # and the numbers would not be your subscription's. Never pass it on.
-    env.pop("ANTHROPIC_API_KEY", None)
-    return env
+
+def agent_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return a copy of the environment with Baton and GitHub secrets stripped.
+
+    Baton's own process environment stays intact (for GitHub API calls, git
+    push, quotas, and authentication), while every agent subprocess receives
+    only this filtered copy.
+    """
+    source = os.environ if base is None else base
+    return {
+        k: v for k, v in source.items()
+        if not k.upper().startswith("BATON_") and k.upper() not in AGENT_STRIPPED_VARS
+    }
 
 
 def find_claude() -> str | None:
@@ -62,15 +80,54 @@ def find_claude() -> str | None:
     return matches[-1] if matches else None
 
 
+_WRAPPER_EXTS = (".cmd", ".ps1", ".bat")
+
+
+def _resolve_codex_native(wrapper: str) -> str | None:
+    """Locate the native codex.exe shipped next to an npm `codex.cmd` wrapper."""
+    machine = platform.machine().lower()
+    if machine in ("arm64", "aarch64"):
+        arch, triple = "arm64", "aarch64-pc-windows-msvc"
+    else:
+        arch, triple = "x64", "x86_64-pc-windows-msvc"
+    root = os.path.join(os.path.dirname(wrapper), "node_modules", "@openai")
+    candidates = (
+        os.path.join(root, f"codex-win32-{arch}", "vendor", triple, "codex", "codex.exe"),
+        os.path.join(root, "codex", "node_modules", "@openai", f"codex-win32-{arch}",
+                     "vendor", triple, "codex", "codex.exe"),
+        os.path.join(root, "codex", "vendor", triple, "codex", "codex.exe"),
+        os.path.join(root, f"codex-win32-{arch}", "bin", "codex.exe"),
+        os.path.join(root, "codex", "bin", "codex.exe"),
+    )
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def find_codex() -> str | None:
+    """Prefer the native codex binary on Windows; fall back to `.cmd` only if absent."""
     explicit = os.environ.get("BATON_CODEX_BIN")
     if explicit:
         return explicit
-    for name in ("codex.cmd", "codex") if os.name == "nt" else ("codex",):
+    if os.name != "nt":
+        return shutil.which("codex")
+    # Check for a native codex.exe directly on PATH first.
+    native = shutil.which("codex.exe")
+    if native:
+        return native
+    wrapper: str | None = None
+    for name in ("codex", "codex.cmd"):
         found = shutil.which(name)
-        if found:
+        if not found:
+            continue
+        if not found.lower().endswith(_WRAPPER_EXTS):
             return found
-    return None
+        resolved = _resolve_codex_native(found)
+        if resolved:
+            return resolved
+        wrapper = wrapper or found
+    return wrapper
 
 
 def find_agy() -> str | None:
@@ -141,7 +198,7 @@ def fetch_gemini_quota(data_dir: Path, binary: str | None = None,
         with tempfile.TemporaryDirectory() as tmp:
             r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                                errors="replace", timeout=timeout + 15, cwd=tmp,
-                               stdin=subprocess.DEVNULL, env=_clean_env(), **_NO_WINDOW)
+                               stdin=subprocess.DEVNULL, env=agent_env(), **_NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"could not run agy: {exc.__class__.__name__}"
     windows = parse_agy_usage(r.stdout)
@@ -197,7 +254,7 @@ def ping_claude(data_dir: Path, binary: str | None = None, model: str = "haiku",
         with tempfile.TemporaryDirectory() as tmp:
             r = subprocess.run(cmd, input="ok", capture_output=True, text=True,
                                encoding="utf-8", errors="replace", timeout=timeout,
-                               cwd=tmp, env=_clean_env(), **_NO_WINDOW)
+                               cwd=tmp, env=agent_env(), **_NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"could not run Claude Code: {exc.__class__.__name__}"
     windows = parse_claude_stream(r.stdout)
@@ -216,7 +273,7 @@ def ping_codex(binary: str | None = None, timeout: int = 180) -> tuple[bool, str
         with tempfile.TemporaryDirectory() as tmp:
             r = subprocess.run(cmd, input="Reply with the single word ok.", capture_output=True,
                                text=True, encoding="utf-8", errors="replace",
-                               timeout=timeout, cwd=tmp, **_NO_WINDOW)
+                               timeout=timeout, cwd=tmp, env=agent_env(), **_NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"could not run Codex: {exc.__class__.__name__}"
     return (r.returncode == 0), ("ok" if r.returncode == 0 else f"codex exited with {r.returncode}")

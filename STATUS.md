@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: Isolated Docker container for the All permissions mode
+next: "Hardening Phase 2: data accuracy, concurrency and repo hygiene"
 updated: 2026-11-25
-updated_by: claude-code
+updated_by: gemini
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,15 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] 2026-11-25 Hardening Phase 1: agent_env(), local auth, Windows Job Objects, SelfUpdate retry skip, native find_codex() and Windows+lint CI
+  Shared `agent_env()` stripping secrets from all agent subprocesses, optional
+  `BATON_ACCESS_KEY` HMAC-signed `HttpOnly` cookie auth (`/login`, `/logout`,
+  `/healthz` open), Windows Job Objects (`baton/proc.py`) with serialized
+  teardown and rmtree fallback, `SelfUpdate` failed-SHA skip until a new commit
+  or manual retry, native `codex.exe` resolution in `find_codex()`, and
+  `windows-latest` + `ruff` + JS syntax checks in CI
+  ([security](docs/security.md), [cancellation](docs/cancelling-tasks.md),
+  [self-update](docs/self-update.md)).
 - [x] 2026-11-25 Group local models by family and put the model in use first
 - [x] 2026-11-25 Stop local models and active tasks above 85 °C
 - [x] 2026-11-25 Serialize task and updater Git writes in the same clone
@@ -27,6 +36,22 @@ links:
   merge without review except OpenCode/local AI (Claude Code, Opus medium), Gemini
   quota from `agy /usage` and tokens per day/week/model, Gemini in the Agents chat
   ([auto-merge](docs/auto-merge.md), [chat](docs/agents-chat.md)).
+- [ ] (Marco) Verify Phase 1 on Windows and enable BATON_ACCESS_KEY
+  Pull `main` on Windows, run `pytest tests/test_runner.py -q` 5 times in a row
+  to confirm Job Object cancellation passes reliably, check that GitHub Actions
+  `windows-latest` + `lint` pass, and add a generated `BATON_ACCESS_KEY` to `.env`
+  (then sign in once on PC and phone).
+- [ ] Hardening Phase 2: data accuracy, concurrency and repo hygiene
+  Implement Phase 2 of [the hardening roadmap](docs/hardening-roadmap.md): fix
+  Claude Code streaming token undercounting and OpenCode read-only SQLite URI in
+  `usage.py`, record resolved model names and 52-bit IDs in `ranking.py`, update
+  `updated:`/`updated_by:` in `github.py:complete_item()`, normalize repo names
+  with `.casefold()` in `Runner.dispatch()`, tighten `models.py` locking and
+  `chat_port()`, allow cancelling during CI wait/review, remove `httpx` from
+  `quotas.py`, add idle reaper + turn timeout to `AgentChats`, generalize
+  `GEMINI_MODEL`, and bound `Hub.load()` concurrency. Verify with `pytest -q`,
+  `ruff check baton tests`, and `node --check baton/static/*.js`.
+  Recommended: claude-code, opus, high
 - [ ] (Marco) Send a first real Gemini task from Baton
   New task → Gemini, model `gemini-3.8-flash` (low) on a small change in this
   repository; check that the PR merges without a review, that the task page shows
@@ -194,6 +219,8 @@ links:
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-25: all agent subprocesses receive `agent_env()` (stripping `BATON_*`, `GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_PAT`, `ANTHROPIC_API_KEY`, `OPENCODE_PERMISSION`); optional `BATON_ACCESS_KEY` locks the UI/API (except `/healthz`, `/login`, `/static/*`) behind a 30-day HMAC-signed `HttpOnly`, `SameSite=Strict` cookie (`Secure` over HTTPS) rather than trusting spoofable loopback `Tailscale-User-Login` headers (docs/security.md).
+- 2026-11-25: Windows agent processes run inside kernel Job Objects (`baton/proc.py`, `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) with serialized `kill_tree()` before worktree cleanup and read-only `rmtree` fallback (docs/cancelling-tasks.md); `SelfUpdate` remembers a failed target SHA across restarts and skips automatic retries until `origin/main` advances or **Update now** is clicked (docs/self-update.md); `find_codex()` resolves native `codex.exe` before falling back to `.cmd` wrappers; CI tests both `ubuntu-latest` and `windows-latest` plus `ruff` and JS syntax checks.
 - 2026-11-25: Marco gave Claude Code, Codex and Gemini full permissions in tasks (`--dangerously-skip-permissions`, `--dangerously-bypass-approvals-and-sandbox` + `--search`); their work merges without a review, also in repositories without tests. Only OpenCode and local AI keep restricted rules and are reviewed, always by Claude Code (Opus, medium; the reviewer stays in `auto` mode). Abliterated models never get full permissions (docs/auto-merge.md).
 - 2026-11-25: Gemini runs through the Antigravity CLI (`agy`), offering only its Gemini models (base model + `--effort`). Its quota comes from `agy -p /usage --output-format json` (no model call, 0 tokens); its tokens are written by Baton from agy's own `result` / ACP `usage` numbers to `gemini-usage.jsonl`. In the Agents chat Gemini uses agy's "Default" mode: commands ask, but edits inside the folder don't (docs/agents-chat.md).
 - 2026-11-25: local models are grouped and badged by family (e.g. Inkling, Qwen) with filter chips, variant (`Abliterated`) and context-size (`-c` / `--ctx-size`) badges, and the model currently in use is placed in the first position on `/models` and in the `/chat` model selectors (docs/models.md).
@@ -232,6 +259,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (gemini): Completed hardening roadmap Phase 1 (1.1–1.6): shared `agent_env()`, optional `BATON_ACCESS_KEY` session-cookie auth (`baton/auth.py`, `/login`, `/logout`), Windows Job Objects and fallback worktree cleanup (`baton/proc.py`), `SelfUpdate` failed-SHA retry skip (`updates.jsonl`), native `codex.exe` resolution in `find_codex()`, and `windows-latest` + `ruff`/`node --check` CI. Linux VM suite: 198 passed, ruff and JS checks clean, `test_runner.py` 5/5 passed; live Windows verification pending CI/PC run.
 - 2026-11-25 (claude-code): Quotas → Baton updates no longer shows an old update failure as the last error once a later update has succeeded. Suite: 174 passed.
 - 2026-11-25 (claude-code): Fixed the two tests that failed on GitHub's Linux runner (`find_agy` built a WindowsPath when pretending to be Windows; the two-models test had no fake GPU), added the Gemini logo and colour to Quotas and Gemini names to the ranking labels. Suite: 173 passed.
 - 2026-11-25 (claude-code): Added Gemini through the Antigravity CLI (tasks, task form, Agents chat, quota windows from `agy /usage`, tokens per day/week/model), full permissions for Claude Code, Codex and Gemini tasks with merge without review, and Claude Code (Opus, medium) as the only reviewer of OpenCode/local-AI work. Checked live with agy 1.5.17 (task command, report, tokens, quota, ACP chat). Suite: 172 passed.

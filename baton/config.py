@@ -90,6 +90,9 @@ class Settings:
     # Optional, typed by you in .env. Used only to read your OpenCode Go usage
     # from opencode.ai; never shown, logged or stored anywhere else.
     opencode_go_key: str = field(default="", repr=False)
+    # Optional access key to protect the web UI and API against local privilege
+    # escalation on 127.0.0.1. Stripped from all agent subprocesses by agent_env().
+    access_key: str = field(default="", repr=False)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -136,4 +139,5 @@ class Settings:
             opencode_db=Path(os.environ.get("BATON_OPENCODE_DB")
                              or Path.home() / ".local" / "share" / "opencode" / "opencode.db"),
             opencode_go_key=os.environ.get("BATON_OPENCODE_GO_KEY", "").strip(),
+            access_key=os.environ.get("BATON_ACCESS_KEY", "").strip(),
         )

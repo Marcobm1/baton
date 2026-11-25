@@ -433,7 +433,7 @@ class Hub:
                     results = await asyncio.gather(
                         *(self._projects_in(client, r) for r in repos), return_exceptions=True
                     )
-                    for repo, res in zip(repos, results):
+                    for repo, res in zip(repos, results, strict=True):
                         if isinstance(res, Exception):
                             errors.append(f"{repo['full_name']}: {res}")
                             if self._cache:

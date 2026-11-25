@@ -7,7 +7,7 @@ import subprocess
 import time
 
 from .i18n import STRINGS
-from .ping import _NO_WINDOW, _clean_env, find_agy, find_claude, find_codex
+from .ping import _NO_WINDOW, agent_env, find_agy, find_claude, find_codex
 
 _cache = {}
 
@@ -87,7 +87,7 @@ def _model_tokens(slug: str) -> list[str]:
 
 def _common_prefix_len(a: list[str], b: list[str]) -> int:
     count = 0
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):
         if x != y:
             break
         count += 1
@@ -166,7 +166,7 @@ def catalog(agent: str) -> dict:
         try:
             result = subprocess.run([exe, "models"], capture_output=True, text=True, encoding="utf-8",
                                     errors="replace", timeout=60, stdin=subprocess.DEVNULL,
-                                    env=_clean_env(), **_NO_WINDOW)
+                                    env=agent_env(), **_NO_WINDOW)
             models = parse_agy_models(result.stdout)
         except (OSError, subprocess.SubprocessError):
             models = {}
@@ -185,7 +185,7 @@ def catalog(agent: str) -> dict:
                                   "request": {"subtype": "initialize"}}) + "\n"
         result = subprocess.run(args, input=request, capture_output=True, text=True,
                                 encoding="utf-8", errors="replace", timeout=15,
-                                env=_clean_env(), check=True, **_NO_WINDOW)
+                                env=agent_env(), check=True, **_NO_WINDOW)
         if agent == "codex":
             rows = [(m["slug"], m["display_name"], [v["effort"] for v in m["supported_reasoning_levels"]])
                     for m in json.loads(result.stdout)["models"] if m.get("visibility") == "list"]

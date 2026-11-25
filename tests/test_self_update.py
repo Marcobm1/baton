@@ -171,3 +171,85 @@ def test_a_later_successful_update_clears_an_old_error(tmp_path):
     with history.open("a", encoding="utf-8") as log:
         log.write(json.dumps(dict(date="d", old="c", new="e", result="boom")) + "\n")
     assert SelfUpdate(work, runner, True, Mock()).error == "boom"
+
+
+def test_skips_automatic_retry_of_failed_sha_until_new_commit_or_manual(checkout):
+    update, publisher = checkout
+    broken_sha = update.git("rev-parse", "origin/main")
+    # Fetch once so broken_sha matches publisher HEAD.
+    git(update.root, "fetch", "origin", "main")
+    broken_sha = update.git("rev-parse", "origin/main")
+
+    attempts = []
+
+    def flaky_validate():
+        attempts.append(update.git("rev-parse", "HEAD"))
+        if len(attempts) == 1:
+            raise RuntimeError("pytest -q (exit 1): tests/test_x.py::test_fail")
+
+    update.validate = flaky_validate
+    update.restart = Mock()
+
+    # 1. First automatic check fails and rolls back, recording failed_target.
+    update.check()
+    assert len(attempts) == 1
+    assert update.failed_target == broken_sha
+    assert update.reason == "failed"
+    assert update.git("rev-parse", "HEAD") == update.running
+    update.restart.assert_not_called()
+
+    # 2. Second automatic check on the same SHA skips without running validate().
+    update.check()
+    assert len(attempts) == 1
+    assert update.reason == "skipped"
+    assert update.pending == broken_sha
+    update.restart.assert_not_called()
+
+    # 3. After a Baton restart, updates.jsonl restores failed_target and still skips.
+    restarted = SelfUpdate(update.root, update.runner, True, Mock())
+    restarted.validate = flaky_validate
+    assert restarted.failed_target == broken_sha
+    restarted.check()
+    assert len(attempts) == 1
+    assert restarted.reason == "skipped"
+
+    # 4. Manual trigger (POST /self-update -> request_manual()) retries the same SHA.
+    restarted.request_manual()
+    restarted.check()
+    assert len(attempts) == 2
+    assert restarted.restarting
+    assert restarted.failed_target == ""
+    assert restarted.error == ""
+    restarted.restart.assert_called_once()
+
+
+def test_retries_automatically_when_origin_main_advances(checkout):
+    update, publisher = checkout
+    runs = []
+
+    def fail_on_first_sha():
+        sha = update.git("rev-parse", "HEAD")
+        runs.append(sha)
+        if len(runs) == 1:
+            raise RuntimeError("pytest -q (exit 1): broken")
+
+    update.validate = fail_on_first_sha
+    update.restart = Mock()
+
+    # First commit fails and is remembered; a repeat automatic check skips it.
+    update.check()
+    failed_sha = update.failed_target
+    assert failed_sha and len(runs) == 1
+    update.check()
+    assert update.reason == "skipped" and len(runs) == 1
+
+    # Push a new commit to origin/main -> automatic check runs and succeeds.
+    (publisher / "README.md").write_text("fixed")
+    git(publisher, "commit", "-qam", "fix")
+    git(publisher, "push")
+
+    update.check()
+    assert len(runs) == 2 and runs[1] != failed_sha
+    assert update.restarting and update.failed_target == "" and update.error == ""
+    update.restart.assert_called_once()
+

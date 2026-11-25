@@ -46,6 +46,8 @@ class SelfUpdate:
         self.checked = None
         self.pending = ""
         self.error = ""
+        self.failed_target = ""
+        self._force_retry = False
         self.running = ""
         self.repo = ""
         self.reason = "off"
@@ -65,6 +67,10 @@ class SelfUpdate:
             except OSError as exc:
                 self.error = str(exc)
 
+    def request_manual(self):
+        """Force the next check() to retry even if origin/main is on a previously failed SHA."""
+        self._force_retry = True
+
     def restore_history(self):
         last = {}
         with self.history.open(encoding="utf-8") as log:
@@ -77,7 +83,12 @@ class SelfUpdate:
                     last = entry
                     # Only the newest failure counts: a later successful update
                     # clears it, so Quotas doesn't show an old error as current.
-                    self.error = "" if last["result"] in ("validated", "running") else last["result"]
+                    if last["result"] in ("validated", "running"):
+                        self.error = ""
+                        self.failed_target = ""
+                    else:
+                        self.error = last["result"]
+                        self.failed_target = str(last.get("new") or "")
         if last.get("result") == "validated" and last.get("new") == self.running:
             self.record(last.get("old"), self.running, "running")
 
@@ -97,10 +108,12 @@ class SelfUpdate:
     def validate(self):
         command(self.root, [self.python, "-m", "pytest", "-q"], "pytest -q", timeout=900)
 
-    def check(self):
+    def check(self, manual: bool = False):
         """Called by one worker shared by the timer, task completion and POST."""
         if not self.enabled or self.restarting:
             return
+        force = manual or self._force_retry
+        self._force_retry = False
         self.checked = time.time()
         try:
             self.git("fetch", "origin", "+refs/heads/main:refs/remotes/origin/main")
@@ -115,6 +128,8 @@ class SelfUpdate:
                 self.reason = "moved"
             elif not self.pending:
                 self.reason = "current"
+            elif not force and self.failed_target and target == self.failed_target:
+                self.reason = "skipped"
             elif sys.prefix == sys.base_prefix:
                 self.reason = "venv"
             elif not self.runner.reserve_update():
@@ -151,6 +166,8 @@ class SelfUpdate:
             if (self.git("branch", "--show-current") != "main" or
                     self.git("rev-parse", "HEAD") != new or self.git("status", "--porcelain")):
                 raise RuntimeError("Checkout changed during validation")
+            self.failed_target = ""
+            self.error = ""
             self.record(old, new, "validated")
             self.restart()
             self.restarting = True
@@ -169,5 +186,6 @@ class SelfUpdate:
                     result += " (rolled back)"
                 except (OSError, RuntimeError) as rollback:
                     result += f"; rollback failed: {rollback}"
-            self.record(old, new or target, result)
+            self.failed_target = new or target
+            self.record(old, self.failed_target, result)
             raise RuntimeError(result) from exc

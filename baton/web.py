@@ -26,7 +26,7 @@ from .i18n import ordinal, strings
 from .ping import Scheduler
 from .ranking import CRITERIA, historical_score
 from .project_detail import finished_items
-from .task_models import catalog
+from .task_models import catalog, opencode_groups
 from . import task_defaults, ranking_view
 from .task_report import task_report
 from .models import LocalModels, ModelError, chat_payload
@@ -411,8 +411,13 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             initial.update(model=original.model, source="", missing="")
         elif original and initial["source"] == "recommended":
             initial["source"] = ""
+        oc_groups = opencode_groups(models, t)
+        oc_default = (initial["model"] if initial["agent"] == "opencode" and initial["model"]
+                      else (oc_groups[0]["models"][0] if oc_groups and oc_groups[0]["models"] else ""))
         return page(request, "task_new.html", "tasks", repos=repos, selected=repo,
-                    local=local, available=available, oc_models=models, catalogs=catalogs,
+                    local=local, available=available, oc_models=models, oc_groups=oc_groups,
+                    oc_selected=oc_default, oc_payg_initial=oc_default.startswith("opencode/"),
+                    catalogs=catalogs,
                     cloud=settings.cloud_tasks, error=error[:300], auto_merge=settings.auto_merge,
                     has_token=bool(settings.github_token), priorities=PRIORITIES,
                     max_parallel=settings.max_parallel, draft_title=title, draft_details=details,

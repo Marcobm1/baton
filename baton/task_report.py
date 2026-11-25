@@ -2,7 +2,8 @@
 
 import re
 
-from .runner import Task
+from .runner import Task, cached_opencode_models
+from .task_models import closest_opencode_go_model
 
 
 def _claude_failure(reason: str) -> str:
@@ -20,6 +21,24 @@ def _claude_failure(reason: str) -> str:
                  reason, re.I):
         return "access"
     return "other"
+
+
+_OPENCODE_GO_RE = re.compile(
+    r"OpenCode Go covers only requests to the OpenCode Go provider"
+    r"|insufficient balance.*opencode go"
+    r"|opencode go.*insufficient balance",
+    re.I,
+)
+
+
+def _opencode_failure(lines: list[str], is_opencode: bool) -> tuple[str, str]:
+    for line in reversed(lines):
+        if _OPENCODE_GO_RE.search(line) or (is_opencode and re.search(r"insufficient balance", line, re.I)):
+            return "opencode_go", line[-1000:]
+    joined = " ".join(lines[-6:])[-1000:]
+    if _OPENCODE_GO_RE.search(joined) or (is_opencode and re.search(r"insufficient balance", joined, re.I)):
+        return "opencode_go", joined
+    return "", ""
 
 
 def _agent_lines(output: str, agent: str) -> list[str]:
@@ -49,11 +68,21 @@ def task_report(task: Task, log: str) -> dict:
     output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
     lines = _agent_lines(output, task.agent)
 
-    failure = reason = ""
-    if task.agent == "claude-code" and task.status == "failed" and finish and int(finish[1]):
-        reason = " ".join(lines[-4:])[-1000:]
-        if reason:
-            failure = _claude_failure(reason)
+    failure = reason = suggestion = ""
+    if task.status == "failed" and (not finish or int(finish[1])):
+        is_oc = task.agent == "opencode" or task.model.startswith("opencode/")
+        failure, reason = _opencode_failure(lines, is_oc)
+        if failure == "opencode_go":
+            model = task.model
+            if not model and start:
+                m = re.search(r"\(([^()\s]+/[^()\s]+)\)", start[0])
+                model = m[1] if m else ""
+            if model:
+                suggestion = closest_opencode_go_model(model, cached_opencode_models())
+        elif task.agent == "claude-code" and finish and int(finish[1]):
+            reason = " ".join(lines[-4:])[-1000:]
+            if reason:
+                failure = _claude_failure(reason)
 
     fields = {}
     for line in lines:
@@ -75,4 +104,4 @@ def task_report(task: Task, log: str) -> dict:
         checks = next((line for line in reversed(lines)
                        if re.search(r"\b\d+ (?:passed|failed|tests? passed|pruebas superadas)\b", line)), "")
     return dict(summary=summary, checks=checks, progress=progress, reason=reason, failure=failure,
-                pushed=any(s.endswith("Branch pushed to GitHub") for s in task.steps))
+                suggestion=suggestion, pushed=any(s.endswith("Branch pushed to GitHub") for s in task.steps))

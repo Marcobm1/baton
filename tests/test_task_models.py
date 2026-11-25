@@ -6,7 +6,57 @@ from fastapi.testclient import TestClient
 
 from baton import web
 from baton.config import Settings
+from baton.i18n import strings
 from baton.runner import Runner, TaskStore
+from baton.task_models import closest_opencode_go_model, opencode_groups
+
+
+def test_opencode_models_are_grouped_and_payg_warns_in_form(tmp_path, monkeypatch):
+    raw = [
+        "local-inkling/inkling-2-mini",
+        "opencode/gemini-4-neon",
+        "opencode-go/gemini-4-argon",
+        "opencode-go/glm-5.3",
+        "opencode/big-pickle",
+        "local-qwen/qwen3.8-27b",
+    ]
+    groups_en = opencode_groups(raw, strings("en"))
+    assert [(g["provider"], g["label"], g["models"]) for g in groups_en] == [
+        ("opencode-go", "Included in OpenCode Go", ["opencode-go/gemini-4-argon", "opencode-go/glm-5.3"]),
+        ("opencode", "Pay as you go (credits)", ["opencode/gemini-4-neon", "opencode/big-pickle"]),
+        ("local-inkling", "local-inkling", ["local-inkling/inkling-2-mini"]),
+        ("local-qwen", "local-qwen", ["local-qwen/qwen3.8-27b"]),
+    ]
+    groups_es = opencode_groups(raw, strings("es"))
+    assert [g["label"] for g in groups_es] == [
+        "Incluidos en OpenCode Go",
+        "Pago por uso (créditos)",
+        "local-inkling",
+        "local-qwen",
+    ]
+    assert closest_opencode_go_model("opencode/gemini-4-neon", raw) == "opencode-go/gemini-4-argon"
+    assert closest_opencode_go_model("opencode/glm-5.3", raw) == "opencode-go/glm-5.3"
+
+    async def projects(self, force=False):
+        return [SimpleNamespace(repo="x/demo", branch="main")], []
+
+    monkeypatch.setattr(web.Hub, "load", projects)
+    monkeypatch.setattr(web.LocalRepos, "get", lambda self, name: tmp_path)
+    monkeypatch.setattr(Runner, "agents_available", lambda self: {k: "" for k in web.AGENTS})
+    monkeypatch.setattr(web, "opencode_models", lambda: raw)
+    monkeypatch.setattr(web, "catalog", lambda a: {})
+    client = TestClient(web.create_app(Settings(data_dir=tmp_path, lang="en")))
+
+    page_go = client.get("/tasks/new?agent=opencode&model=opencode-go/gemini-4-argon").text
+    assert '<optgroup label="Included in OpenCode Go">' in page_go
+    assert '<optgroup label="Pay as you go (credits)">' in page_go
+    assert '<optgroup label="local-inkling">' in page_go
+    assert re.search(r'id="oc-payg-warning"\s+hidden>', page_go)
+
+    page_payg = client.get("/tasks/new?agent=opencode&model=opencode/gemini-4-neon").text
+    assert '<option value="opencode/gemini-4-neon" selected>' in page_payg
+    assert re.search(r'id="oc-payg-warning"\s*>', page_payg)
+    assert "billed to OpenCode Models credits" in page_payg
 
 
 @pytest.mark.parametrize("agent", ["codex", "claude-code"])

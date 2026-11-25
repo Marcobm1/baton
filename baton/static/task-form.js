@@ -2,10 +2,17 @@ const form = document.querySelector(".task-form");
 const catalogs = JSON.parse(document.querySelector("#task-catalogs").textContent);
 const settings = document.querySelector("#task-settings");
 const openCode = document.querySelector("#oc-settings");
+const openCodeWarning = document.querySelector("#oc-payg-warning");
 const model = form.elements.model;
 const effort = form.elements.effort;
 const defaultLabel = model.options[0].text;
 const selectedAgent = () => form.elements.where.value.replace(/^local:/, "");
+
+function setOpenCodeWarning() {
+  if (!openCode || !openCodeWarning) return;
+  const select = openCode.querySelector("select");
+  openCodeWarning.hidden = openCode.hidden || !select.value.startsWith("opencode/");
+}
 
 function setEfforts() {
   const levels = catalogs[selectedAgent()]?.[model.value]?.efforts || [];
@@ -25,6 +32,7 @@ function setAgent() {
   if (openCode) {
     openCode.hidden = agent !== "opencode";
     openCode.querySelector("select").disabled = openCode.hidden;
+    setOpenCodeWarning();
   }
   setEfforts();
 }
@@ -32,6 +40,7 @@ function setAgent() {
 form.addEventListener("change", event => {
   if (event.target.name === "where") setAgent();
   if (event.target === model) setEfforts();
+  if (event.target.name === "oc_model") setOpenCodeWarning();
 });
 setAgent();
 
@@ -41,6 +50,7 @@ const initial = JSON.parse(document.querySelector("#task-initial").textContent);
 if (initial.agent && initial.agent === selectedAgent()) {
   if (initial.agent === "opencode" && openCode && initial.model) {
     openCode.querySelector("select").value = initial.model;
+    setOpenCodeWarning();
   } else if (initial.model && [...model.options].some(o => o.value === initial.model)) {
     model.value = initial.model;
     setEfforts();

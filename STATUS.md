@@ -4,7 +4,7 @@ status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Agents chat for OpenCode, Claude Code and Codex in Baton, with tools
-updated: 2026-11-24
+updated: 2026-11-25
 updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
@@ -29,7 +29,7 @@ links:
   - Quotas: show which plan the conversation spends (Claude, ChatGPT/Codex, OpenCode Go, local = free).
   - Done when, from the phone through Tailscale, Marco can hold a multi-turn conversation with each of the four agents, see tool calls, approve one in Confirm mode, and run one in Full mode; tests cover both modes with fake agents; docs/agents-chat.md explains the design and the risks.
   Recommended: claude-code, opus, high
-- [ ] Tell included OpenCode Go models apart from pay-as-you-go ones
+- [x] 2026-11-25 Tell included OpenCode Go models apart from pay-as-you-go ones
   Asked by Marco on 2026-11-25. In the New task form (and the Agents chat later), OpenCode lists `opencode-go/...` models (covered by the OpenCode Go plan) next to `opencode/...` models (pay-as-you-go, billed to OpenCode Models credits). Two tasks with `opencode/gemini-4-neon` failed at once with "Insufficient balance ... OpenCode Go covers only requests to the OpenCode Go provider".
   - Group the OpenCode model list by provider and label each group: "Included in OpenCode Go" for `opencode-go/`, "Pay as you go (credits)" for `opencode/`, and the provider name for the rest (local `local-*`, etc.).
   - When a pay-as-you-go model is chosen, show a warning under the selector before launching.
@@ -151,6 +151,7 @@ links:
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-25: OpenCode models are grouped by provider with `opencode-go/` ("Included in OpenCode Go") first, `opencode/` ("Pay as you go (credits)") second with an inline warning when selected, and other providers (`local-*`, etc.) after; tasks failing with OpenCode's Go balance error explain the cause and suggest the closest `opencode-go/` model (docs/task-details.md).
 - 2026-11-24: the chat goes through Baton (`/api/chat/<id>`, streamed) instead of opening the model's port: works from the phone, the model stays on 127.0.0.1, and only text plus reasoning effort is forwarded (docs/models.md).
 - 2026-11-24: local models run as one detached `llama-server` per model from `~/.baton/models.json`, not router mode: each keeps its tuned options, a 16 GB card fits one large model anyway, and models survive Baton restarts (docs/models.md).
 - 2026-11-24: a Codex cloud form option needs a live implementation task and a
@@ -184,6 +185,8 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (claude-code): review of the OpenCode Go grouping: the task page now uses the cached OpenCode model list (no `opencode models` run inside a request), kept the old log parsing for runs without an agent step; 137 tests passed on Windows.
+- 2026-11-25 (opencode): grouped OpenCode models by provider ("Included in OpenCode Go" for `opencode-go/`, "Pay as you go (credits)" for `opencode/`, provider name for `local-*` and others), added a warning under the selector when an `opencode/` model is chosen, and added OpenCode Go insufficient-balance error detection on the task page with the closest included `opencode-go/` model suggestion, en/es strings, README note and tests; 137 tests passed on Windows.
 - 2026-11-24 (claude-code): Chat page (nav tab) relaying /v1/chat/completions with streaming, reasoning shown apart, safe Markdown, per-model history in the browser, start a model from the chat; fixed the dead Start button; checked live with Inkling 2 Mini (~57 tok/s through Baton) at desktop and 375 px.
 - 2026-11-24 (claude-code): Models page (`/models`, nav tab): this PC's CPU/RAM/disk/GPU readings, VRAM budget, Start/Stop for the llama-server models in `~/.baton/models.json`, live speed and tokens served from `--metrics`; detects servers started outside Baton; new dependency psutil 7.2.2; 130 tests passed on Windows (the two cancellation tests passed too); checked at 800 px dark and 375 px light.
 - 2026-11-24 (codex): Checked the saved report and merged [PR #29](https://github.com/Marcobm1/baton/pull/29) link in Tasks. This running review showed the Codex step and the cancel button with confirmation. Windows suite: 117 passed, two known cancellation cleanup failures.

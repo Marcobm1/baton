@@ -15,7 +15,8 @@ def detail(tmp_path):
     store = TaskStore(tmp_path)
 
     def render(status, output="", **fields):
-        task = Task("old", "x/demo", "Fix the parser", "", "claude-code", "local", 0,
+        agent = fields.pop("agent", "claude-code")
+        task = Task("old", "x/demo", "Fix the parser", "", agent, "local", 0,
                     status=status, **fields)
         store.save(task)
         store.log_path(task.id).write_text(output, encoding="utf-8")
@@ -73,3 +74,35 @@ def test_git_failure_after_claude_success(detail):
     overview = detail("failed", log, message="git push failed").split("<details")[0]
     assert "git push failed" in overview and "Documented the usage limit." in overview
     assert "Reviewed the example." in overview and "cuando se restablezca" not in overview
+
+
+def test_opencode_go_insufficient_balance_error_and_suggestion(tmp_path, monkeypatch):
+    from baton import task_report as tr
+
+    monkeypatch.setattr(tr, "cached_opencode_models", lambda: [
+        "opencode-go/gemini-4-argon",
+        "opencode-go/glm-5.3",
+        "opencode/gemini-4-neon",
+    ])
+    error_line = "Insufficient balance ... OpenCode Go covers only requests to the OpenCode Go provider"
+    log = (f"== Running OpenCode (opencode/gemini-4-neon)…\n{error_line}\n"
+           "== Agent finished (exit code 1)\n!! The agent stopped with exit code 1; see the log.")
+
+    for lang, expected_msg, expected_sug in (
+        ("en", "This model is not included in OpenCode Go; pick an opencode-go/ model or add credits",
+         "Closest included model: opencode-go/gemini-4-argon"),
+        ("es", "Este modelo no está incluido en OpenCode Go; elige un modelo opencode-go/ o añade créditos",
+         "Modelo incluido más cercano: opencode-go/gemini-4-argon"),
+    ):
+        client = TestClient(create_app(Settings(data_dir=tmp_path, lang=lang)))
+        store = TaskStore(tmp_path)
+        task = Task("oc-fail", "x/demo", "Tell models apart", "", "opencode", "local", 0,
+                    status="failed", model="opencode/gemini-4-neon",
+                    message="The agent stopped with exit code 1; see the log.")
+        store.save(task)
+        store.log_path(task.id).write_text(log, encoding="utf-8")
+        overview = unescape(client.get("/tasks/oc-fail").text.split("<details")[0])
+        assert expected_msg in overview
+        assert expected_sug in overview
+        assert error_line in overview
+        assert "stopped with exit code 1" not in overview

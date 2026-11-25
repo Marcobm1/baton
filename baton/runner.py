@@ -138,6 +138,11 @@ def opencode_models() -> list[str]:
     _models_cache = (time.time(), models)
     return models
 
+
+def cached_opencode_models() -> list[str]:
+    """The last `opencode models` list, without running OpenCode (safe in request handlers)."""
+    return _models_cache[1] if _models_cache else []
+
 NEXT_TASK_REQUEST = (
     "When you finish a task, mark its checklist item complete in the project's STATUS.md. "
     "Prefix owner-only actions with (Marco). Find links in tasks.json or on GitHub yourself. "

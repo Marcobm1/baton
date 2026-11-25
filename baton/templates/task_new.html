@@ -49,9 +49,12 @@
       <p class="small muted" id="catalog-message" hidden>{{ t.no_catalog }}</p>
     </div>
     {% if not available["opencode"] %}
-    <label id="oc-settings">{{ t.model }} · OpenCode
-      <select name="oc_model">{% for m in oc_models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select>
-    </label>
+    <div id="oc-settings">
+      <label>{{ t.model }} · OpenCode
+        <select name="oc_model">{% for g in oc_groups %}<optgroup label="{{ g.label }}">{% for m in g.models %}<option value="{{ m }}" {% if m == oc_selected %}selected{% endif %}>{{ m }}</option>{% endfor %}</optgroup>{% endfor %}</select>
+      </label>
+      <p class="warn small" id="oc-payg-warning" {% if not oc_payg_initial %}hidden{% endif %}>{{ t.oc_payg_warning }}</p>
+    </div>
     {% endif %}
     <p class="muted small">{{ t.auto_merge_option if auto_merge else t.open_pr_option }}</p>
     <label id="priority-settings">{{ t.priority }}

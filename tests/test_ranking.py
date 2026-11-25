@@ -199,3 +199,27 @@ def test_saved_review_returns_to_ranking_with_a_confirmation(tmp_path):
     assert "history.replaceState" in back          # the toast never repeats on reload
     assert "Valoración guardada" not in web.get("/ranking").text
     assert ranking.overview("delegation")[0][0]["human"] == 8
+
+
+def test_ranking_ids_are_js_safe_and_default_models_stay_distinct(tmp_path):
+    from baton import ranking_view, task_models
+
+    ranking = Ranking(tmp_path)
+    for _ in range(20):
+        job_id = ranking.start("opencode-go/glm-5.3", "check", "prompt")
+        assert 1 <= job_id < 2**53  # IEEE-754 Number.MAX_SAFE_INTEGER
+
+    store = TaskStore(tmp_path)
+    for tid, agent in (("t-claude", "claude-code"), ("t-codex", "codex")):
+        store.save(Task(tid, "owner/repo", f"Task {agent}", "", agent, "local", 100, status="done"))
+    models = {j["task_id"]: j["model"] for j in store.ranking.overview("task")[1]}
+    assert models == {"t-claude": "claude-code/default", "t-codex": "codex/default"}
+    assert ranking_view.model_label("codex/default") == {"name": "Default", "tool": "Codex"}
+
+    parsed = task_models.parse_agy_models(
+        "gemini-5.0-ultra-high\tGemini 5.0 Ultra (High)\n"
+        "gemini-2.5-pro-low\tGemini 2.5 Pro (Low)\n"
+        "claude-opus-5-5\tClaude Opus\n"
+    )
+    assert set(parsed) == {"gemini-5.0-ultra", "gemini-2.5-pro"}
+

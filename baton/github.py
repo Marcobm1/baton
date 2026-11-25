@@ -19,6 +19,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -160,8 +161,14 @@ class Hub:
                         if not page["pageInfo"]["hasNextPage"]:
                             break
                         variables["after"] = page["pageInfo"]["endCursor"]
+            except httpx.HTTPStatusError as exc:
+                # Cache permanent permission/not-found errors to avoid hammering GitHub,
+                # but never cache transient 5xx / rate-limit failures for 5 minutes.
+                if exc.response.status_code in (401, 403, 404):
+                    self._pulls[repo] = (time.monotonic(), [])
+                return []
             except (httpx.HTTPError, GitHubError, ValueError, KeyError, TypeError):
-                pulls = []
+                return []
             self._pulls[repo] = (time.monotonic(), pulls)
             return pulls
 
@@ -269,20 +276,37 @@ class Hub:
             )
         return projects
 
+    @staticmethod
+    def _stamp_frontmatter(head: str, today: str, by: str = "human") -> str:
+        eol = "\r\n" if "\r\n" in head else "\n"
+        if re.search(r"(?m)^updated:", head):
+            head = re.sub(r"(?m)^updated:[^\r\n]*", lambda _: f"updated: {today}", head, count=1)
+        else:
+            idx = head.rfind(f"{eol}---")
+            if idx != -1:
+                head = head[:idx] + f"{eol}updated: {today}" + head[idx:]
+        if re.search(r"(?m)^updated_by:", head):
+            head = re.sub(r"(?m)^updated_by:[^\r\n]*", lambda _: f"updated_by: {by}", head, count=1)
+        else:
+            head = re.sub(r"(?m)^(updated:[^\r\n]*)", lambda m: f"{m.group(1)}{eol}updated_by: {by}", head, count=1)
+        return head
+
     async def complete_owner_action(self, project: Project, line: int, sha: str) -> None:
         status = project.status
         if sha != project.status_sha or not any(item.line == line for item in status.sections.owner_actions):
             raise ValueError("This action changed. Reload the project.")
         lines = status.body.splitlines(keepends=True)
-        lines[line] = lines[line].replace("[ ]", "[x]", 1)
-        source = status.source.removesuffix(status.body) + "".join(lines)
-        await self._write_status(project, source, sha, "Complete owner action in STATUS.md")
+        today = dt.date.today().isoformat()
+        lines[line] = re.sub(r"\[ \]\s*", f"[x] {today} ", lines[line], count=1)
+        head = self._stamp_frontmatter(status.source.removesuffix(status.body), today, "human")
+        await self._write_status(project, head + "".join(lines), sha, "Complete owner action in STATUS.md")
 
     async def complete_item(self, project: Project, line: int, sha: str) -> None:
         """Tick an agent task in the Next list (already done, or no longer needed).
 
-        Like an agent finishing it: the title gets today's date and `next`
-        moves to the next unchecked task an agent can do."""
+        Like an agent finishing it: the title gets today's date, `next` moves to
+        the next unchecked task an agent can do, and `updated`/`updated_by` are
+        refreshed so the web commit does not trigger a stale warning."""
         status = project.status
         items = [item for item in status.sections.upcoming if item.line == line]
         if sha != project.status_sha or not items:
@@ -297,6 +321,7 @@ class Hub:
             nxt = json.dumps(nxt, ensure_ascii=False)        # keep the YAML valid
         head = status.source.removesuffix(status.body)
         head = re.sub(r"(?m)^next:[^\r\n]*", lambda _: f"next: {nxt}".rstrip(), head, count=1)
+        head = self._stamp_frontmatter(head, today, "human")
         await self._write_status(project, head + body, sha,
                                  f"Mark done in STATUS.md: {items[0].title[:60]}")
 
@@ -408,6 +433,17 @@ class Hub:
             raise GitHubError(f"GitHub did not merge the pull request ({r.status_code}"
                               f"{': ' + why[:200] if why else ''}).")
 
+    def delete_branch(self, repo: str, branch: str) -> bool:
+        """Delete a merged `baton/*` remote branch (refuses any other branch name)."""
+        if not branch.startswith("baton/"):
+            return False
+        r = httpx.delete(
+            f"{API}/repos/{repo}/git/refs/heads/{quote(branch, safe='/')}",
+            headers=self._sync_headers(),
+            timeout=30,
+        )
+        return r.status_code in (204, 404, 422)
+
     def invalidate(self) -> None:
         """Forget the cached projects, e.g. after a task merged a STATUS.md change."""
         self._cache = None
@@ -430,8 +466,14 @@ class Hub:
                         and r["full_name"].lower() not in self.settings.exclude
                         and r["name"].lower() not in self.settings.exclude
                     ]
+                    sem = asyncio.Semaphore(8)
+
+                    async def _fetch(repo_item: dict[str, Any]) -> list[Project]:
+                        async with sem:
+                            return await self._projects_in(client, repo_item)
+
                     results = await asyncio.gather(
-                        *(self._projects_in(client, r) for r in repos), return_exceptions=True
+                        *(_fetch(r) for r in repos), return_exceptions=True
                     )
                     for repo, res in zip(repos, results, strict=True):
                         if isinstance(res, Exception):

@@ -87,7 +87,10 @@ def _recent_files(pattern: str, since: float) -> list[str]:
 
 
 def read_claude_code(claude_home: Path, since: float, usage: Usage) -> None:
-    seen: set[tuple] = set()
+    # Claude Code writes multiple streaming lines per (message.id, requestId)
+    # where early lines hold partial output_tokens and later lines hold the final
+    # totals. Keep the max token counts per key; never deduplicate (None, None).
+    by_key: dict[tuple[str | None, str | None], tuple[str, dt.date, Tokens]] = {}
     for f in _recent_files(str(claude_home / "projects" / "**" / "*.jsonl"), since):
         try:
             fh = open(f, encoding="utf-8", errors="replace")
@@ -104,21 +107,38 @@ def read_claude_code(claude_home: Path, since: float, usage: Usage) -> None:
                 msg = ev.get("message")
                 if not isinstance(msg, dict) or not isinstance(msg.get("usage"), dict):
                     continue
-                # One answer is written as several lines with the same usage.
-                key = (msg.get("id"), ev.get("requestId"))
-                if key in seen:
-                    continue
-                seen.add(key)
                 ts = _iso(ev.get("timestamp", ""))
                 model = str(msg.get("model") or "")
                 if ts is None or ts < since or model.startswith("<"):
                     continue
                 u = msg["usage"]
-                usage.add("claude-code", model, _day(ts), Tokens(
+                tok = Tokens(
                     fresh=int(u.get("input_tokens") or 0),
                     cache=int(u.get("cache_read_input_tokens") or 0)
                     + int(u.get("cache_creation_input_tokens") or 0),
-                    output=int(u.get("output_tokens") or 0)))
+                    output=int(u.get("output_tokens") or 0),
+                )
+                msg_id, req_id = msg.get("id"), ev.get("requestId")
+                if msg_id is None and req_id is None:
+                    usage.add("claude-code", model, _day(ts), tok)
+                    continue
+                key = (msg_id, req_id)
+                prev = by_key.get(key)
+                if prev is None:
+                    by_key[key] = (model, _day(ts), tok)
+                else:
+                    p_model, p_day, p_tok = prev
+                    by_key[key] = (
+                        model or p_model,
+                        _day(ts),
+                        Tokens(
+                            fresh=max(p_tok.fresh, tok.fresh),
+                            cache=max(p_tok.cache, tok.cache),
+                            output=max(p_tok.output, tok.output),
+                        ),
+                    )
+    for model, day, tok in by_key.values():
+        usage.add("claude-code", model, day, tok)
 
 
 def read_codex(codex_home: Path, since: float, usage: Usage) -> None:
@@ -167,7 +187,7 @@ def read_opencode(db: Path, since: float, usage: Usage) -> None:
     if not db.is_file():
         return
     try:
-        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True, timeout=2)
+        con = sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
     except sqlite3.Error:
         return
     q = """

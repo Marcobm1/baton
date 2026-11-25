@@ -11,7 +11,14 @@ PER_PAGE_JOBS = 8
 PER_PAGE_TASKS = 10
 MIN_SAMPLES = 3          # fewer scores than this: the average is shown as tentative
 
-_PROVIDERS = {"opencode-go": "OpenCode Go", "opencode": "OpenCode"}
+_PROVIDERS = {
+    "opencode-go": "OpenCode Go",
+    "opencode": "OpenCode",
+    "claude-code": "Claude Code",
+    "codex": "Codex",
+    "gemini": "Gemini",
+    "local": "Local AI",
+}
 _ACRONYMS = {"glm", "gpt", "llm", "ai"}
 
 

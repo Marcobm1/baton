@@ -70,3 +70,49 @@ def test_human():
     assert usage.human(950) == "950"
     assert usage.human(1_200) == "1.2k"
     assert usage.human(3_000_000) == "3M"
+
+
+def test_claude_streaming_keeps_max_usage_and_ignores_none_collisions(tmp_path: Path):
+    today = dt.date.today()
+    now = dt.datetime.now().replace(microsecond=0)
+    proj = tmp_path / "claude" / "projects" / "stream"
+    proj.mkdir(parents=True)
+    # Streaming chunks share (message.id, requestId); early chunk undercounts output_tokens.
+    early = {"timestamp": _iso(now), "requestId": "req-1", "message": {
+        "id": "msg-1", "model": "claude-opus-5-5",
+        "usage": {"input_tokens": 20, "cache_read_input_tokens": 500, "output_tokens": 1}}}
+    final = {"timestamp": _iso(now), "requestId": "req-1", "message": {
+        "id": "msg-1", "model": "claude-opus-5-5",
+        "usage": {"input_tokens": 20, "cache_read_input_tokens": 500, "output_tokens": 420}}}
+    # Two separate messages without id/requestId must not collide on (None, None).
+    anon1 = {"timestamp": _iso(now), "message": {
+        "model": "claude-opus-5-5", "usage": {"input_tokens": 3, "output_tokens": 10}}}
+    anon2 = {"timestamp": _iso(now), "message": {
+        "model": "claude-opus-5-5", "usage": {"input_tokens": 4, "output_tokens": 15}}}
+    (proj / "stream.jsonl").write_text(
+        "\n".join(json.dumps(x) for x in (early, final, anon1, anon2)), encoding="utf-8"
+    )
+
+    out = usage.collect(tmp_path / "claude", tmp_path / "none", tmp_path / "none.db", today=today)
+    cc = {a["app"]: a for a in out["apps"]}["claude-code"]["today"]
+    assert (cc.fresh, cc.cache, cc.output) == (27, 500, 445)
+
+
+def test_opencode_sqlite_uri_handles_special_characters(tmp_path: Path):
+    special_dir = tmp_path / "folder #1 with spaces"
+    special_dir.mkdir(parents=True)
+    db = special_dir / "opencode#test.db"
+    con = sqlite3.connect(db)
+    con.execute("create table session_message (id text, session_id text, type text, seq int, "
+                "time_created int, time_updated int, data text)")
+    ms = int(time.time() * 1000)
+    con.execute("insert into session_message values ('x','s','assistant',1,?,?,?)", (ms, ms, json.dumps({
+        "time": {"created": ms}, "model": {"id": "glm-5.3", "providerID": "opencode-go"},
+        "tokens": {"input": 50, "output": 25, "reasoning": 0, "cache": {"read": 0, "write": 0}}})))
+    con.commit()
+    con.close()
+
+    out = usage.collect(tmp_path / "none", tmp_path / "none2", db)
+    oc = {a["app"]: a for a in out["apps"]}["opencode"]["today"]
+    assert (oc.fresh, oc.output) == (50, 25)
+

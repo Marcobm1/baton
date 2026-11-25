@@ -47,6 +47,8 @@ PERMISSION_TIMEOUT = 600          # seconds without an answer -> Deny
 MAX_PROMPT_CHARS = 20000
 MAX_CHATS = 4                     # agent processes open at once
 IDLE_SECONDS = 1800               # an idle conversation's process is closed after this
+TURN_TIMEOUT = 1800               # maximum seconds for a single session/prompt turn
+REAP_INTERVAL = 60.0              # periodic idle-chat reaper interval (seconds)
 MAX_EVENTS = 20000
 START_TIMEOUT = 90
 
@@ -300,6 +302,7 @@ class AgentChat:
     alive: bool = True
     session_id: str = ""
     permission_timeout: float = PERMISSION_TIMEOUT
+    turn_timeout: float = TURN_TIMEOUT
 
     def __post_init__(self):
         self.events: list[dict] = []
@@ -384,8 +387,11 @@ class AgentChat:
 
     def _turn(self, text: str) -> None:
         try:
-            result = self.client.request("session/prompt", {
-                "sessionId": self.session_id, "prompt": [{"type": "text", "text": text}]})
+            result = self.client.request(
+                "session/prompt",
+                {"sessionId": self.session_id, "prompt": [{"type": "text", "text": text}]},
+                timeout=self.turn_timeout,
+            )
             self.emit("done", reason=str(result.get("stopReason") or "end_turn"))
             if self.on_usage and isinstance(result.get("usage"), dict):
                 try:
@@ -394,6 +400,8 @@ class AgentChat:
                     pass
         except AcpError as exc:
             if self.alive:      # closing the conversation is not an error
+                if "did not answer" in str(exc):
+                    self.cancel()
                 self.emit("error", text=str(exc)[:1000])
         finally:
             self._resolve_all("cancelled")
@@ -544,26 +552,58 @@ class AgentChats:
     def __init__(self, command: Callable[[], list[str] | None] = opencode_command,
                  permission_timeout: float = PERMISSION_TIMEOUT,
                  gemini_command: Callable[[], list[str] | None] = agy_command,
-                 data_dir: Path | None = None):
+                 data_dir: Path | None = None,
+                 idle_seconds: float = IDLE_SECONDS,
+                 turn_timeout: float = TURN_TIMEOUT,
+                 reap_interval: float = REAP_INTERVAL):
         self.command = command                  # OpenCode
         self.gemini_command = gemini_command
         self.data_dir = data_dir                # where Gemini token counts go
         self.permission_timeout = permission_timeout
+        self.idle_seconds = idle_seconds
+        self.turn_timeout = turn_timeout
+        self.reap_interval = reap_interval
         self._chats: dict[str, AgentChat] = {}
         self._lock = threading.Lock()
+        self._stop_reaper = threading.Event()
+        self._reaper: threading.Thread | None = None
+
+    def _ensure_reaper(self) -> None:
+        if self.reap_interval <= 0:
+            return
+        with self._lock:
+            if self._reaper is not None and self._reaper.is_alive():
+                return
+            self._stop_reaper.clear()
+            self._reaper = threading.Thread(target=self._reaper_loop, daemon=True)
+            self._reaper.start()
+
+    def _reaper_loop(self) -> None:
+        while not self._stop_reaper.wait(self.reap_interval):
+            self.reap_idle()
+            with self._lock:
+                if not self._chats:
+                    return
 
     def get(self, chat_id: str) -> AgentChat | None:
         with self._lock:
             return self._chats.get(chat_id)
 
-    def _reap(self) -> None:
+    def reap_idle(self) -> int:
+        """Close ended chats and idle chats older than `idle_seconds`. Returns count closed."""
         now = time.time()
         with self._lock:
             chats = list(self._chats.values())
+        closed = 0
         for chat in chats:
             idle = not chat.busy and not chat.pending
-            if not chat.alive or (idle and now - chat.last_active > IDLE_SECONDS):
-                self.close(chat.id)
+            if not chat.alive or (idle and now - chat.last_active > self.idle_seconds):
+                if self.close(chat.id):
+                    closed += 1
+        return closed
+
+    def _reap(self) -> None:
+        self.reap_idle()
         with self._lock:
             open_now = sorted(self._chats.values(), key=lambda c: c.last_active)
         while len(open_now) >= MAX_CHATS:
@@ -590,14 +630,17 @@ class AgentChats:
         chat = AgentChat(id=secrets.token_urlsafe(12), folder=folder, folder_label=folder_label,
                          model=model, effort=effort, mode=mode, agent=agent,
                          on_usage=self._record if agent == "gemini" else None,
-                         permission_timeout=self.permission_timeout)
+                         permission_timeout=self.permission_timeout,
+                         turn_timeout=self.turn_timeout)
         try:
             chat.start(command, chat_env(agent))
         except (AcpError, OSError) as exc:
             chat.close()
             raise ChatError("ag_err_start", str(exc)[:500]) from exc
+        chat.last_active = time.time()
         with self._lock:
             self._chats[chat.id] = chat
+        self._ensure_reaper()
         return chat
 
     def close(self, chat_id: str) -> bool:
@@ -608,6 +651,7 @@ class AgentChats:
         return chat is not None
 
     def close_all(self) -> None:
+        self._stop_reaper.set()
         with self._lock:
             ids = list(self._chats)
         for cid in ids:

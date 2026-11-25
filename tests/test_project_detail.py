@@ -231,7 +231,13 @@ def test_owner_actions(tmp_path, monkeypatch, agent_task):
     assert not writes
     assert client.post(endpoint, data=data, follow_redirects=False).status_code == 303
     assert writes[0]["branch"] == "release" and writes[0]["sha"] == project.status_sha
-    assert base64.b64decode(writes[0]["content"]).decode() == source.replace("* [ ]", "* [x]")
+    import datetime as dt
+    today = dt.date.today().isoformat()
+    written = base64.b64decode(writes[0]["content"]).decode()
+    assert f"* [x] {today} (Marco) Rate\r\n" in written
+    assert f"updated: {today}\r\n" in written
+    assert "updated_by: human\r\n" in written
+    assert not parse(written).problems
     assert client.post(endpoint, data=data).status_code == 409
 
 
@@ -275,8 +281,12 @@ def test_mark_agent_task_done(tmp_path, monkeypatch):
     today = dt.date.today().isoformat()
     assert f"- [x] {today} Future phase\r\n  Nothing left.\r\n" in written
     assert 'next: "Ranking: export CSV"\r\n' in written           # quoted: the title has ": "
+    assert f"updated: {today}\r\n" in written
+    assert "updated_by: human\r\n" in written
     assert written.count("[ ]") == 2 and "Marcar" not in writes[0]["message"]
-    assert parse(written).next == "Ranking: export CSV" and not parse(written).problems
+    parsed_written = parse(written)
+    assert parsed_written.next == "Ranking: export CSV" and not parsed_written.problems
+    assert parsed_written.updated.isoformat() == today and parsed_written.updated_by == "human"
 
     # The project page offers it too, for the featured task and the rest.
     page = client.get("/p/u/hub").text

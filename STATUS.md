@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "Hardening Phase 2: data accuracy, concurrency and repo hygiene"
+next: "Hardening Phase 3: modularization, SQLite storage and live UX"
 updated: 2026-11-25
 updated_by: gemini
 open_source: true
@@ -41,16 +41,28 @@ links:
   to confirm Job Object cancellation passes reliably, check that GitHub Actions
   `windows-latest` + `lint` pass, and add a generated `BATON_ACCESS_KEY` to `.env`
   (then sign in once on PC and phone).
-- [ ] Hardening Phase 2: data accuracy, concurrency and repo hygiene
-  Implement Phase 2 of [the hardening roadmap](docs/hardening-roadmap.md): fix
-  Claude Code streaming token undercounting and OpenCode read-only SQLite URI in
-  `usage.py`, record resolved model names and 52-bit IDs in `ranking.py`, update
-  `updated:`/`updated_by:` in `github.py:complete_item()`, normalize repo names
-  with `.casefold()` in `Runner.dispatch()`, tighten `models.py` locking and
-  `chat_port()`, allow cancelling during CI wait/review, remove `httpx` from
-  `quotas.py`, add idle reaper + turn timeout to `AgentChats`, generalize
-  `GEMINI_MODEL`, and bound `Hub.load()` concurrency. Verify with `pytest -q`,
-  `ruff check baton tests`, and `node --check baton/static/*.js`.
+- [x] 2026-11-25 Hardening Phase 2: data accuracy, concurrency and repo hygiene
+  Fixed Claude Code streaming token undercounting and OpenCode read-only SQLite
+  URI in `usage.py`, recorded resolved model names and JS-safe 52-bit IDs in
+  `ranking.py`, updated `updated:`/`updated_by:` and date prefixes in
+  `github.py`, normalized repo names with `.casefold()` in `Runner.dispatch()`,
+  tightened `models.py` locking and lightweight `chat_port()`, allowed
+  cancelling during CI wait and AI review, replaced `httpx` with `urllib.request`
+  in `quotas.py`, added periodic idle reaper + turn timeout to `AgentChats`,
+  generalized `GEMINI_MODEL`, added merged `baton/*` branch cleanup, avoided
+  caching transient GraphQL failures, and bounded `Hub.load()` concurrency with
+  an `asyncio.Semaphore`.
+- [ ] Hardening Phase 3: modularization, SQLite storage and live UX
+  Implement Phase 3 of [the hardening roadmap](docs/hardening-roadmap.md): split
+  `baton/web.py` into FastAPI `APIRouter` modules (`routes/`), split
+  `baton/runner.py` into focused modules (`task_store.py`, `worktree.py`,
+  `agents.py`, `review_merge.py`, `runner.py`), consolidate `tasks.json` +
+  `ranking.sqlite3` into a single SQLite database in WAL mode
+  (`busy_timeout=30000`, schema initialized once), stream task progress and logs
+  via SSE on `/tasks/{id}` (plus readable rendering for Gemini `stream-json`
+  logs), compute `usage.collect()` in the background loop instead of blocking
+  `/quotas`, and archive old `STATUS.md` history to keep it concise. Verify with
+  `pytest -q`, `ruff check baton tests`, and `node --check baton/static/*.js`.
   Recommended: claude-code, opus, high
 - [ ] (Marco) Send a first real Gemini task from Baton
   New task → Gemini, model `gemini-3.8-flash` (low) on a small change in this
@@ -219,6 +231,7 @@ links:
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
 ## Decisions
+- 2026-11-25: Phase 2 hardening: `usage.py` keeps max/final token counts per Claude Code `(message.id, requestId)` and opens OpenCode SQLite via `db.resolve().as_uri() + "?mode=ro"`; `quotas.py` uses stdlib `urllib.request` (no `httpx`); `ranking.py` uses 52-bit JS-safe IDs and records resolved models (or `<agent>/default`); `runner.py` casefolds repo keys, narrows `_committing` to Git write/merge windows so tasks can be cancelled during CI wait and AI review (waking `_wait_for_tests()` immediately), and deletes merged `baton/*` branches locally and remotely; `models.py` checks VRAM budget inside `self.lock`, skips unchanged state writes (retrying Windows `PermissionError`), and keeps `chat_port()` lightweight; `agent_chat.py` reaps idle sessions periodically and cancels timed-out turns; `github.py` stamps `updated:`/`updated_by: human` on web ticks, caches permanent 401/403/404 `open_pulls()` errors only (never transient 5xx/network failures), and bounds `Hub.load()` with `asyncio.Semaphore(8)`.
 - 2026-11-25: all agent subprocesses receive `agent_env()` (stripping `BATON_*`, `GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_PAT`, `ANTHROPIC_API_KEY`, `OPENCODE_PERMISSION`); optional `BATON_ACCESS_KEY` locks the UI/API (except `/healthz`, `/login`, `/static/*`) behind a 30-day HMAC-signed `HttpOnly`, `SameSite=Strict` cookie (`Secure` over HTTPS) rather than trusting spoofable loopback `Tailscale-User-Login` headers (docs/security.md).
 - 2026-11-25: Windows agent processes run inside kernel Job Objects (`baton/proc.py`, `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) with serialized `kill_tree()` before worktree cleanup and read-only `rmtree` fallback (docs/cancelling-tasks.md); `SelfUpdate` remembers a failed target SHA across restarts and skips automatic retries until `origin/main` advances or **Update now** is clicked (docs/self-update.md); `find_codex()` resolves native `codex.exe` before falling back to `.cmd` wrappers; CI tests both `ubuntu-latest` and `windows-latest` plus `ruff` and JS syntax checks.
 - 2026-11-25: Marco gave Claude Code, Codex and Gemini full permissions in tasks (`--dangerously-skip-permissions`, `--dangerously-bypass-approvals-and-sandbox` + `--search`); their work merges without a review, also in repositories without tests. Only OpenCode and local AI keep restricted rules and are reviewed, always by Claude Code (Opus, medium; the reviewer stays in `auto` mode). Abliterated models never get full permissions (docs/auto-merge.md).
@@ -259,6 +272,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (gemini): Completed hardening roadmap Phase 2 (data accuracy, concurrency & repo hygiene): Claude Code streaming token max-per-key + OpenCode read-only SQLite URI (`usage.py`), stdlib `urllib.request` in `quotas.py`, resolved models + 52-bit IDs (`ranking.py`), generalized `GEMINI_MODEL` (`task_models.py`), casefolded repo dispatch + cancellation during CI wait/review + merged `baton/*` branch cleanup (`runner.py`), locked VRAM checks + skip-unchanged/retry state save + lightweight `chat_port()` (`models.py`), periodic idle reaper + turn timeout (`agent_chat.py`), and `updated:`/`updated_by:` stamping + transient GraphQL failure handling + `Semaphore(8)` (`github.py`). Linux VM suite: 211 passed, ruff and JS checks clean.
 - 2026-11-25 (gemini): Completed hardening roadmap Phase 1 (1.1–1.6): shared `agent_env()`, optional `BATON_ACCESS_KEY` session-cookie auth (`baton/auth.py`, `/login`, `/logout`), Windows Job Objects and fallback worktree cleanup (`baton/proc.py`), `SelfUpdate` failed-SHA retry skip (`updates.jsonl`), native `codex.exe` resolution in `find_codex()`, and `windows-latest` + `ruff`/`node --check` CI. Linux VM suite: 198 passed, ruff and JS checks clean, `test_runner.py` 5/5 passed; live Windows verification pending CI/PC run.
 - 2026-11-25 (claude-code): Quotas → Baton updates no longer shows an old update failure as the last error once a later update has succeeded. Suite: 174 passed.
 - 2026-11-25 (claude-code): Fixed the two tests that failed on GitHub's Linux runner (`find_agy` built a WindowsPath when pretending to be Windows; the two-models test had no fake GPU), added the Gemini logo and colour to Quotas and Gemini names to the ranking labels. Suite: 173 passed.

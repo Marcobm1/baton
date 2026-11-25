@@ -342,6 +342,7 @@ class LocalModels:
         self.overheated = False
         self._pending_thermal_stop = False
         self._gpu_at, self._gpu = 0.0, []
+        self._last_saved_json: str | None = None
         psutil.cpu_percent(None)   # the first call only starts the measurement
 
     # ------------------------------------------------------------ state
@@ -354,16 +355,30 @@ class LocalModels:
 
     def _state(self) -> dict:
         try:
-            data = json.loads(self.state_path.read_text(encoding="utf-8"))
+            text = self.state_path.read_text(encoding="utf-8")
+            self._last_saved_json = text
+            data = json.loads(text)
             return data if isinstance(data, dict) else {}
         except (OSError, ValueError):
             return {}
 
     def _save(self, state: dict) -> None:
+        text = json.dumps(state, indent=1)
+        if text == self._last_saved_json and self.state_path.is_file():
+            return
         self.data_dir.mkdir(parents=True, exist_ok=True)
         tmp = self.state_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
-        os.replace(tmp, self.state_path)
+        tmp.write_text(text, encoding="utf-8")
+        # Windows antivirus/indexers can briefly hold a handle during os.replace.
+        for attempt in range(5):
+            try:
+                os.replace(tmp, self.state_path)
+                self._last_saved_json = text
+                return
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.05)
 
     @staticmethod
     def _proc(entry: dict) -> psutil.Process | None:
@@ -593,12 +608,17 @@ class LocalModels:
 
     def chat_port(self, model_id: str) -> int:
         """Port of a model that is answering (started by Baton or not), for the chat."""
-        row = next((r for r in self.overview()["models"] if r["id"] == model_id), None)
-        if row is None:
+        cfg = load_config(self.data_dir)
+        model = next((m for m in cfg.models if m.id == model_id), None)
+        if model is None:
             raise ModelError("m_err_unknown")
-        if row["status"] not in ("running", "external"):
-            raise ModelError("m_err_not_running", name=row["name"])
-        return row["port"]
+        with self.lock:
+            entry = self._state().get(model.id) or {}
+            proc = self._proc(entry) if entry.get("pid") else None
+        other = None if proc else _listener(model.port)
+        if not (proc or (other and _is_llama_server(other))) or _health(model.port) != "ok":
+            raise ModelError("m_err_not_running", name=model.name)
+        return model.port
 
     # ------------------------------------------------------- start / stop
     def start(self, model_id: str) -> None:
@@ -610,45 +630,49 @@ class LocalModels:
             raise ModelError("m_err_server")
         if not Path(model.file).is_file():
             raise ModelError("m_err_file", file=model.file)
-        view = self.overview()
-        row = next(r for r in view["models"] if r["id"] == model_id)
-        if row["status"] == "port_busy":
-            raise ModelError("m_err_port", port=model.port)
-        if row["uses_gpu"]:
-            raise ModelError("m_err_running", name=model.name)
-        # Two models only run together if their measured sizes fit in the card.
-        total = view["budget"]["total_gb"]
-        for other in (r for r in view["models"] if r["uses_gpu"]):
-            if not total or not other["vram_gb"] or not model.vram_gb \
-                    or view["budget"]["reserved_gb"] + model.vram_gb > total:
-                raise ModelError("m_err_vram", other=other["name"], total=_fmt(total, 0, "en") if total else "?")
         log = self.log_path(model.id)
         log.parent.mkdir(parents=True, exist_ok=True)
         command = model.command(cfg.server)
-        with self.lock, open(log, "ab") as fh:
+        with self.lock:
+            state = self._state()
+            rows = self._rows(cfg, state)
+            row = next(r for r in rows if r["id"] == model_id)
+            if row["status"] == "port_busy":
+                raise ModelError("m_err_port", port=model.port)
+            if row["uses_gpu"]:
+                raise ModelError("m_err_running", name=model.name)
+            # Two models only run together if their measured sizes fit in the card.
+            gpus = self.gpus()
+            gpu = gpus[0] if gpus else None
+            total = gpu["vram_total_mib"] / 1024 if gpu and gpu["vram_total_mib"] else None
+            reserved = sum(r["vram_gb"] for r in rows if r["uses_gpu"])
+            for other in (r for r in rows if r["uses_gpu"]):
+                if not total or not other["vram_gb"] or not model.vram_gb \
+                        or reserved + model.vram_gb > total:
+                    raise ModelError("m_err_vram", other=other["name"], total=_fmt(total, 0, "en") if total else "?")
             if self.overheated:
                 raise ModelError("m_err_temperature")
             if self._check_temperature_locked():
                 self._pending_thermal_stop = True
                 raise ModelError("m_err_temperature")
-            fh.write(f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} start\n".encode())
-            fh.flush()
-            kwargs = dict(stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
-                          cwd=str(Path(cfg.server).parent))
-            try:
-                proc = subprocess.Popen(command, **kwargs, **_detach())
-            except OSError as exc:
-                if os.name != "nt":
-                    raise ModelError("m_err_start", error=str(exc)) from exc
-                try:   # the job object may not allow breakaway: start it inside
-                    proc = subprocess.Popen(command, **kwargs, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | NO_WINDOW)
-                except OSError as exc2:
-                    raise ModelError("m_err_start", error=str(exc2)) from exc2
+            with open(log, "ab") as fh:
+                fh.write(f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} start\n".encode())
+                fh.flush()
+                kwargs = dict(stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
+                              cwd=str(Path(cfg.server).parent))
+                try:
+                    proc = subprocess.Popen(command, **kwargs, **_detach())
+                except OSError as exc:
+                    if os.name != "nt":
+                        raise ModelError("m_err_start", error=str(exc)) from exc
+                    try:   # the job object may not allow breakaway: start it inside
+                        proc = subprocess.Popen(command, **kwargs, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | NO_WINDOW)
+                    except OSError as exc2:
+                        raise ModelError("m_err_start", error=str(exc2)) from exc2
             try:
                 created = psutil.Process(proc.pid).create_time()
             except psutil.Error:
                 created = time.time()
-            state = self._state()
             entry = state.setdefault(model.id, {})
             entry.update(pid=proc.pid, created=created, started=time.time())
             entry.pop("crashed", None)

@@ -40,14 +40,16 @@ def test_task_summary_page_and_legacy_history(tmp_path):
     from baton.config import Settings
     from baton.web import create_app
 
+    # A legacy tasks.json record saved before summaries existed migrates cleanly.
+    (tmp_path / "tasks.json").write_text(json.dumps([dict(
+        id="test", repo="x/demo", title="Test", details="", agent="codex",
+        where="local", created_at=0, status="no-changes", finished_at=1.0,
+    )]), encoding="utf-8")
     store = TaskStore(tmp_path)
-    task = Task("test", "x/demo", "Test", "", "codex", "local", 0, status="no-changes", finished_at=1.0)
-    store.save(task)
-    rows = json.loads(store.file.read_text())
-    del rows[0]["summary"]          # a task saved before summaries existed
-    store.file.write_text(json.dumps(rows))
     client = TestClient(create_app(Settings(data_dir=tmp_path, lang="es")))
     assert "No se guardó un resumen" in client.get("/tasks/test").text
+    task = store.get("test")
+    assert task is not None
     task.summary = "Checked **both paths**. <script>alert(1)</script>"
     store.save(task)
     html = client.get("/tasks/test").text

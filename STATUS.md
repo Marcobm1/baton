@@ -34,7 +34,7 @@ links:
   agent covers the mode switch. Replaces the earlier "Prototype folder
   confinement" item.
   Recommended: claude-code, opus, high
-- [ ] (Marco) Check the Agents chat from the phone
+- [x] (Marco) Check the Agents chat from the phone
   Through Tailscale open Chat, pick Agent: OpenCode, model
   `local-inkling/inkling-2-mini` (start Inkling on Models first) and folder
   `C:\IA\pruebas-opencode (pruebas)`. Ask it to read `baton-fase1/nota.txt`

@@ -5,6 +5,12 @@ relays and streams a local `llama-server` model's answer (no tools). *OpenCode*
 is the Agents chat: OpenCode works in one folder with its tools, and Baton shows
 every tool call and asks Marco before anything changes.
 
+In the OpenCode chat, the catalog buttons filter the model picker by provider.
+Go appears first on a fresh browser. Pay-as-you-go models have a separate
+button and a credit warning. Other providers, including local ones, share a
+third button and keep their provider labels. The chat restores the catalog
+along with the saved model and locks both when a conversation starts.
+
 ## Phase 1: OpenCode over ACP, Confirm mode (2026-11-25)
 
 **Security boundary in this phase: Marco's approval.** There is no OS isolation

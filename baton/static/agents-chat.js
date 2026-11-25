@@ -39,9 +39,43 @@
   function note(cls, msg) { add(el("p", "ag-note " + cls, msg)); }
 
   // ------------------------------------------------------------- choices
+  var catalog = $("[data-catalog]");
+  var groups = Array.from(modelSel.children);
+  var buttons = new Map();
+  function chooseCatalog(key, model) {
+    modelSel.replaceChildren(...groups.filter(function (g) { return g.dataset.catalogKey === key; }));
+    if (model) modelSel.value = model;
+    buttons.forEach(function (button, id) {
+      button.setAttribute("aria-pressed", String(id === key));
+      button.classList.toggle("ghost", id !== key);
+    });
+    showPayg();
+  }
+  function restoreModel(model) {
+    var group = groups.find(function (g) {
+      return Array.from(g.children).some(function (option) { return option.value === model; });
+    });
+    if (group) chooseCatalog(group.dataset.catalogKey, model);
+  }
+  groups.forEach(function (group) {
+    var key = group.dataset.catalogKey;
+    if (buttons.has(key)) return;
+    var button = el("button", "btn small", group.dataset.catalogLabel);
+    button.type = "button";
+    button.addEventListener("click", function () {
+      if (button.getAttribute("aria-pressed") === "true") return;
+      chooseCatalog(key);
+      savePrefs();
+    });
+    catalog.appendChild(button);
+    buttons.set(key, button);
+  });
+  catalog.hidden = buttons.size < 2;
+  if (groups.length) chooseCatalog(groups[0].dataset.catalogKey);
   try {
     var prefs = JSON.parse(localStorage.getItem(PREFS) || "{}");
-    [[modelSel, prefs.model], [effortSel, prefs.effort], [folderSel, prefs.folder]].forEach(function (p) {
+    restoreModel(prefs.model);
+    [[effortSel, prefs.effort], [folderSel, prefs.folder]].forEach(function (p) {
       if (p[1] && p[0].querySelector('option[value="' + CSS.escape(p[1]) + '"]')) p[0].value = p[1];
     });
   } catch (e) {}
@@ -60,12 +94,17 @@
   function lock(info) {
     // Model, effort, folder and mode are fixed on the server for the conversation.
     [modelSel, effortSel, folderSel].forEach(function (s) { s.disabled = !!info; });
+    buttons.forEach(function (button) { button.disabled = !!info; });
     root.querySelectorAll("[data-mode]").forEach(function (r) { if (r.value === "confirm") r.disabled = !!info; });
     fixed.hidden = !info;
     if (info) {
+      restoreModel(info.model);
+      // A resumed session can use a model that has since left the catalog.
       modelSel.value = info.model;
       effortSel.value = info.effort;
       fixed.textContent = T.fixed.replace("{model}", info.model).replace("{folder}", info.folder);
+    } else if (!modelSel.value && groups.length) {
+      chooseCatalog(groups[0].dataset.catalogKey);
     }
     showPayg();
   }

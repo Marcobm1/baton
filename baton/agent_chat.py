@@ -44,6 +44,7 @@ from .sandbox import (
     DEFAULT_SANDBOX_IMAGE,
     FULL_RULES as FULL_RULES,
     docker_available,
+    find_hardlinks,
     is_local_opencode_model,
     safe_container_name,
     sandbox_docker_command,
@@ -661,6 +662,9 @@ class AgentChats:
                 raise ChatError("ag_full_off")
             if not is_local_opencode_model(model):
                 raise ChatError("ag_full_local_only")
+            hardlinks = find_hardlinks(folder)
+            if hardlinks:
+                raise ChatError("ag_full_hardlink", ", ".join(hardlinks))
             config_json = json.dumps(sandbox_opencode_config(local_models or [], mode="full"))
             if self.sandbox_command is not None:
                 command = self.sandbox_command(folder, safe_container_name(chat_id), config_json)

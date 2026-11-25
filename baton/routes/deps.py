@@ -62,6 +62,8 @@ class AppContext:
     task_sse_keepalive: float = 15.0
     go_state: dict = field(default_factory=lambda: {"at": 0.0, "msg": ""})
     gemini_state: dict = field(default_factory=lambda: {"at": 0.0, "msg": ""})
+    _gemini_lock: threading.Lock = field(default_factory=threading.Lock)
+    _gemini_refreshing: bool = False
 
     def page(self, request: Request, name: str, nav: str, **ctx):
         return self.templates.TemplateResponse(request, name, {"nav": nav, **ctx})
@@ -151,10 +153,48 @@ class AppContext:
 
     def refresh_gemini(self) -> str:
         # `agy -p /usage` asks no model (0 tokens): at most every 5 minutes.
-        if time.time() - self.gemini_state["at"] > 300 and self.find_agy_fn():
+        with self._gemini_lock:
+            if time.time() - self.gemini_state["at"] <= 300 or self._gemini_refreshing:
+                return self.gemini_state["msg"]
+            if not self.find_agy_fn():
+                return self.gemini_state["msg"]
+            self._gemini_refreshing = True
+        try:
             ok, msg = fetch_gemini_quota(self.settings.data_dir)
-            self.gemini_state.update(at=time.time(), msg="" if ok else msg)
-        return self.gemini_state["msg"]
+            with self._gemini_lock:
+                self.gemini_state.update(at=time.time(), msg="" if ok else msg)
+                return self.gemini_state["msg"]
+        finally:
+            with self._gemini_lock:
+                self._gemini_refreshing = False
+
+    def schedule_gemini_refresh(self) -> None:
+        """Kick off a background Gemini quota refresh if stale and not already running."""
+        with self._gemini_lock:
+            if time.time() - self.gemini_state["at"] <= 300 or self._gemini_refreshing:
+                return
+            if not self.find_agy_fn():
+                return
+            self._gemini_refreshing = True
+
+        def _worker() -> None:
+            try:
+                ok, msg = fetch_gemini_quota(self.settings.data_dir)
+                with self._gemini_lock:
+                    self.gemini_state.update(at=time.time(), msg="" if ok else msg)
+            except Exception:
+                pass
+            finally:
+                with self._gemini_lock:
+                    self._gemini_refreshing = False
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def gemini_error(self) -> str:
+        """Return cached Gemini quota error immediately without blocking HTTP requests."""
+        self.schedule_gemini_refresh()
+        with self._gemini_lock:
+            return self.gemini_state["msg"]
 
     def followup_context(self, task: Task) -> str:
         summary = task.summary or task_report(task, self.store.read_log(task.id))["summary"]

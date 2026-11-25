@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,39 @@ FULL_RULES = (
     + [_rule("shell", "deny", c) for c in NO_GIT_CHANGES]
     + ALWAYS_DENIED
 )
+
+
+def find_hardlinks(folder: Path, *, limit: int = 3) -> list[str]:
+    """Return relative paths of regular files with st_nlink > 1 inside `folder`.
+
+    A pre-existing hardlink inside the mounted workspace (on NTFS or POSIX)
+    shares an inode with a file outside `/workspace` and remains readable from
+    inside a bind-mounted Docker container. Refusing Full permissions when any
+    hardlink is present closes that host-side exposure.
+    """
+    found: list[str] = []
+    root = Path(os.path.realpath(folder))
+    stack = [root]
+    while stack and len(found) < limit:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as it:
+                for entry in it:
+                    try:
+                        st = entry.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    mode = st.st_mode
+                    if stat.S_ISDIR(mode):
+                        stack.append(Path(entry.path))
+                    elif stat.S_ISREG(mode) and st.st_nlink > 1:
+                        rel = os.path.relpath(entry.path, root)
+                        found.append(rel)
+                        if len(found) >= limit:
+                            break
+        except OSError:
+            continue
+    return found
 
 
 def is_local_opencode_model(model: str) -> bool:

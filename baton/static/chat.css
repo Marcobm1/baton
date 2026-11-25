@@ -49,7 +49,15 @@
 .ag-mode legend { padding: 0 .3rem; }
 .ag-mode label { display: flex; gap: .5rem; align-items: baseline; }
 .ag-full { color: var(--muted); }
+.ag-full-ready { color: var(--ink); }
 .ag-full .small { color: var(--bad); }
+.ag-full-warn { margin: 0; padding: .55rem .8rem; border: 1.5px solid var(--bad); border-radius: var(--radius-sm);
+                background: color-mix(in srgb, var(--bad) 10%, var(--panel)); color: var(--bad); font-weight: 600; }
+.ag-full-warn[hidden] { display: none; }
+.ag-full-badge { display: inline-block; margin-left: .4rem; padding: .1rem .45rem; border-radius: 999px;
+                 background: var(--bad); color: var(--on-accent); font: 700 .66rem var(--mono); letter-spacing: .06em;
+                 vertical-align: middle; }
+.ag-full-badge[hidden] { display: none; }
 .ag-fixed { margin: 0; }
 .ag-note { margin: 0; }
 .ag-tool { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2);

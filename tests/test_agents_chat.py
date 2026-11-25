@@ -31,7 +31,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("BATON_TEST_SECRET", "x")
     scratch = tmp_path / "scratch"
     app = create_app(Settings(data_dir=tmp_path / "data", lang="es", self_update=False,
-                              chat_scratch=str(scratch)))
+                              chat_scratch=str(scratch), sandbox_image=""))
     chats = app.state.agent_chats
     chats.command = lambda: [sys.executable, str(FAKE_ACP)]
     with TestClient(app) as client:

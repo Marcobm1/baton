@@ -91,7 +91,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     )
     store = TaskStore(settings.data_dir)
     models = LocalModels(settings.data_dir)
-    agent_chats = AgentChats(data_dir=settings.data_dir)
+    agent_chats = AgentChats(data_dir=settings.data_dir, sandbox_image=settings.sandbox_image)
     ranking = store.ranking
 
     def quota_left(agent: str) -> float | None:

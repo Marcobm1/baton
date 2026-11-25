@@ -143,14 +143,39 @@ never with `--dangerously-skip-permissions`) and speaks the same ACP.
   its `--gemini` role (starts in `auto`, so the test proves Baton switches to
   `default`).
 
-## Next: isolated container for All permissions
+## Isolated Docker container for All permissions (2026-11-25)
 
-Docker Desktop is installed. Run the agent in a container that mounts only the
-chosen folder (no Baton data, no Docker socket, no host profile). Start with the
-local models (`local-inkling`, `local-qwen`), which need no credentials: the
-container reaches the `llama-server` on the host. Then enable All permissions
-for that path only, with a red warning and badge, and keep it refused for
-abliterated models.
+Build the sandbox image once on the host:
+
+```bash
+docker build -f docker/opencode-sandbox.Dockerfile -t baton-opencode-sandbox:latest .
+```
+
+(Override the image name with `BATON_SANDBOX_IMAGE` if needed.)
+
+When Docker is running and the sandbox image is present locally, **All
+permissions** unlocks on `/chat?agent=opencode` for **non-abliterated local
+models (`local-*`) only**:
+
+- **Hardened container (`baton/sandbox.py`):** Baton runs
+  `docker run --rm -i --init --cap-drop=ALL --security-opt=no-new-privileges:true --pids-limit=256 --memory=4g --add-host=host.docker.internal:host-gateway`
+  mounting **only** the canonical chosen folder at `/workspace`. No Baton data,
+  no Docker socket, no host profile, and no host secrets (`GITHUB_TOKEN`,
+  `BATON_*`, etc.) enter the container.
+- **Local models only (zero credentials):** `sandbox_opencode_config()` maps
+  Baton's `models.json` servers to `http://host.docker.internal:<port>/v1` via
+  inline `OPENCODE_CONFIG_CONTENT` so the container reaches the host's
+  `llama-server` without any API keys. Cloud/Go models stay refused (`403`) in
+  All permissions mode; **abliterated models remain refused (`403`) always**.
+- **Visible warning and badge:** selecting All permissions shows a red alert
+  banner before starting; active All permissions sessions carry a red
+  `ALL PERMISSIONS · DOCKER` badge and still log every tool call.
+- **Verification (`tests/test_sandbox.py`):** unit tests verify the hardened
+  `docker run` command, `FULL_RULES` defense-in-depth, and fake-ACP mode switch
+  + server-side 403 guards; a real Docker acceptance test verifies two sibling
+  folders + symlink escape attempt (both parent and child process edit
+  `/workspace` and are denied access to the sibling, symlink, Docker socket,
+  and host secrets).
 
 ## Working directory and permissions (background)
 

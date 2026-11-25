@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from ..agent_chat import EFFORTS, MAX_PROMPT_CHARS, MODES, ChatError, is_abliterated
 from ..models import ModelError, chat_payload
+from ..sandbox import is_local_opencode_model
 from ..task_models import opencode_groups
 from .deps import CTX, AppContext
 
@@ -54,19 +55,24 @@ async def chat_page(
     ids = [m["id"] for m in view["models"]]
     running = [m["id"] for m in view["models"] if m["status"] in ("running", "external")]
     selected = model if model in ids else (running[0] if running else (ids[0] if ids else ""))
-    oc: dict = {"available": False, "groups": [], "folders": []}
+    oc: dict = {"available": False, "groups": [], "folders": [], "sandbox_ready": False}
     if agent == "opencode" and ctx.find_opencode_fn():
-        oc_list = await asyncio.to_thread(ctx.opencode_models_fn)
+        oc_list, folders, sandbox_ready = await asyncio.gather(
+            asyncio.to_thread(ctx.opencode_models_fn),
+            asyncio.to_thread(ctx.chat_folders),
+            asyncio.to_thread(ctx.agent_chats.sandbox_ready),
+        )
         active_families = {m["family_key"] for m in view["models"] if m["uses_gpu"]}
         oc = {"available": True, "groups": opencode_groups(oc_list, ctx.t, active_families=active_families),
-              "folders": await asyncio.to_thread(ctx.chat_folders)}
+              "folders": folders, "sandbox_ready": sandbox_ready}
     elif agent == "gemini" and ctx.find_agy_fn():
         gm = await asyncio.to_thread(ctx.catalog_fn, "gemini")
         # One group; each model carries its own thinking levels (data-efforts).
         oc = {"available": True, "folders": await asyncio.to_thread(ctx.chat_folders),
               "groups": [{"provider": "gemini", "label": "Gemini", "included": False, "payg": False,
                           "models": list(gm)}] if gm else [],
-              "efforts": {m: v["efforts"] for m, v in gm.items()}}
+              "efforts": {m: v["efforts"] for m, v in gm.items()},
+              "sandbox_ready": False}
     return ctx.page(request, "chat.html", "chat", view=view, selected=selected, error=error[:300],
                     agent=agent, oc=oc, efforts=EFFORTS)
 
@@ -88,12 +94,17 @@ async def agents_create(request: Request, ctx: AppContext = CTX):
             raise HTTPException(400, ctx.t["ag_err_model_gemini"])
     elif model not in await asyncio.to_thread(ctx.opencode_models_fn):
         raise HTTPException(400, ctx.t["ag_err_model"])
+    local_models: list[dict] | None = None
     if mode == "full":
-        # Refused for everyone in this phase; abliterated models never get it.
+        # Abliterated models never get All permissions, even inside Docker.
         view = await asyncio.to_thread(ctx.models.overview, ctx.settings.lang)
-        if is_abliterated(model, view["models"]):
+        local_models = view["models"]
+        if is_abliterated(model, local_models):
             raise HTTPException(403, ctx.t["ag_full_abliterated"])
-        raise HTTPException(403, ctx.t["ag_full_off"])
+        if agent != "opencode" or not await asyncio.to_thread(ctx.agent_chats.sandbox_ready):
+            raise HTTPException(403, ctx.t["ag_full_off"])
+        if not is_local_opencode_model(model):
+            raise HTTPException(403, ctx.t["ag_full_local_only"])
     folders = {f["key"]: f for f in await asyncio.to_thread(ctx.chat_folders)}
     folder = folders.get(str(body.get("folder") or ""))
     if folder is None:
@@ -105,9 +116,12 @@ async def agents_create(request: Request, ctx: AppContext = CTX):
     path = Path(os.path.realpath(path))
     try:
         chat = await asyncio.to_thread(ctx.agent_chats.create, path, folder["label"], model, effort, mode,
-                                       agent)
+                                       agent, local_models=local_models)
     except ChatError as exc:
-        raise _agent_error(ctx, exc, 502 if exc.key == "ag_err_start" else 409) from exc
+        status = 403 if exc.key in ("ag_full_off", "ag_full_abliterated", "ag_full_local_only") else (
+            502 if exc.key == "ag_err_start" else 409
+        )
+        raise _agent_error(ctx, exc, status) from exc
     return JSONResponse(chat.info())
 
 

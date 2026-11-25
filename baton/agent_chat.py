@@ -38,6 +38,18 @@ from . import __version__
 from .ping import _NO_WINDOW, agent_env, find_agy
 from .proc import attach_job, close_job, kill_tree
 from .agents import ALWAYS_DENIED, NO_GIT_CHANGES, _rule, find_opencode
+from .sandbox import (
+    CHAT_AGENT_FULL,
+    CONTAINER_WORKSPACE,
+    DEFAULT_SANDBOX_IMAGE,
+    FULL_RULES as FULL_RULES,
+    docker_available,
+    is_local_opencode_model,
+    safe_container_name,
+    sandbox_docker_command,
+    sandbox_opencode_config,
+    stop_container,
+)
 from .usage import record_gemini
 
 CHAT_AGENT = "baton-chat"
@@ -301,6 +313,9 @@ class AgentChat:
     busy: bool = False
     alive: bool = True
     session_id: str = ""
+    session_cwd: str = ""
+    container_name: str = ""
+    isolated: bool = False
     permission_timeout: float = PERMISSION_TIMEOUT
     turn_timeout: float = TURN_TIMEOUT
 
@@ -331,7 +346,7 @@ class AgentChat:
     def info(self) -> dict:
         return {"id": self.id, "agent": self.agent, "model": self.model, "effort": self.effort,
                 "mode": self.mode, "folder": self.folder_label, "busy": self.busy,
-                "alive": self.alive, "events": len(self.events)}
+                "alive": self.alive, "isolated": self.isolated, "events": len(self.events)}
 
     # ------------------------------------------------------------- start
     def start(self, command: list[str], env: dict[str, str]) -> None:
@@ -341,13 +356,14 @@ class AgentChat:
                            "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False},
                                                   "terminal": False},
                            "clientInfo": {"name": "baton", "version": __version__}}, START_TIMEOUT)
-        new = req("session/new", {"cwd": str(self.folder), "mcpServers": []}, START_TIMEOUT)
+        new = req("session/new", {"cwd": self.session_cwd or str(self.folder), "mcpServers": []}, START_TIMEOUT)
         self.session_id = str(new.get("sessionId") or "")
         if not self.session_id:
             raise AcpError(f"{self.profile.label} did not open a session.")
         # Fail closed: without Baton's own agent (OpenCode) or agy's asking
         # "default" mode the model could run commands unasked.
-        options = self._set("mode", self.profile.mode, new.get("configOptions"))
+        session_mode = CHAT_AGENT_FULL if (self.agent == "opencode" and self.mode == "full") else self.profile.mode
+        options = self._set("mode", session_mode, new.get("configOptions"))
         options = self._set("model", self.model, options)
         effort_id = self.profile.effort_option
         effort = next((o for o in options if o.get("id") == effort_id), None)
@@ -423,6 +439,8 @@ class AgentChat:
         self._resolve_all("cancelled")
         if self.client:
             self.client.close()
+        if self.container_name:
+            stop_container(self.container_name)
         if was:
             self.emit("closed")
 
@@ -555,7 +573,9 @@ class AgentChats:
                  data_dir: Path | None = None,
                  idle_seconds: float = IDLE_SECONDS,
                  turn_timeout: float = TURN_TIMEOUT,
-                 reap_interval: float = REAP_INTERVAL):
+                 reap_interval: float = REAP_INTERVAL,
+                 sandbox_image: str = DEFAULT_SANDBOX_IMAGE,
+                 sandbox_command: Callable[[Path, str, str], list[str] | None] | None = None):
         self.command = command                  # OpenCode
         self.gemini_command = gemini_command
         self.data_dir = data_dir                # where Gemini token counts go
@@ -563,10 +583,18 @@ class AgentChats:
         self.idle_seconds = idle_seconds
         self.turn_timeout = turn_timeout
         self.reap_interval = reap_interval
+        self.sandbox_image = sandbox_image
+        self.sandbox_command = sandbox_command  # optional override for fake ACP sandbox tests
         self._chats: dict[str, AgentChat] = {}
         self._lock = threading.Lock()
         self._stop_reaper = threading.Event()
         self._reaper: threading.Thread | None = None
+
+    def sandbox_ready(self) -> bool:
+        """True if an isolated Docker sandbox (or injected test sandbox) can launch."""
+        if self.sandbox_command is not None:
+            return True
+        return docker_available(self.sandbox_image)
 
     def _ensure_reaper(self) -> None:
         if self.reap_interval <= 0:
@@ -618,22 +646,52 @@ class AgentChats:
             record_gemini(self.data_dir, model, tokens, "chat")
 
     def create(self, folder: Path, folder_label: str, model: str, effort: str,
-               mode: str = "confirm", agent: str = "opencode") -> AgentChat:
-        if mode != "confirm":
-            raise ChatError("ag_full_off")
+               mode: str = "confirm", agent: str = "opencode", *,
+               local_models: list[dict] | None = None) -> AgentChat:
         if agent not in PROFILES:
             raise ChatError("ag_unavailable")
-        command = (self.gemini_command if agent == "gemini" else self.command)()
-        if not command:
-            raise ChatError("ag_unavailable_gemini" if agent == "gemini" else "ag_unavailable")
+        chat_id = secrets.token_urlsafe(12)
+        session_cwd = ""
+        container_name = ""
+        isolated = False
+        if mode == "full":
+            if is_abliterated(model, local_models or []):
+                raise ChatError("ag_full_abliterated")
+            if agent != "opencode" or not self.sandbox_ready():
+                raise ChatError("ag_full_off")
+            if not is_local_opencode_model(model):
+                raise ChatError("ag_full_local_only")
+            config_json = json.dumps(sandbox_opencode_config(local_models or [], mode="full"))
+            if self.sandbox_command is not None:
+                command = self.sandbox_command(folder, safe_container_name(chat_id), config_json)
+                env = {**agent_env(), "OPENCODE_CONFIG_CONTENT": config_json}
+            else:
+                container_name = safe_container_name(chat_id)
+                command = sandbox_docker_command(
+                    folder, self.sandbox_image, config_json, container_name=container_name
+                )
+                env = agent_env()
+                session_cwd = CONTAINER_WORKSPACE
+            if not command:
+                raise ChatError("ag_full_off")
+            isolated = True
+        elif mode == "confirm":
+            command = (self.gemini_command if agent == "gemini" else self.command)()
+            if not command:
+                raise ChatError("ag_unavailable_gemini" if agent == "gemini" else "ag_unavailable")
+            env = chat_env(agent)
+        else:
+            raise ChatError("ag_full_off")
         self._reap()
-        chat = AgentChat(id=secrets.token_urlsafe(12), folder=folder, folder_label=folder_label,
+        chat = AgentChat(id=chat_id, folder=folder, folder_label=folder_label,
                          model=model, effort=effort, mode=mode, agent=agent,
                          on_usage=self._record if agent == "gemini" else None,
+                         session_cwd=session_cwd, container_name=container_name,
+                         isolated=isolated,
                          permission_timeout=self.permission_timeout,
                          turn_timeout=self.turn_timeout)
         try:
-            chat.start(command, chat_env(agent))
+            chat.start(command, env)
         except (AcpError, OSError) as exc:
             chat.close()
             raise ChatError("ag_err_start", str(exc)[:500]) from exc

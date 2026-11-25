@@ -7,500 +7,93 @@ Flow for one task:
      folder you work in;
   3. run the agent there. Claude Code, Codex and Gemini get full permissions
      (the owner's decision, 2026-11-25: they work unattended in the worktree);
-     OpenCode and local AI keep Baton's limits:
-       claude-code  `claude -p --dangerously-skip-permissions`
-       codex        `codex --search exec --dangerously-bypass-approvals-and-sandbox`
-                    (no sandbox: network and live web search included)
-       gemini       `agy -p <prompt> --output-format stream-json --dangerously-skip-permissions`
-       opencode     `opencode run --agent baton` (deny-everything-then-allow rules)
-       local        `codex exec --oss -s workspace-write` with a local model
+     OpenCode and local AI keep Baton's limits;
   4. Baton commits what changed, pushes the branch and opens a pull request;
   5. with auto-merge on (the default), Baton waits for the repository's tests
-     on GitHub. Work by Claude Code, Codex or Gemini is merged without a review
-     (with or without tests). Work by OpenCode or local AI is first reviewed by
-     Claude Code (Opus, medium effort by default, in its limited `auto` mode),
-     which fixes what it finds. Then Baton merges the pull request (see
-     docs/auto-merge.md);
+     on GitHub, reviews OpenCode/local-AI work with Claude Code, and merges;
   6. the worktree is removed once the branch is safe on GitHub.
 
-Tasks wait in a queue: one task at a time per repository and at most
-`max_parallel` local tasks on this computer. The next one (highest priority,
-then oldest) starts when a task has finished completely, review and merge
-included; steps 2-6 happen only then, so its worktree starts from the
-`origin/<base>` that already contains the previous task's merge (see
-docs/task-queue.md).
-
-A running task can be cancelled from its page: Baton kills the agent and all
-its subprocesses, commits and pushes nothing, and removes the worktree and the
-local branch unless the branch is already on GitHub. A queued task is simply
-taken out of the queue (nothing had been created yet).
-
-Everything is written to <data dir>/tasks/<id>.log and tasks.json.
+Modularized responsibilities:
+  - `baton/task_store.py`: Task dataclass, queue ordering, TaskStore, exceptions
+  - `baton/worktree.py`:   LocalRepos clone discovery, Git helpers, worktree cleanup
+  - `baton/agents.py`:     agent configs, prompts, model discovery, CLI command builder
+  - `baton/review_merge.py`: CI waiting, AI review execution, PR auto-merge
+  - `baton/runner.py`:     Runner orchestrator (queue, dispatch, cancel, execution loop)
 """
 
 from __future__ import annotations
 
-import datetime as dt
 import json
-import logging
 import os
-import re
-import shutil
-import sqlite3
-import stat
+import shutil as shutil  # re-exported for tests patching runner.shutil.which
 import subprocess
-import sys
 import threading
 import time
-from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
-from .git_lock import GitLockError, GitLockTimeout, is_lock_error, run_locked
+from .agents import (
+    AGENTS as AGENTS,
+    ALWAYS_DENIED as ALWAYS_DENIED,
+    NEXT_TASK_REQUEST as NEXT_TASK_REQUEST,
+    NO_GIT_CHANGES as NO_GIT_CHANGES,
+    OPENCODE_CONFIG as OPENCODE_CONFIG,
+    PROMPT as PROMPT,
+    READ_RULES as READ_RULES,
+    RECOMMEND_REQUEST as RECOMMEND_REQUEST,
+    REVIEW_PROMPT as REVIEW_PROMPT,
+    REVIEWED_AGENTS as REVIEWED_AGENTS,
+    SUMMARY_REQUEST as SUMMARY_REQUEST,
+    TASK_RULES as TASK_RULES,
+    _rule as _rule,
+    agy_events as agy_events,
+    available_agents,
+    build_agent_cmd,
+    build_prompt,
+    cached_opencode_models as cached_opencode_models,
+    extract_summary as extract_summary,
+    find_opencode as find_opencode,
+    format_model_choices,
+    next_task_request as next_task_request,
+    opencode_models as opencode_models,
+)
+from .git_lock import GitLockTimeout, run_locked
 from .ping import _NO_WINDOW, agent_env, find_agy, find_claude, find_codex
 from .proc import attach_job, close_job, kill_tree
-from .ranking import Ranking, parse_rating, review_verdict
+from .ranking import Ranking, review_verdict as review_verdict
+from .review_merge import finish_pr, pick_reviewer, resolve_reviewer_model, run_review, wait_for_tests
 from .task_models import catalog
+from .task_store import (
+    PRIORITIES as PRIORITIES,
+    Cancelled as Cancelled,
+    LeftOpen as LeftOpen,
+    Task as Task,
+    TaskStore as TaskStore,
+    UpdateInProgress as UpdateInProgress,
+    _slug as _slug,
+    new_id as new_id,
+    pr_number as pr_number,
+    queue_key as queue_key,
+)
 from .usage import record_gemini
-
-AGENTS = {
-    "claude-code": "Claude Code",
-    "codex": "Codex",
-    "gemini": "Gemini",
-    "opencode": "OpenCode",
-    "local": "IA local",
-}
-
-# OpenCode has no OS sandbox, so Baton gives it its own agents with rules
-# (OpenCode 2.x format: a list of {action, resource, effect}; last match wins).
-# The list starts by denying EVERYTHING and then allows only what is needed,
-# because OpenCode can have more tools than you expect: MCP servers (a GitHub
-# one can push files), Code Mode ("execute"), subagents, scheduled automations.
-# Explicit denies hold even with --auto, which only approves what isn't denied.
-# Tested 2026-11-23: denying `edit` alone is not enough (the model wrote the
-# file with the terminal), and an "allow everything except…" list let a helper
-# keep GitHub and automation tools.
-NO_GIT_CHANGES = ["git commit*", "git push*", "git checkout*", "git switch*", "git reset*",
-                  "git rebase*", "git worktree*", "git branch*", "git remote*", "git tag*",
-                  "gh *", "sudo*"]
-
-
-def _rule(action: str, effect: str, resource: str = "*") -> dict:
-    return {"action": action, "resource": resource, "effect": effect}
-
-
-# Tested 2026-11-23: OpenCode's own tools (opencode_worktree_remove…) still
-# ran under the deny-all, so they are named again explicitly, at the end.
-ALWAYS_DENIED = [_rule(a, "deny") for a in ("opencode_*", "skill", "subagent", "execute")]
-
-READ_RULES = [_rule("*", "deny")] + [_rule(a, "allow") for a in ("read", "glob", "grep")]
-
-# Baton's tasks (and `baton delegate --write`): read, edit and run commands in
-# the task's folder; never commit, push, change branch or leave the folder.
-TASK_RULES = (READ_RULES + [_rule("edit", "allow"), _rule("shell", "allow")]
-              + [_rule("shell", "deny", c) for c in NO_GIT_CHANGES] + ALWAYS_DENIED)
-
-OPENCODE_CONFIG = {
-    "$schema": "https://opencode.ai/config.json",
-    "agents": {
-        "baton": {
-            "mode": "primary",
-            "description": "Task sent from Baton, inside its own git worktree",
-            "permissions": TASK_RULES,
-        }
-    },
-}
-
-
-def find_opencode() -> str | None:
-    """The real opencode.exe, never the npm .cmd/.ps1 wrapper.
-
-    Passing a task's text as an argument to a .cmd file would go through
-    cmd.exe, which treats & | < > ^ as commands and cuts at line breaks.
-    """
-    explicit = os.environ.get("BATON_OPENCODE_BIN")
-    if explicit:
-        return explicit
-    found = shutil.which("opencode")
-    if found and found.lower().endswith((".cmd", ".ps1", ".bat")):
-        exe = Path(found).parent / "node_modules" / "@opencode" / "cli" / "bin" / "opencode.exe"
-        return str(exe) if exe.is_file() else None
-    return found
-
-
-_models_cache: tuple[float, list[str]] | None = None
-
-
-def opencode_models() -> list[str]:
-    """Models OpenCode can use right now (`opencode models`), cached 10 minutes."""
-    global _models_cache
-    if _models_cache and time.time() - _models_cache[0] < 600:
-        return _models_cache[1]
-    exe = find_opencode()
-    models: list[str] = []
-    if exe:
-        try:
-            r = subprocess.run([exe, "models"], capture_output=True, text=True, encoding="utf-8",
-                               errors="replace", timeout=60, stdin=subprocess.DEVNULL,
-                               env=agent_env(), **_NO_WINDOW)
-            models = [ln.strip() for ln in r.stdout.splitlines()
-                      if re.fullmatch(r"[\w.\-]+/[\w.:\-/]+", ln.strip())]
-        except (OSError, subprocess.SubprocessError):
-            models = []
-    _models_cache = (time.time(), models)
-    return models
-
-
-# Agents whose work Claude Code reviews (and rates) before it is merged. The
-# others (Claude Code, Codex, Gemini) run with full permissions and merge alone.
-REVIEWED_AGENTS = ("opencode", "local")
-
-
-def agy_events(output: str) -> tuple[str, dict]:
-    """The model of agy's `init` event and its last `result` event.
-
-    With `--output-format stream-json` agy writes one JSON object per line:
-    `init` (model, tools, permission mode), `step_update` (text deltas, tool
-    steps) and finally `result` (status, the whole `response` text and the
-    token `usage`). The final report sits inside `response` as an escaped
-    JSON string, so it is read from there rather than from the raw lines.
-    """
-    model, result = "", {}
-    for line in output.splitlines():
-        if not line.startswith("{") or '"event"' not in line:
-            continue
-        try:
-            ev = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(ev, dict):
-            continue
-        if ev.get("event") == "init" and isinstance(ev.get("init"), dict):
-            model = str(ev["init"].get("model") or model)
-        elif ev.get("event") == "result" and isinstance(ev.get("result"), dict):
-            result = ev["result"]
-    return model, result
-
-
-def cached_opencode_models() -> list[str]:
-    """The last `opencode models` list, without running OpenCode (safe in request handlers)."""
-    return _models_cache[1] if _models_cache else []
-
-NEXT_TASK_REQUEST = (
-    "When you finish a task, mark its checklist item complete in the project's STATUS.md. "
-    "Prefix owner-only actions with (Marco). Find links in tasks.json or on GitHub yourself. "
-    "Prepare the first unchecked agent task under ## Next so an agent can do it independently. Reuse or add "
-    "a short title and an indented description of the work and how to check it. "
-    "A provisional draft is fine. Set the front matter next field to that title. "
-    "If that task must be done in another repository, add a line `Repo: <owner/repo>` to its "
-    "description. If this task belongs in another repository, say so in your report instead "
-    "of changing files outside this one."
-)
-
-RECOMMEND_REQUEST = (
-    "In that description add one line `Recommended: <agent>, <model>, <effort>` naming the "
-    "agent, model and reasoning effort that fit that next task best: cheaper, faster models "
-    "for simple and well-defined work; stronger models and more effort for complex, risky or "
-    "design work. Leave out the model or the effort to use the tool's default. "
-    "Choose from what this computer offers: {choices}."
+from .worktree import (
+    LocalRepos as _BaseLocalRepos,
+    _remote_repo as _remote_repo,
+    branch_published,
+    discard_worktree,
+    git_run,
 )
 
 
-def next_task_request(choices: str = "") -> str:
-    """The next-task instructions, with the recommendation line when choices are known."""
-    if not choices:
-        return NEXT_TASK_REQUEST
-    return f"{NEXT_TASK_REQUEST} {RECOMMEND_REQUEST.format(choices=choices)}"
+class LocalRepos(_BaseLocalRepos):
+    """LocalRepos wired to runner._remote_repo so legacy test patches keep working."""
 
-
-SUMMARY_REQUEST = (
-    "Finish with a report for the owner, in the language required by the project's "
-    "instructions or otherwise in the language of the task. Explain in plain language "
-    "what you accomplished or found, how and why, what you actually verified and the "
-    "results, any problems you ran into, and anything the owner needs to know or do "
-    "next. Start the report with a line beginning \"Summary:\" (one sentence) and add a "
-    "line beginning \"Checks:\" (the checks you ran and their results). Include no "
-    "secrets. Put BATON_SUMMARY_BEGIN on its own line before the report and "
-    "BATON_SUMMARY_END on its own line after it."
-)
-
-
-def extract_summary(output: str, marker: str = "BATON_SUMMARY", *, after: str = "") -> str:
-    # Some CLIs colour their output. Ignore incomplete reports and echoed instructions.
-    output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
-    if after:
-        # A CLI can echo the task prompt. Only the rating after the final report counts.
-        sections = re.split(rf"(?m)^[^\S\n]*{re.escape(after)}[^\S\n]*$", output)
-        if len(sections) < 2:
-            return ""
-        output = sections[-1]
-    report = None
-    last = ""
-    for line in output.splitlines():
-        if line.strip() == f"{marker}_BEGIN":
-            report = []
-        elif line.strip() == f"{marker}_END":
-            if report:
-                last = "\n".join(report).strip() or last
-            report = None
-        elif report is not None:
-            report.append(line)
-    return last
-
-
-REVIEW_PROMPT = """You are reviewing work that another AI agent ({author}) did for the task
-below in the repository {repo}, before it is merged. This folder is a git
-worktree on the branch `{branch}`; the work is the commits on top of
-`origin/{base}` (see `git log origin/{base}..HEAD` and `git diff origin/{base}...HEAD`).
-
-Rules:
-- First read the repository's AGENTS.md or CLAUDE.md and STATUS.md, and follow them.
-- Check that the change does what the task asked and only that, that it is
-  correct, that tests cover it and pass (run the project's tests if you can),
-  that nothing unsafe was added (secrets, credentials, destructive commands)
-  and that STATUS.md was updated as the rules say.
-- If you find problems you can fix safely, fix them in this folder, keeping
-  the fixes small, and run the tests again.
-- If the work should not be merged and you cannot fix it safely, change
-  nothing and explain why.
-- Do NOT commit, push, switch branches or rewrite history: Baton commits your
-  fixes and merges the pull request only if you allow it.
-- Finish with a review for the owner, in the language required by the
-  project's instructions or otherwise in the language of the task. Its first
-  line must be exactly one of: "Verdict: APPROVE" (ready, nothing changed),
-  "Verdict: FIXED" (you fixed problems: list them) or "Verdict: BLOCK" (do
-  not merge: say why). Then say what you checked and the results. Put
-  BATON_REVIEW_BEGIN on its own line before the review and BATON_REVIEW_END
-  on its own line after it.
-
-Task: {title}
-
-{details}
-"""
-
-
-def pr_number(url: str) -> int:
-    return int(url.rstrip("/").rsplit("/", 1)[1])
-
-
-class LeftOpen(Exception):
-    """The pull request stays open for the owner; the message says why."""
-
-
-PROMPT = """You are working on the task below for the repository {repo}.
-Baton created this folder for you: a git worktree of {repo} on the new branch
-`{branch}`, based on `{base}`. You are not in the owner's own working folder.
-
-Rules:
-- First read the repository's AGENTS.md or CLAUDE.md and STATUS.md, and follow them.
-- Do the task. Keep the change focused on it.
-- Update STATUS.md as the repository's rules say (updated_by: {agent}).
-- {next_task_request}
-- Do NOT commit, push, switch branches or rewrite history: when you finish,
-  Baton commits everything in this folder and opens a pull request.
-- If the task is unclear, needs secrets, or would need anything destructive or
-  outside this folder, stop and explain why instead of doing it.
-- Prefix progress updates with "Progress:".
-- {summary_request}
-
-Task: {title}
-
-{details}
-"""
-
-
-@dataclass
-class Task:
-    id: str
-    repo: str
-    title: str
-    details: str
-    agent: str
-    where: str                      # "local" | "cloud"
-    created_at: float
-    status: str = "queued"          # queued | running | done | no-changes | failed | cancelled
-    branch: str = ""
-    base: str = ""
-    worktree: str = ""
-    pr_url: str = ""
-    issue_url: str = ""
-    message: str = ""
-    finished_at: float | None = None
-    open_pr: bool = True            # always True for new tasks; False only in old records
-    model: str = ""
-    steps: list[str] = field(default_factory=list)
-    effort: str = ""
-    summary: str = ""
-    issue_number: int | None = None
-    reviewer: str = ""              # agent that reviewed the work before merging
-    review: str = ""                # its report
-    reviewer_model: str = ""        # model the reviewer ran ("" = the CLI's default)
-    reviewer_effort: str = ""       # its reasoning effort, if any
-    merged: bool = False
-    priority: str = "normal"        # high | normal | low: order in the queue
-    started_at: float | None = None  # when it left the queue
-    review_rating: dict | None = None
-
-    @property
-    def finished(self) -> bool:
-        return self.status in ("done", "no-changes", "failed", "cancelled") or (
-            self.status == "sent" and bool(self.summary))
-
-
-# Queue order: higher priority first, then the oldest. The id breaks the
-# (very unlikely) tie of two tasks created at the same instant.
-PRIORITIES = ("high", "normal", "low")
-
-
-def queue_key(task: Task) -> tuple:
-    rank = PRIORITIES.index(task.priority) if task.priority in PRIORITIES else 1
-    return (rank, task.created_at, task.id)
-
-
-def _slug(text: str) -> str:
-    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return s[:30] or "task"
-
-
-def _remote_repo(url: str) -> str:
-    m = re.search(r"github\.com[:/]+([^/\s]+/[^/\s]+?)(?:\.git)?/?$", url.strip())
-    return m.group(1).lower() if m else ""
-
-
-class LocalRepos:
-    """Maps owner/name -> the folder of its clone on this computer."""
-
-    def __init__(self, root: str, overrides: str):
-        self.root = Path(root) if root else None
-        self.overrides: dict[str, Path] = {}
-        for part in overrides.split(";"):
-            if "=" in part:
-                k, v = part.split("=", 1)
-                self.overrides[k.strip().lower()] = Path(v.strip())
-        self._cache: tuple[float, dict[str, Path]] | None = None
-
-    def _scan(self) -> dict[str, Path]:
-        found: dict[str, list[Path]] = {}
-        if self.root and self.root.is_dir():
-            for d in self.root.iterdir():
-                if not (d / ".git").exists():
-                    continue
-                try:
-                    url = subprocess.run(["git", "-C", str(d), "remote", "get-url", "origin"],
-                                         capture_output=True, text=True, timeout=10,
-                                         **_NO_WINDOW).stdout
-                except (OSError, subprocess.SubprocessError):
-                    continue
-                repo = _remote_repo(url)
-                if repo:
-                    found.setdefault(repo, []).append(d)
-        result = {}
-        for repo, dirs in found.items():
-            name = repo.split("/")[1]
-            exact = [d for d in dirs if d.name.lower() == name]
-            # Prefer the folder named like the repo; otherwise the shortest name
-            # (e.g. "Mamporro-git" over "Mamporro-respaldo-u2").
-            result[repo] = (exact or sorted(dirs, key=lambda d: len(d.name)))[0]
-        return result
-
-    def get(self, repo: str) -> Path | None:
-        repo = repo.lower()
-        if repo in self.overrides:
-            return self.overrides[repo]
-        if not self._cache or time.time() - self._cache[0] > 300:
-            self._cache = (time.time(), self._scan())
-        return self._cache[1].get(repo)
-
-    def all(self) -> dict[str, Path]:
-        """Every local clone Baton knows: owner/repo (lower case) -> folder."""
-        if not self._cache or time.time() - self._cache[0] > 300:
-            self._cache = (time.time(), self._scan())
-        return {**self._cache[1], **self.overrides}
-
-
-class TaskStore:
-    def __init__(self, data_dir: Path):
-        self.dir = data_dir
-        self.file = data_dir / "tasks.json"
-        self.ranking = Ranking(data_dir)
-        self.logs = data_dir / "tasks"
-        self.lock = threading.Lock()
-
-    def all(self) -> list[Task]:
-        # Reads take the lock too: on Windows, replacing tasks.json fails
-        # ("Access denied") while another thread has it open for reading.
-        with self.lock:
-            return self._load()
-
-    def _load(self) -> list[Task]:
-        try:
-            rows = json.loads(self.file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return []
-        out = []
-        for r in rows:
-            try:
-                out.append(Task(**r))
-            except TypeError:
-                continue
-        return sorted(out, key=lambda t: t.created_at, reverse=True)
-
-    def get(self, task_id: str) -> Task | None:
-        return next((t for t in self.all() if t.id == task_id), None)
-
-    def save(self, task: Task) -> None:
-        with self.lock:
-            tasks = {t.id: t for t in self._load()}
-            tasks[task.id] = task
-            self.dir.mkdir(parents=True, exist_ok=True)
-            tmp = self.file.with_suffix(".tmp")
-            tmp.write_text(json.dumps([asdict(t) for t in tasks.values()], indent=1), encoding="utf-8")
-            for attempt in range(20):
-                try:
-                    tmp.replace(self.file)
-                    break
-                except PermissionError:  # another program (antivirus, indexer) has it open
-                    if attempt == 19:
-                        raise
-                    time.sleep(0.05)
-            self.record_task(task)
-
-    def record_task(self, task: Task):
-        try:
-            return self.ranking.record_task(task)
-        except sqlite3.Error as exc:
-            # tasks.json is durable. Recovery retries without holding up the queue.
-            logging.getLogger(__name__).warning("Could not index task %s: %s", task.id, exc)
-            return None
-
-    def log_path(self, task_id: str) -> Path:
-        self.logs.mkdir(parents=True, exist_ok=True)
-        return self.logs / f"{task_id}.log"
-
-    def read_log(self, task_id: str) -> str:
-        try:
-            return self.log_path(task_id).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return ""
-
-    def log_tail(self, task_id: str, lines: int = 200) -> str:
-        return "\n".join(self.read_log(task_id).splitlines()[-lines:])
-
-
-class Cancelled(Exception):
-    """Raised inside a task's thread when the owner cancelled it."""
-
-
-def new_id(title: str) -> str:
-    return dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + _slug(title)
-
-
-class UpdateInProgress(Exception):
-    """Task admission is closed until the self-update finishes."""
+    def _parse_remote(self, url: str) -> str:
+        return _remote_repo(url)
 
 
 class Runner:
-    def __init__(self, store: TaskStore, repos: LocalRepos, *, timeout: int, local_model: str,
+    def __init__(self, store: TaskStore, repos: _BaseLocalRepos, *, timeout: int, local_model: str,
                  local_provider: str, git_name: str, git_email: str,
                  open_pr: Callable[[str, str, str, str, str], str], github=None,
                  auto_merge: bool = False,
@@ -546,16 +139,13 @@ class Runner:
 
     # ---------------------------------------------------------- availability
     def agents_available(self) -> dict[str, str]:
-        """agent -> "" if usable, else the reason it isn't."""
-        out = {}
-        out["claude-code"] = "" if find_claude() else "Claude Code CLI not found"
-        codex = find_codex()
-        out["codex"] = "" if codex else "Codex CLI not found"
-        out["gemini"] = "" if find_agy() else "Antigravity CLI (agy) not found"
-        out["opencode"] = "" if find_opencode() else "OpenCode CLI not found"
-        out["local"] = ("" if (codex and self.local_model)
-                        else "set BATON_LOCAL_MODEL (and install Ollama or LM Studio)")
-        return out
+        return available_agents(
+            local_model=self.local_model,
+            claude_bin=find_claude,
+            codex_bin=find_codex,
+            agy_bin=find_agy,
+            opencode_bin=find_opencode,
+        )
 
     # ----------------------------------------------------------------- queue
     def queued(self) -> list[Task]:
@@ -724,59 +314,19 @@ class Runner:
                 raise Cancelled()
 
     def _branch_published(self, repo_dir: Path, branch: str) -> bool | None:
-        """True if the branch exists on origin, False if not, None if unknown."""
-        try:
-            r = subprocess.run(["git", "-C", str(repo_dir), "ls-remote", "--exit-code", "--heads",
-                                "origin", f"refs/heads/{branch}"], capture_output=True, text=True,
-                               timeout=60, stdin=subprocess.DEVNULL, **_NO_WINDOW)
-        except (OSError, subprocess.SubprocessError):
-            return None
-        if r.returncode == 0:
-            return True
-        return False if r.returncode == 2 else None  # 2 = "no matching ref"
+        return branch_published(repo_dir, branch)
 
     def _discard(self, task: Task, repo_dir: Path | None, wt: Path | None) -> str:
-        """After a cancel: drop the worktree and the local branch, unless the
-        branch is on GitHub. Returns what happened, for the task's message."""
-        if not repo_dir or not wt:
-            return "Nothing had been created yet."
-        published = self._branch_published(repo_dir, task.branch)
-        if published is not False:
-            why = "is on GitHub" if published else "could not be checked on GitHub"
-            return f"The branch {task.branch} {why}, so its worktree and branch were kept."
-        # Windows may keep files of the killed processes open for a moment.
-        for _ in range(10):
-            self._write_git(task, repo_dir, "worktree", "remove", "--force", str(wt), check=False)
-            if not wt.exists():
-                break
-            time.sleep(0.5)
-        if wt.exists():
-            # Fallback if git worktree remove hit a transient Windows lock or
-            # read-only file: clear read-only attributes and remove directly,
-            # then let `git worktree prune` drop the metadata entry.
-            def _clear_readonly(func, path, _exc):
-                try:
-                    os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
-                    func(path)
-                except OSError:
-                    pass
+        return discard_worktree(
+            task,
+            repo_dir,
+            wt,
+            write_git=self._write_git,
+            check_published=self._branch_published,
+            sleep=time.sleep,
+        )
 
-            for _ in range(6):
-                if sys.version_info >= (3, 12):
-                    shutil.rmtree(wt, onexc=_clear_readonly)
-                else:
-                    shutil.rmtree(wt, onerror=_clear_readonly)
-                if not wt.exists():
-                    break
-                time.sleep(0.5)
-        if wt.exists():
-            return f"The worktree could not be removed; delete it by hand: {wt}"
-        self._write_git(task, repo_dir, "worktree", "prune", check=False)
-        self._write_git(task, repo_dir, "branch", "-D", task.branch, check=False)
-        task.worktree = ""
-        return "Nothing was committed or pushed; the worktree and the local branch were removed."
-
-    # --------------------------------------------------------------- running
+    # --------------------------------------------------------------- logging
     def _log(self, task: Task, text: str) -> None:
         with open(self.store.log_path(task.id), "a", encoding="utf-8") as f:
             f.write(text if text.endswith("\n") else text + "\n")
@@ -794,272 +344,59 @@ class Runner:
 
     # ------------------------------------------------------------ auto-merge
     def _finish_pr(self, task: Task, repo_dir: Path, wt: Path, ident: list[str], step) -> None:
-        """Tests, review when needed, merge. Raises LeftOpen to stop."""
-        number = pr_number(task.pr_url)
-        sha = self._git(wt, "rev-parse", "HEAD")
-        tests = self._wait_for_tests(task, sha, step)
-        # Claude Code, Codex and Gemini are trusted to merge on their own
-        # (also in a repository without tests); OpenCode and local AI are not.
-        if task.agent in REVIEWED_AGENTS:
-            reviewer = self._pick_reviewer(task)
-            new_sha = self._review(task, repo_dir, wt, reviewer, number, ident, step)
-            if new_sha != sha and tests == "passed":
-                self._wait_for_tests(task, new_sha, step, must_exist=True)
-            sha = new_sha
-        with self._lock:
-            if task.id in self._cancelled:
-                raise Cancelled()
-            self._committing.add(task.id)
-        try:
-            self.github.merge(task.repo, number, sha)
-            task.merged = True
-        finally:
-            with self._lock:
-                self._committing.discard(task.id)
-        delete_branch = getattr(self.github, "delete_branch", None)
-        if callable(delete_branch) and task.branch.startswith("baton/"):
-            try:
-                delete_branch(task.repo, task.branch)
-            except Exception:
-                pass  # non-fatal: the PR is already merged
-        # The merge usually ticks the task in STATUS.md: show it now, not when
-        # the project cache expires minutes later.
-        invalidate = getattr(self.github, "invalidate", None)
-        if callable(invalidate):
-            invalidate()
-        step(f"Merged into {task.base}")
-        by = f" after a review by {AGENTS[task.reviewer]}" if task.reviewer else ""
-        task.message = f"Done: merged into {task.base}{by}."
+        finish_pr(self, task, repo_dir, wt, ident, step)
 
     def _wait_for_tests(self, task: Task, sha: str, step, must_exist: bool = False) -> str:
-        """"passed", or "none" if the repository runs no tests on GitHub."""
-        step(f"Waiting for the repository's tests on GitHub ({sha[:7]})")
-        start = time.monotonic()
-        cancel_ev = self._cancel_events.get(task.id)
-        while True:
-            self._check_cancelled(task)
-            c = self.github.checks(task.repo, sha)
-            waited = time.monotonic() - start
-            if c["failed"]:
-                raise LeftOpen("the tests failed on GitHub: " + ", ".join(sorted(set(c["failed"]))[:5]))
-            if not c["pending"] and c["passed"]:
-                step("Tests passed on GitHub")
-                return "passed"
-            if not c["pending"] and not c["passed"] and waited >= self.ci_grace:
-                if must_exist:
-                    raise LeftOpen("the tests did not run on GitHub for the review's fixes")
-                step("This repository runs no tests on GitHub")
-                return "none"
-            if waited >= self.ci_timeout:
-                raise LeftOpen(f"the tests were still running after {self.ci_timeout // 60} minutes")
-            if cancel_ev is not None:
-                cancel_ev.wait(self.ci_poll)
-            else:
-                time.sleep(self.ci_poll)
+        return wait_for_tests(self, task, sha, step, must_exist=must_exist)
 
     def _pick_reviewer(self, task: Task) -> str:
-        """Claude Code reviews OpenCode and local-AI work (Opus, medium effort
-        unless BATON_REVIEW_CLAUDE_* say otherwise). Without it, or without
-        quota left in its 5-hour window, the pull request stays open."""
-        if self.agents_available().get("claude-code", "missing"):
-            raise LeftOpen("Claude Code is not available to review the work")
-        left = self.quota_left("claude-code") if self.quota_left else None
-        if left is not None and left <= 0:
-            raise LeftOpen("Claude Code has no quota left to review the work")
-        return "claude-code"
+        return pick_reviewer(self.agents_available(), self.quota_left)
 
     def reviewer_model(self, reviewer: str) -> tuple[str, str]:
-        """The configured model and effort for a reviewer, if its CLI lists them.
-
-        A model the CLI doesn't list (a typo, or one the account can't use)
-        would make the review fail and leave the PR open, so it falls back to
-        the CLI default instead; an unknown effort is dropped the same way."""
-        model, effort = self.review_models.get(reviewer, ("", ""))
-        if not model and not effort:
-            return "", ""
-        options = catalog(reviewer)
-        if not options:                 # the list could not be read: trust the setting
-            return model, effort
-        if model and model not in options:
-            return "", ""
-        if not model:
-            return "", effort
-        return model, effort if effort in options[model]["efforts"] else ""
+        return resolve_reviewer_model(self.review_models, reviewer, catalog_fn=catalog)
 
     def _review(self, task: Task, repo_dir: Path, wt: Path, reviewer: str, number: int, ident: list[str],
                 step) -> str:
-        """Run the reviewer in the task's worktree; returns the commit to merge."""
-        task.reviewer = reviewer
-        model, effort = self.reviewer_model(reviewer)
-        task.reviewer_model, task.reviewer_effort = model, effort  # saved by step() below
-        setup = " · ".join(x for x in (model, effort) if x)
-        step(f"Review by {AGENTS[reviewer]}{f' ({setup})' if setup else ''}…")
-        rtask = replace(task, agent=reviewer, model=model, effort=effort)
-        prompt = REVIEW_PROMPT.format(author=AGENTS.get(task.agent, task.agent), repo=task.repo,
-                                      branch=task.branch, base=task.base, title=task.title,
-                                      details=task.details or "(no more details)")
-        if task.agent in REVIEWED_AGENTS:
-            prompt += (
-                "\nAfter the marked review, rate the original delivery before your fixes. "
-                "Put BATON_RATING_BEGIN and BATON_RATING_END on separate lines around one JSON "
-                "object. Use integer scores from 1 to 10 for fulfillment (request covered), "
-                "correctness (as delivered), and rework (10 means no fixes needed). "
-                "Include a brief nonempty comment (at most 500 characters). "
-                "Use exactly the keys fulfillment, correctness, rework and comment.\n"
-            )
-        log_path = self.store.log_path(task.id)
-        start = log_path.stat().st_size if log_path.exists() else 0
-        group = {} if os.name == "nt" else {"start_new_session": True}
-        with (open(log_path, "a", encoding="utf-8") as log,
-              Ranking(self.store.dir).worktree_env(agent_env(), wt, reviewer) as env):
-            with self._lock:
-                if task.id in self._cancelled:
-                    raise Cancelled()
-                # The reviewer reads work by a less trusted model: limited mode.
-                proc = subprocess.Popen(self._agent_cmd(rtask, wt, restricted=True),
-                                        stdin=subprocess.PIPE, stdout=log,
-                                        stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                                        errors="replace", cwd=str(wt), env=env, **group,
-                                        **_NO_WINDOW)
-                attach_job(proc)
-                self._procs[task.id] = proc
-            try:
-                proc.communicate(input=prompt, timeout=self.timeout)
-            except subprocess.TimeoutExpired as exc:
-                kill_tree(proc)
-                raise LeftOpen(f"the review took longer than {self.timeout // 60} minutes") from exc
-            except OSError:
-                proc.wait()
-            finally:
-                with self._lock:
-                    self._procs.pop(task.id, None)
-                    cancelled = task.id in self._cancelled
-                if cancelled:
-                    kill_tree(proc)
-                else:
-                    close_job(proc)
-        self._check_cancelled(task)
-        output = self._read_output(log_path, start)
-        task.review = extract_summary(output, "BATON_REVIEW")
-        if task.agent in REVIEWED_AGENTS:
-            task.review_rating = parse_rating(extract_summary(output, "BATON_RATING", after="BATON_REVIEW_END"))
-        verdict = review_verdict(task.review)
-        step(f"Review finished (exit code {proc.returncode}, verdict {verdict or 'none'})")
-        changed = bool(self._git(wt, "status", "--porcelain"))
-        try:
-            self.github.comment(task.repo, number, f"**Review by {AGENTS[reviewer]}** (from Baton)"
-                                f"\n\n{task.review or '(The reviewer gave no report; see the task log.)'}")
-        except Exception as exc:  # the review itself still counts
-            self._log(task, f"!! Could not post the review on the PR: {exc}")
-        if proc.returncode != 0:
-            raise LeftOpen(f"the review stopped with exit code {proc.returncode}")
-        if verdict == "BLOCK":
-            raise LeftOpen(f"{AGENTS[reviewer]} advised not to merge it (see its review)")
-        if not verdict:
-            raise LeftOpen(f"{AGENTS[reviewer]} gave no verdict")
-        if changed:
-            with self._lock:
-                if task.id in self._cancelled:
-                    raise Cancelled()
-                self._committing.add(task.id)
-            try:
-                self._write_git(task, repo_dir, "add", "-A", cwd=wt)
-                message = f"Review fixes by {AGENTS[reviewer]}\n\nBaton review of the task: {task.title}"
-                self._write_git(task, repo_dir, *ident, "commit", "-m", message, cwd=wt)
-                self._write_git(task, repo_dir, "push", "origin", task.branch, cwd=wt)
-            finally:
-                with self._lock:
-                    self._committing.discard(task.id)
-            step("Review fixes committed and pushed")
-        return self._git(wt, "rev-parse", "HEAD")
+        return run_review(self, task, repo_dir, wt, reviewer, number, ident, step)
 
+    # ------------------------------------------------------------------- git
     def _write_git(self, task: Task, repo_dir: Path, *args: str, cwd: Path | None = None,
                    check: bool = True) -> str:
         return run_locked(repo_dir, lambda: self._git(cwd or repo_dir, *args, check=check),
                           lambda n: self._log(task, f"Git lock contention: retrying git {args[0]} (attempt {n}/3)"))
 
     def _git(self, cwd: Path, *args: str, check: bool = True) -> str:
-        r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=300, **_NO_WINDOW)
-        if r.returncode:
-            message = f"git {' '.join(args[:2])} failed: {r.stderr.strip()[:300]}"
-            if is_lock_error(r.stderr):
-                raise GitLockError(message)
-            if check:
-                raise RuntimeError(message)
-        return r.stdout.strip()
+        return git_run(cwd, *args, check=check)
 
+    # ---------------------------------------------------------------- agents
     def _agent_cmd(self, task: Task, wt: Path, restricted: bool = False) -> list[str]:
-        """The agent's command line (a list: no shell ever parses it).
-
-        Tasks by Claude Code, Codex and Gemini run with full permissions;
-        `restricted` (reviews) keeps Claude Code in `auto` mode and Codex in
-        its sandbox. OpenCode and local AI are always limited.
-        """
-        if task.agent == "opencode":
-            # The prompt goes as the message argument (opencode.exe directly, no shell).
-            return [find_opencode() or "opencode", "run", "--standalone", "--auto", "--agent", "baton",
-                    "-m", task.model, "--title", f"Baton {task.id}", self._prompt(task)]
-        if task.agent == "gemini":
-            # agy.exe directly (never a .cmd), the prompt as the -p argument.
-            cmd = [find_agy() or "agy", "-p", self._prompt(task), "--output-format", "stream-json",
-                   "--dangerously-skip-permissions"]
-            if task.model:
-                cmd.extend(["--model", task.model])
-            if task.effort:
-                cmd.extend(["--effort", task.effort])
-            return cmd
-        if task.agent == "claude-code":
-            mode = ["--permission-mode", "auto"] if restricted else ["--dangerously-skip-permissions"]
-            cmd = [find_claude() or "claude", "-p", *mode]
-            if task.model:
-                cmd.extend(["--model", task.model])
-            if task.effort:
-                cmd.extend(["--effort", task.effort])
-            return cmd
-        codex = find_codex() or "codex"
-        if task.agent == "codex" and not restricted:
-            # No sandbox and no approvals: network and live web search included.
-            cmd = [codex, "--search", "exec", "--dangerously-bypass-approvals-and-sandbox",
-                   "--color", "never", "-C", str(wt)]
-        else:
-            cmd = [codex, "exec", "-s", "workspace-write", "--color", "never", "-C", str(wt)]
-        if task.agent == "local":
-            cmd[2:2] = ["--oss", "--local-provider", self.local_provider, "-m", task.model]
-        elif task.agent == "codex":
-            if task.model:
-                cmd.extend(["-m", task.model])
-            if task.effort:
-                cmd.extend(["-c", f"model_reasoning_effort={json.dumps(task.effort)}"])
-        return cmd + ["-"]
+        return build_agent_cmd(
+            task,
+            wt,
+            prompt_fn=self._prompt,
+            local_provider=self.local_provider,
+            restricted=restricted,
+            claude_bin=find_claude,
+            codex_bin=find_codex,
+            agy_bin=find_agy,
+            opencode_bin=find_opencode,
+        )
 
     def model_choices(self) -> str:
-        """Agents and models available here, for the next-task recommendation."""
-        parts = []
-        for agent, reason in self.agents_available().items():
-            if reason:
-                continue
-            if agent in ("claude-code", "codex", "gemini"):
-                models = [f"{m} ({'/'.join(v['efforts'])})" if v["efforts"] else m
-                          for m, v in catalog(agent).items()]
-                parts.append(f"{agent}: {'; '.join(models)}" if models else agent)
-            elif agent == "opencode":
-                models = opencode_models()[:20]
-                parts.append(f"opencode: {', '.join(models)}" if models else "opencode")
-            else:
-                parts.append(agent)
-        return " | ".join(parts)
+        return format_model_choices(
+            self.agents_available(),
+            catalog_fn=catalog,
+            opencode_models_fn=opencode_models,
+        )
 
     def _prompt(self, task: Task) -> str:
         try:
             choices = self.model_choices()
         except Exception:  # never let model discovery stop a task
             choices = ""
-        return PROMPT.format(repo=task.repo, branch=task.branch, base=task.base,
-                             agent=task.agent, title=task.title, summary_request=SUMMARY_REQUEST,
-                             next_task_request=next_task_request(choices),
-                             details=task.details or "(no more details)")
+        return build_prompt(task, choices=choices)
 
+    # --------------------------------------------------------- execution loop
     def _run(self, task: Task) -> None:
         def step(msg: str) -> None:
             task.steps.append(f"{time.strftime('%H:%M:%S')} {msg}")

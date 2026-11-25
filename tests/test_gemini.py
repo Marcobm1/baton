@@ -1,6 +1,7 @@
 """Gemini through the Antigravity CLI (agy): models, task command, report and
 tokens, quota windows and the Agents chat. Real agy output (1.5.17, 2026-11-25)
 is used as fixtures; no test runs agy itself."""
+import datetime as dt
 import json
 import sys
 import time
@@ -34,15 +35,19 @@ claude-opus-5-5-high\tClaude Opus 5.5 (High)
 gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
 """
 
+_NOW = dt.datetime.now(dt.timezone.utc)
+_RESET_5H = (_NOW + dt.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+_RESET_WEEK = (_NOW + dt.timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 AGY_USAGE = json.dumps({
     "conversation_id": "", "status": "SUCCESS", "num_turns": 0,
     "usage": {"input_tokens": 0, "output_tokens": 0, "thinking_tokens": 0, "cache_read_tokens": 0},
     "command": {"name": "usage", "data": {"groups": [
         {"name": "Gemini Models", "buckets": [
             {"id": "gemini-weekly", "window": "weekly", "remaining_fraction": 0.75,
-             "reset_time": "2026-12-02T15:53:03Z"},
+             "reset_time": _RESET_WEEK},
             {"id": "gemini-5h", "window": "5h", "remaining_fraction": 0.4,
-             "reset_time": "2026-11-25T20:53:03Z"}]},
+             "reset_time": _RESET_5H}]},
         {"name": "Claude and GPT models", "buckets": [
             {"id": "3p-weekly", "window": "weekly", "remaining_fraction": 1,
              "reset_time": "1970-01-01T00:00:00Z"}]}]}}})
@@ -134,8 +139,8 @@ def test_gemini_task_report_and_tokens_come_from_the_result_event(tmp_path, monk
 
 def test_agy_usage_becomes_quota_windows(tmp_path):
     windows = ping.parse_agy_usage(AGY_USAGE)
-    assert windows == {"5h": {"left": 40.0, "resets_at": "2026-11-25T20:53:03Z"},
-                       "week": {"left": 75.0, "resets_at": "2026-12-02T15:53:03Z"}}
+    assert windows == {"5h": {"left": 40.0, "resets_at": _RESET_5H},
+                       "week": {"left": 75.0, "resets_at": _RESET_WEEK}}
     assert ping.parse_agy_usage("not json") is None
     (tmp_path / "gemini-quota.json").write_text(json.dumps({"seen_at": time.time(), "windows": windows}))
     views = {v["kind"]: v for v in quotas.all_windows(tmp_path, tmp_path / "no-codex")

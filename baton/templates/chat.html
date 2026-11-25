@@ -3,7 +3,81 @@
 {# No automatic reload here: it would wipe a conversation in progress. #}
 {% block refresh %}{% endblock %}
 {% block styles %}<link rel="stylesheet" href="/static/chat.css?v={{ css_v }}">{% endblock %}
+{% macro agent_select() %}
+      <label><span class="label">{{ t.ag_agent }}</span>
+        <select data-agent-switch>
+          <option value="local" {% if agent == 'local' %}selected{% endif %}>{{ t.ag_local }}</option>
+          <option value="opencode" {% if agent == 'opencode' %}selected{% endif %}>{{ t.ag_opencode }}</option>
+        </select></label>
+{% endmacro %}
 {% block main %}
+{% if agent == 'opencode' %}
+{% set js = {
+  'stop': t.chat_stop, 'send': t.chat_send, 'reasoning': t.chat_reasoning, 'thinking': t.chat_thinking,
+  'error': t.chat_error, 'starting': t.ag_starting, 'fixed': t.ag_fixed, 'perm_title': t.ag_perm_title,
+  'allow': t.ag_allow, 'deny': t.ag_deny, 'expires': t.ag_perm_expires, 'allowed': t.ag_allowed,
+  'denied': t.ag_denied, 'timeout': t.ag_timeout, 'cancelled': t.ag_cancelled, 'expired': t.ag_expired,
+  'input': t.ag_input, 'output': t.ag_output, 'command': t.ag_command, 'plan': t.ag_plan,
+  'done_reason': t.ag_done_reason, 'closed': t.ag_closed, 'stopped': t.chat_stopped,
+  'ag_effort_missing': t.ag_effort_missing, 'st_pending': t.ag_st_pending,
+  'st_in_progress': t.ag_st_in_progress, 'st_completed': t.ag_st_completed, 'st_failed': t.ag_st_failed,
+  'lang': lang} %}
+<section class="chat" data-agents data-csrf="{{ csrf }}">
+  <div class="chat-head">
+    <h2>{{ t.chat_nav }}</h2>
+    <div class="chat-controls">
+      {{ agent_select() }}
+      {% if oc.available and oc.folders %}
+      <label><span class="label">{{ t.chat_model }}</span>
+        <select data-oc-model>
+          {% for g in oc.groups %}
+          <optgroup label="{{ g.label }}">
+            {% for m in g.models %}<option value="{{ m }}" {% if g.payg %}data-payg{% endif %}>{{ m }}</option>{% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select></label>
+      <label><span class="label">{{ t.chat_effort }}</span>
+        <select data-oc-effort>
+          {% for e in efforts %}
+          <option value="{{ e }}">{{ t['ag_effort_' ~ e] if e in ('default', 'xhigh', 'max') else t['chat_effort_' ~ e] }}</option>
+          {% endfor %}
+        </select></label>
+      <label><span class="label">{{ t.ag_folder }}</span>
+        <select data-oc-folder>
+          {% for f in oc.folders %}<option value="{{ f.key }}">{{ f.label }}</option>{% endfor %}
+        </select></label>
+      <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
+      {% endif %}
+    </div>
+  </div>
+  {% if not oc.available %}
+  <p class="warn">{{ t.ag_unavailable }}</p>
+  {% elif not oc.folders %}
+  <p class="warn">{{ t.ag_no_folders }}</p>
+  {% else %}
+  <fieldset class="ag-mode">
+    <legend class="label">{{ t.ag_mode }}</legend>
+    <label><input type="radio" name="ag-mode" value="confirm" checked data-mode>
+      <span><strong>{{ t.ag_confirm }}</strong> <span class="muted small">{{ t.ag_confirm_help }}</span></span></label>
+    <label class="ag-full"><input type="radio" name="ag-mode" value="full" disabled data-mode>
+      <span><strong>{{ t.ag_full }}</strong> <span class="small">{{ t.ag_full_off }}</span></span></label>
+  </fieldset>
+  <p class="warn small" data-payg-warn hidden>{{ t.oc_payg_warning }}</p>
+  <p class="muted small ag-fixed" data-fixed hidden></p>
+  <div class="chat-log" data-log aria-live="polite">
+    <p class="muted chat-empty" data-empty>{{ t.ag_empty }}</p>
+  </div>
+  <form class="chat-input" data-form>
+    <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
+    <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
+  </form>
+  <p class="muted small chat-hint">{{ t.ag_hint }}</p>
+  {% endif %}
+</section>
+<script id="agents-strings" type="application/json">{{ js|tojson }}</script>
+<script src="/static/chat-common.js?v={{ css_v }}" defer></script>
+<script src="/static/agents-chat.js?v={{ css_v }}" defer></script>
+{% else %}
 {% set js = {
   'stop': t.chat_stop, 'send': t.chat_send, 'reasoning': t.chat_reasoning, 'thinking': t.chat_thinking,
   'writing': t.chat_writing, 'stopped': t.chat_stopped, 'error': t.chat_error, 'copy': t.chat_copy,
@@ -12,8 +86,9 @@
 <section class="chat" data-chat data-csrf="{{ csrf }}">
   <div class="chat-head">
     <h2>{{ t.chat_nav }}</h2>
-    {% if view.models %}
     <div class="chat-controls">
+      {{ agent_select() }}
+      {% if view.models %}
       <label><span class="label">{{ t.chat_model }}</span>
         <select data-model>
           {% for m in view.models %}
@@ -28,8 +103,8 @@
           {% endfor %}
         </select></label>
       <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
   {% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
   {% if not view.models %}
@@ -53,5 +128,7 @@
   {% endif %}
 </section>
 <script id="chat-strings" type="application/json">{{ js|tojson }}</script>
+<script src="/static/chat-common.js?v={{ css_v }}" defer></script>
 <script src="/static/chat.js?v={{ css_v }}" defer></script>
+{% endif %}
 {% endblock %}

@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
+import os
 import re
 import secrets
 import time
@@ -30,10 +32,11 @@ from .task_models import catalog, opencode_groups
 from . import task_defaults, ranking_view
 from .task_report import task_report
 from .models import LocalModels, ModelError, chat_payload
+from .agent_chat import EFFORTS, MAX_PROMPT_CHARS, MODES, AgentChats, ChatError, is_abliterated
 from .self_update import SelfUpdate
 from .runner import UpdateInProgress
 from .runner import (AGENTS, PRIORITIES, NEXT_TASK_REQUEST, SUMMARY_REQUEST, next_task_request, LocalRepos, Runner, Task, TaskStore,
-                     extract_summary, new_id, opencode_models, queue_key)
+                     extract_summary, find_opencode, new_id, opencode_models, queue_key)
 
 HERE = Path(__file__).parent
 _md = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table")
@@ -76,6 +79,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                           codex_home=settings.codex_home)
     store = TaskStore(settings.data_dir)
     models = LocalModels(settings.data_dir)
+    agent_chats = AgentChats()
     ranking = store.ranking
 
     def quota_left(agent: str) -> float | None:
@@ -144,6 +148,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             runner.on_finished = finished
             update_task = asyncio.create_task(update_loop())
         yield
+        await asyncio.to_thread(agent_chats.close_all)   # no OpenCode left behind
         runner.on_finished = None
         if update_task:
             update_task.cancel()
@@ -154,6 +159,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     app = FastAPI(title="Baton", version=__version__, docs_url=None, redoc_url=None,
                   lifespan=lifespan)
+    app.state.agent_chats = agent_chats
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
 
@@ -585,12 +591,154 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     # ----------------------------------------------------------------- chat
     @app.get("/chat", response_class=HTMLResponse)
-    async def chat_page(request: Request, model: str = "", error: str = ""):
+    async def chat_page(request: Request, model: str = "", error: str = "",
+                        agent: Literal["local", "opencode"] = "local"):
         view = await asyncio.to_thread(models.overview, settings.lang)
         ids = [m["id"] for m in view["models"]]
         running = [m["id"] for m in view["models"] if m["status"] in ("running", "external")]
         selected = model if model in ids else (running[0] if running else (ids[0] if ids else ""))
-        return page(request, "chat.html", "chat", view=view, selected=selected, error=error[:300])
+        oc = {"available": False, "groups": [], "folders": []}
+        if agent == "opencode" and find_opencode():
+            oc_list = await asyncio.to_thread(opencode_models)
+            oc = {"available": True, "groups": opencode_groups(oc_list, t),
+                  "folders": await asyncio.to_thread(chat_folders)}
+        return page(request, "chat.html", "chat", view=view, selected=selected, error=error[:300],
+                    agent=agent, oc=oc, efforts=EFFORTS)
+
+    # ----------------------------------------------------------- agents chat
+    def chat_folders() -> list[dict]:
+        """Where an agent conversation may work: Baton's local clones and the
+        scratch folder. The browser only ever sends one of these keys."""
+        out = [{"key": repo, "label": repo, "path": path}
+               for repo, path in sorted(runner.repos.all().items()) if path.is_dir()]
+        if settings.chat_scratch:
+            out.append({"key": "scratch", "label": f"{settings.chat_scratch} ({t['ag_scratch']})",
+                        "path": Path(settings.chat_scratch)})
+        return out
+
+    def agent_error(exc: ChatError, status: int = 409) -> HTTPException:
+        text = t.get(exc.key, exc.key)
+        return HTTPException(status, f"{text} {exc.detail}".strip())
+
+    def get_chat(chat_id: str):
+        chat = agent_chats.get(chat_id)
+        if chat is None:
+            raise HTTPException(404, t["ag_closed"])
+        return chat
+
+    async def json_body(request: Request) -> dict:
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            raise HTTPException(400, "A JSON object is needed.")
+        return body
+
+    @app.post("/api/agents")
+    async def agents_create(request: Request):
+        """Start a conversation. Agent, folder, model, effort and permission
+        mode are checked and fixed here, on the server, for its whole life."""
+        check_post(request, request.headers.get("x-baton-csrf", ""))
+        body = await json_body(request)
+        agent, model = body.get("agent", "opencode"), str(body.get("model") or "")
+        effort, mode = str(body.get("effort") or "default"), str(body.get("mode") or "confirm")
+        if agent != "opencode":
+            raise HTTPException(400, "Unknown agent")
+        if mode not in MODES or effort not in EFFORTS:
+            raise HTTPException(400, "Unknown permission mode or reasoning effort")
+        if model not in await asyncio.to_thread(opencode_models):
+            raise HTTPException(400, t["ag_err_model"])
+        if mode == "full":
+            # Refused for everyone in this phase; abliterated models never get it.
+            view = await asyncio.to_thread(models.overview, settings.lang)
+            if is_abliterated(model, view["models"]):
+                raise HTTPException(403, t["ag_full_abliterated"])
+            raise HTTPException(403, t["ag_full_off"])
+        folders = {f["key"]: f for f in await asyncio.to_thread(chat_folders)}
+        folder = folders.get(str(body.get("folder") or ""))
+        if folder is None:
+            raise HTTPException(400, t["ag_err_folder"])
+        path = folder["path"]
+        if folder["key"] == "scratch":
+            path.mkdir(parents=True, exist_ok=True)
+        # The canonical folder (junctions and links resolved) is what OpenCode gets.
+        path = Path(os.path.realpath(path))
+        try:
+            chat = await asyncio.to_thread(agent_chats.create, path, folder["label"], model, effort, mode)
+        except ChatError as exc:
+            raise agent_error(exc, 502 if exc.key == "ag_err_start" else 409) from exc
+        return JSONResponse(chat.info())
+
+    @app.get("/api/agents/{chat_id}")
+    async def agents_info(chat_id: str):
+        return JSONResponse(get_chat(chat_id).info())
+
+    @app.post("/api/agents/{chat_id}/prompt")
+    async def agents_prompt(request: Request, chat_id: str):
+        check_post(request, request.headers.get("x-baton-csrf", ""))
+        chat = get_chat(chat_id)
+        text = (await json_body(request)).get("text")
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_PROMPT_CHARS:
+            raise HTTPException(400, f"Write a message of up to {MAX_PROMPT_CHARS} characters.")
+        try:
+            chat.prompt(text.strip())
+        except ChatError as exc:
+            raise agent_error(exc) from exc
+        return JSONResponse(chat.info(), status_code=202)
+
+    @app.get("/api/agents/{chat_id}/events")
+    async def agents_events(request: Request, chat_id: str, after: int = Query(0, ge=0)):
+        """Server-sent events of one conversation from event `after` on. The
+        stream ends once no turn is running; reconnecting (Last-Event-ID)
+        continues where it stopped, so a phone that sleeps loses nothing."""
+        chat = get_chat(chat_id)
+        last = request.headers.get("last-event-id", "")
+        if last.isdigit():
+            after = int(last) + 1
+
+        async def stream():
+            position = after
+            while True:
+                events, more = await asyncio.to_thread(chat.wait, position, 15)
+                for event in events:
+                    yield f"id: {event['seq']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+                position += len(events)
+                if not more and position >= len(chat.events):
+                    yield "event: idle\ndata: {}\n\n"
+                    return
+                if not events:
+                    yield ": still working\n\n"
+
+        return StreamingResponse(stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.post("/api/agents/{chat_id}/permission")
+    async def agents_permission(request: Request, chat_id: str):
+        """Allow or deny one pending request. The id is looked up only among
+        this conversation's pending requests and works once."""
+        check_post(request, request.headers.get("x-baton-csrf", ""))
+        chat = get_chat(chat_id)
+        body = await json_body(request)
+        allow = body.get("allow")
+        if not isinstance(allow, bool):
+            raise HTTPException(400, "allow must be true or false")
+        if not await asyncio.to_thread(chat.answer, str(body.get("id") or ""), allow):
+            raise HTTPException(404, t["ag_expired"])
+        return JSONResponse({"ok": True})
+
+    @app.post("/api/agents/{chat_id}/cancel")
+    async def agents_cancel(request: Request, chat_id: str):
+        check_post(request, request.headers.get("x-baton-csrf", ""))
+        await asyncio.to_thread(get_chat(chat_id).cancel)
+        return JSONResponse({"ok": True})
+
+    @app.post("/api/agents/{chat_id}/close")
+    async def agents_close(request: Request, chat_id: str):
+        check_post(request, request.headers.get("x-baton-csrf", ""))
+        get_chat(chat_id)
+        await asyncio.to_thread(agent_chats.close, chat_id)
+        return JSONResponse({"ok": True})
 
     @app.post("/api/chat/{model_id}")
     async def chat_api(request: Request, model_id: str):

@@ -85,6 +85,8 @@ class Settings:
     review_claude_effort: str = ""
     review_codex_model: str = ""
     review_codex_effort: str = ""
+    # Scratch folder offered by the Agents chat next to the local repositories.
+    chat_scratch: str = r"C:\IA\pruebas-opencode" if os.name == "nt" else ""
     claude_home: Path = Path.home() / ".claude"
     opencode_db: Path = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
     # Optional, typed by you in .env. Used only to read your OpenCode Go usage
@@ -132,6 +134,8 @@ class Settings:
             review_claude_effort=os.environ.get("BATON_REVIEW_CLAUDE_EFFORT", "").strip().lower(),
             review_codex_model=os.environ.get("BATON_REVIEW_CODEX_MODEL", "").strip(),
             review_codex_effort=os.environ.get("BATON_REVIEW_CODEX_EFFORT", "").strip().lower(),
+            chat_scratch=os.environ.get("BATON_CHAT_SCRATCH",
+                                        r"C:\IA\pruebas-opencode" if os.name == "nt" else "").strip(),
             claude_home=Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"),
             opencode_db=Path(os.environ.get("BATON_OPENCODE_DB")
                              or Path.home() / ".local" / "share" / "opencode" / "opencode.db"),

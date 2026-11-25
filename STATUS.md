@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
-next: Agents chat for OpenCode, Claude Code and Codex in Baton, with tools
+next: Prototype folder confinement for agent chat
 updated: 2026-11-25
-updated_by: claude-code
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,12 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [ ] Prototype folder confinement for agent chat
+  Build an isolated worker prototype with a fake agent and two disposable
+  sibling directories. Verify the workspace and child-process checks in
+  [the chat design](docs/agents-chat.md) before connecting real tools.
+  Recommended: codex, gpt-6.2-astra, high
+- [x] 2026-11-25 Check existing chat runner isolation and CLI transports
 - [ ] Agents chat for OpenCode, Claude Code and Codex in Baton, with tools
   Priority for Marco (asked 2026-11-24). Turn the Chat page into an "Agents" chat: one page with three selectors, **agent** (Local model, OpenCode, Claude Code, Codex), **model** and **reasoning effort**, whose options change with the agent (reuse `task_models.catalog` for Claude Code/Codex and the OpenCode model list; the local models from `models.json`).
   - **Phase 1, OpenCode** (also covers the local llama-server models, already set up as OpenCode providers `local-inkling` / `local-qwen`): Baton starts `opencode serve` (or uses ACP, `opencode acp`; pick one and record why in docs/) and keeps one OpenCode session per conversation. Stream the answer and show every tool call (tool, arguments, result) in the chat.
@@ -147,6 +153,7 @@ links:
   Recommended: claude-code, opus, high
 
 ## Blockers
+- Tool-enabled chat needs OS-level folder confinement for terminal commands in both modes.
 - Adding a Codex cloud form option depends on the live test above.
 - Verifying a new personal rating in Ranking depends on the owner action above.
 
@@ -185,6 +192,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (codex): Documented the folder confinement requirement, proposed ACP transport and acceptance checks for Agents chat. Implementation and phone verification are pending.
 - 2026-11-25 (claude-code): review of the OpenCode Go grouping: the task page now uses the cached OpenCode model list (no `opencode models` run inside a request), kept the old log parsing for runs without an agent step; 137 tests passed on Windows.
 - 2026-11-25 (opencode): grouped OpenCode models by provider ("Included in OpenCode Go" for `opencode-go/`, "Pay as you go (credits)" for `opencode/`, provider name for `local-*` and others), added a warning under the selector when an `opencode/` model is chosen, and added OpenCode Go insufficient-balance error detection on the task page with the closest included `opencode-go/` model suggestion, en/es strings, README note and tests; 137 tests passed on Windows.
 - 2026-11-24 (claude-code): Chat page (nav tab) relaying /v1/chat/completions with streaming, reasoning shown apart, safe Markdown, per-model history in the browser, start a model from the chat; fixed the dead Start button; checked live with Inkling 2 Mini (~57 tok/s through Baton) at desktop and 375 px.

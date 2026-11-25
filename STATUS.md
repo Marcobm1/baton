@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Isolated Docker container for the All permissions mode
 updated: 2026-11-25
-updated_by: claude-code
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -17,6 +17,7 @@ links:
   quota panel (Codex logs, Claude Code status line, manual), CLI, Docker, tests.
 
 ## Next
+- [x] 2026-11-25 Separate Go and pay-as-you-go models in the OpenCode chat picker
 - [ ] Isolated Docker container for the All permissions mode
   Run the Agents chat's OpenCode inside a Docker container (Docker Desktop is
   installed) that mounts only the chosen folder: no Baton data, no Docker
@@ -210,6 +211,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (codex): Added Go, pay-as-you-go and other-provider buttons to OpenCode chat. Checked switching, the credit warning and session restoration in Edge. Windows suite: 146 passed, two known cancellation cleanup failures.
 - 2026-11-25 (claude-code): Agents chat phase 1: Chat page Agent selector (Local model / OpenCode), OpenCode over ACP with model, effort and folder fixed on the server, tool calls with arguments and results, Allow/Deny with exact command or diff (CSRF, bound to one request of one conversation, 10-minute deny), All permissions disabled; fake ACP agent tests; checked live with OpenCode 2.4.1 and local Inkling and through the web API; 148 tests passed on Windows (11 new).
 - 2026-11-25 (codex): Documented the folder confinement requirement, proposed ACP transport and acceptance checks for Agents chat. Implementation and phone verification are pending.
 - 2026-11-25 (claude-code): review of the OpenCode Go grouping: the task page now uses the cached OpenCode model list (no `opencode models` run inside a request), kept the old log parsing for runs without an agent step; 137 tests passed on Windows.

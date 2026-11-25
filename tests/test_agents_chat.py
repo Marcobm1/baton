@@ -92,8 +92,10 @@ def pending_permission(chat):
 def test_page_offers_opencode_models_folders_and_a_disabled_full_mode(env):
     page = env["page"]
     assert 'data-agent-switch' in page and 'value="opencode" selected' in page
-    assert '<optgroup label="Incluidos en OpenCode Go">' in page
-    assert '<optgroup label="local-inkling">' in page and 'value="local-inkling/inkling-2-mini"' in page
+    assert 'label="Incluidos en OpenCode Go" data-catalog-key="go"' in page
+    assert 'label="Pago por uso (créditos)" data-catalog-key="payg"' in page
+    assert 'label="local-inkling" data-catalog-key="other" data-catalog-label="Otros proveedores"' in page
+    assert 'value="local-inkling/inkling-2-mini"' in page
     assert 'value="opencode/gemini-4-neon" data-payg' in page
     assert f'<option value="scratch">{env["scratch"]} (pruebas)</option>' in page
     assert 'value="full" disabled data-mode' in page

@@ -28,10 +28,11 @@
     <div class="chat-controls">
       {{ agent_select() }}
       {% if oc.available and oc.folders %}
+      <div class="ag-catalog" role="group" aria-label="{{ t.ag_model_catalog }}" data-catalog hidden></div>
       <label><span class="label">{{ t.chat_model }}</span>
         <select data-oc-model>
           {% for g in oc.groups %}
-          <optgroup label="{{ g.label }}">
+          <optgroup label="{{ g.label }}" data-catalog-key="{{ 'go' if g.included else 'payg' if g.payg else 'other' }}" data-catalog-label="{{ g.label if g.included or g.payg else t.ag_other_providers }}">
             {% for m in g.models %}<option value="{{ m }}" {% if g.payg %}data-payg{% endif %}>{{ m }}</option>{% endfor %}
           </optgroup>
           {% endfor %}

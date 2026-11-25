@@ -4,6 +4,8 @@
 .chat-head h2 { margin: 0; }
 .chat-controls { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
 .chat-controls label { display: flex; flex-direction: column; gap: .25rem; }
+.ag-catalog { display: flex; flex-wrap: wrap; gap: .25rem; flex-basis: 100%; }
+.ag-catalog[hidden] { display: none; }
 .chat-controls select { font: inherit; font-size: .9rem; padding: .4rem .55rem; border-radius: var(--radius-sm);
                         border: 1px solid var(--line); background: var(--panel); color: var(--ink); max-width: 16rem; }
 .chat-off { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }

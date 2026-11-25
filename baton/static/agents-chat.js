@@ -12,6 +12,11 @@
   var log = $("[data-log]"), empty = $("[data-empty]"), form = $("[data-form]"), text = $("[data-text]");
   var send = $("[data-send]"), modelSel = $("[data-oc-model]"), effortSel = $("[data-oc-effort]");
   var folderSel = $("[data-oc-folder]"), payg = $("[data-payg-warn]"), fixed = $("[data-fixed]");
+  var fixedText = $("[data-fixed-text]"), fullBadge = $("[data-full-badge]");
+  var fullWarn = $("[data-full-warn]"), fullNote = $("[data-full-note]");
+  var confirmRadio = root.querySelector('[data-mode][value="confirm"]');
+  var fullRadio = root.querySelector('[data-mode][value="full"]');
+  var sandboxReady = root.dataset.sandboxReady === "1";
   // Each agent remembers its own open conversation and last choices.
   var agent = root.dataset.agent || "opencode";
   var suffix = agent === "opencode" ? "" : "-" + agent;
@@ -52,6 +57,31 @@
   function add(node) { log.appendChild(node); empty.hidden = true; return node; }
   function note(cls, msg) { add(el("p", "ag-note " + cls, msg)); }
 
+  function isLocalModel(m) {
+    return typeof m === "string" && m.toLowerCase().indexOf("local-") === 0 && m.indexOf("/") > 0;
+  }
+  function isAbliteratedName(m) {
+    return /abliterat|uncensor/i.test(m || "");
+  }
+  function updateFullMode() {
+    if (!fullRadio) return;
+    if (chat) {
+      if (fullWarn) fullWarn.hidden = chat.mode !== "full";
+      return;
+    }
+    var m = modelSel.value || "";
+    var allowed = sandboxReady && agent === "opencode" && isLocalModel(m) && !isAbliteratedName(m);
+    fullRadio.disabled = !allowed;
+    if (!allowed && fullRadio.checked && confirmRadio) confirmRadio.checked = true;
+    if (fullNote) {
+      if (!sandboxReady || agent !== "opencode") fullNote.textContent = T.full_off;
+      else if (isAbliteratedName(m)) fullNote.textContent = T.full_abliterated;
+      else if (!isLocalModel(m)) fullNote.textContent = T.full_local_only;
+      else fullNote.textContent = T.full_help;
+    }
+    if (fullWarn) fullWarn.hidden = !(allowed && fullRadio.checked);
+  }
+
   // ------------------------------------------------------------- choices
   var catalog = $("[data-catalog]");
   var groups = Array.from(modelSel.children);
@@ -78,6 +108,7 @@
       button.classList.toggle("ghost", id !== key);
     });
     showPayg();
+    updateFullMode();
   }
   function restoreModel(model) {
     var group = groups.find(function (g) {
@@ -119,14 +150,20 @@
   [modelSel, effortSel, folderSel].forEach(function (s) {
     s.addEventListener("change", function () {
       if (s === modelSel) setEfforts();
-      savePrefs(); showPayg();
+      savePrefs(); showPayg(); updateFullMode();
     });
+  });
+  root.querySelectorAll("[data-mode]").forEach(function (r) {
+    r.addEventListener("change", updateFullMode);
   });
   function lock(info) {
     // Model, effort, folder and mode are fixed on the server for the conversation.
     [modelSel, effortSel, folderSel].forEach(function (s) { s.disabled = !!info; });
     buttons.forEach(function (button) { button.disabled = !!info; });
-    root.querySelectorAll("[data-mode]").forEach(function (r) { if (r.value === "confirm") r.disabled = !!info; });
+    root.querySelectorAll("[data-mode]").forEach(function (r) {
+      if (info) r.disabled = true;
+      else if (r.value === "confirm") r.disabled = false;
+    });
     fixed.hidden = !info;
     if (info) {
       restoreModel(info.model);
@@ -134,11 +171,18 @@
       modelSel.value = info.model;
       setEfforts();
       effortSel.value = info.effort;
-      fixed.textContent = T.fixed.replace("{model}", info.model).replace("{folder}", info.folder);
-    } else if (!modelSel.value && groups.length) {
-      chooseCatalog(groups[0].dataset.catalogKey);
+      if (info.mode === "full" && fullRadio) fullRadio.checked = true;
+      else if (confirmRadio) confirmRadio.checked = true;
+      var msg = T.fixed.replace("{model}", info.model).replace("{folder}", info.folder);
+      if (fixedText) fixedText.textContent = msg; else fixed.textContent = msg;
+      if (fullBadge) fullBadge.hidden = info.mode !== "full";
+    } else {
+      if (fullBadge) fullBadge.hidden = true;
+      if (confirmRadio) confirmRadio.checked = true;
+      if (!modelSel.value && groups.length) chooseCatalog(groups[0].dataset.catalogKey);
     }
     showPayg();
+    updateFullMode();
   }
   function setBusy(on) {
     busy = on;

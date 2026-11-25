@@ -23,8 +23,11 @@
   'done_reason': t.ag_done_reason, 'closed': t.ag_closed, 'stopped': t.chat_stopped,
   'ag_effort_missing': t.ag_effort_missing, 'st_pending': t.ag_st_pending,
   'st_in_progress': t.ag_st_in_progress, 'st_completed': t.ag_st_completed, 'st_failed': t.ag_st_failed,
+  'full_off': t.ag_full_off, 'full_help': t.ag_full_help, 'full_local_only': t.ag_full_local_only,
+  'full_abliterated': t.ag_full_abliterated, 'full_badge': t.ag_full_badge,
   'lang': lang} %}
-<section class="chat" data-agents data-agent="{{ agent }}" data-csrf="{{ csrf }}">
+<section class="chat" data-agents data-agent="{{ agent }}" data-csrf="{{ csrf }}"
+         data-sandbox-ready="{{ '1' if oc.sandbox_ready else '0' }}">
   <div class="chat-head">
     <h2>{{ t.chat_nav }}</h2>
     <div class="chat-controls">
@@ -64,11 +67,12 @@
     <legend class="label">{{ t.ag_mode }}</legend>
     <label><input type="radio" name="ag-mode" value="confirm" checked data-mode>
       <span><strong>{{ t.ag_confirm }}</strong> <span class="muted small">{{ t.ag_confirm_help_gemini if gemini else t.ag_confirm_help }}</span></span></label>
-    <label class="ag-full"><input type="radio" name="ag-mode" value="full" disabled data-mode>
-      <span><strong>{{ t.ag_full }}</strong> <span class="small">{{ t.ag_full_off }}</span></span></label>
+    <label class="ag-full{% if oc.sandbox_ready %} ag-full-ready{% endif %}"><input type="radio" name="ag-mode" value="full"{% if not oc.sandbox_ready %} disabled{% endif %} data-mode>
+      <span><strong>{{ t.ag_full }}</strong> <span class="small" data-full-note>{{ t.ag_full_help if oc.sandbox_ready else t.ag_full_off }}</span></span></label>
   </fieldset>
+  <p class="ag-full-warn small" role="alert" data-full-warn hidden>{{ t.ag_full_warn }}</p>
   <p class="warn small" data-payg-warn hidden>{{ t.oc_payg_warning }}</p>
-  <p class="muted small ag-fixed" data-fixed hidden></p>
+  <p class="muted small ag-fixed" data-fixed hidden><span data-fixed-text></span> <span class="ag-full-badge" data-full-badge hidden>{{ t.ag_full_badge }}</span></p>
   <div class="chat-log" data-log aria-live="polite">
     <p class="muted chat-empty" data-empty>{{ t.ag_empty_gemini if gemini else t.ag_empty }}</p>
   </div>

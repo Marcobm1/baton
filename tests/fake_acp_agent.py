@@ -23,8 +23,11 @@ sys.stdin.reconfigure(encoding="utf-8")
 sys.stdout.reconfigure(encoding="utf-8")
 CWD = Path.cwd()
 config = json.loads(os.environ.get("OPENCODE_CONFIG_CONTENT") or "{}")
-agent = (config.get("agents") or {}).get("baton-chat") or {}
+agents_cfg = config.get("agents") or {}
+agent = agents_cfg.get("baton-chat") or {}
 asks_edit = any(r == {"action": "edit", "resource": "*", "effect": "ask"} for r in agent.get("permissions", []))
+full_agent = agents_cfg.get("baton-chat-full") or {}
+allows_edit = any(r == {"action": "edit", "resource": "*", "effect": "allow"} for r in full_agent.get("permissions", []))
 GEMINI = "--gemini" in sys.argv
 if GEMINI:
     MODES = ["default", "accept-edits", "auto", "plan"]
@@ -32,7 +35,9 @@ if GEMINI:
     EFFORT, EFFORTS = "thought_level", ["low", "medium", "high"]
     state = {"model": "gemini-4-neon", "mode": "auto", EFFORT: "high"}
 else:
-    MODES = ["build", "plan"] + (["baton-chat"] if asks_edit else [])
+    MODES = (["build", "plan"]
+             + (["baton-chat"] if asks_edit else [])
+             + (["baton-chat-full"] if allows_edit else []))
     MODELS = ["opencode-go/glm-5.3", "local-inkling/inkling-2-mini", "local-test/inkling-abliterated"]
     EFFORT, EFFORTS = "effort", ["none", "low", "high", "default"]
     state = {"model": "opencode-go/glm-5.3", "mode": "build", EFFORT: "default"}
@@ -98,7 +103,7 @@ def prompt(sid, text):
                 "rawInput": {"filePath": str(path), "content": new}, "locations": [{"path": str(path)}],
                 "content": [{"type": "diff", "path": str(path), "oldText": old, "newText": new}]}
         update(sid, sessionUpdate="tool_call", **call)
-        choice = ask(sid, call)
+        choice = "once" if state["mode"] == "baton-chat-full" else ask(sid, call)
         if choice == "once":
             path.write_text(new)
             update(sid, sessionUpdate="tool_call_update", toolCallId=tid, status="completed",
@@ -113,7 +118,11 @@ def prompt(sid, text):
         call = {"toolCallId": "t-run", "title": cmd, "kind": "execute", "status": "pending",
                 "rawInput": {"command": cmd}}
         update(sid, sessionUpdate="tool_call", **call)
-        say(sid, f"Command {ask(sid, call)}.")
+        choice = "once" if state["mode"] == "baton-chat-full" else ask(sid, call)
+        if choice == "once":
+            update(sid, sessionUpdate="tool_call_update", toolCallId="t-run", status="completed",
+                   rawOutput={"output": f"ran: {cmd}"})
+        say(sid, f"Command {choice}.")
     elif text == "env":
         leaked = sorted(k for k in os.environ if k.startswith("BATON_") or k == "GITHUB_TOKEN")
         say(sid, "leaked: " + (",".join(leaked) or "none"))

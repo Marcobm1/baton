@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex and OpenCode Go quota windows.
 next: Isolated Docker container for the All permissions mode
 updated: 2026-11-25
-updated_by: opencode
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -215,6 +215,7 @@ links:
   its worktree only when it starts; restarts keep the queue (docs/task-queue.md).
 
 ## Log
+- 2026-11-25 (claude-code): Review of the family grouping: kept model ids without dots, and made the flat model order follow the family groups so `/models` no longer reloads every 5 s with two models in use (new regression test). Suite: 160 passed.
 - 2026-11-25 (opencode): Grouped local models by family (Inkling, Qwen, etc.) with family filter chips, distinct family badges, Abliterated variant badge and context window size, and placed the model currently in use in the first position on `/models` and in `/chat` selectors (docs/models.md).
 - 2026-11-25 (codex): Added [automatic GPU shutdown](docs/models.md#automatic-gpu-shutdown). Four tests covered 85/86 °C, model and reviewer shutdown, work preservation and queue recovery. Windows suite: 155 passed, three failed. Both manual cancellation cleanup failures reproduced on the base revision. The chat process-close test passed on retry.
 - 2026-11-25 (codex): Serialized task and updater Git writes per clone with a 120-second wait limit and logged task retries. All six new regression cases passed. Windows suite had 152 passes and two cancellation cleanup failures, both reproduced on the unchanged base.

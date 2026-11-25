@@ -39,7 +39,7 @@ write on the computer itself (`BATON_DATA_DIR` changes the folder).
   so `args` can't contain those options (or `--api-key`, which would lock Baton
   out of `/metrics`). A model started from Baton is never reachable from the network.
 
-Models are grouped and badged by family (for example **Inkling** and **Qwen**), with filter chips at the top when more than one family is configured, an **Abliterated** badge on abliterated/uncensored variants, and the configured context size (`-c` / `--ctx-size`) shown on the card. Any model currently in use (`running`, `external` or `loading`) is placed in the **first position** (highlighted with an **In use** badge and green accent border) both on `/models` and in the `/chat` model selector.
+Models are grouped and badged by family (for example **Inkling** and **Qwen**), with filter chips at the top when more than one family is configured, an **Abliterated** badge on abliterated/uncensored variants, and the configured context size (`-c` / `--ctx-size`) shown on the card. Any model currently in use (`running`, `external` or `loading`) is placed in the **first position** (its family group goes first and it leads that group; highlighted with an **In use** badge and green accent border) both on `/models` and in the `/chat` model selector.
 
 Problems in the file are listed on the page instead of breaking it.
 

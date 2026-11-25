@@ -27,7 +27,7 @@ import psutil
 
 CONFIG_NAME = "models.json"
 STATE_NAME = "models-state.json"
-ID_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,40}$")
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 # Baton sets these itself (always local, always with metrics), so models.json
 # can't change them. An API key would also lock Baton out of /metrics.
 RESERVED = {"-m", "--model", "--host", "--port", "--alias", "-a", "--metrics",
@@ -516,10 +516,12 @@ class LocalModels:
             fk = r["family_key"]
             first_seen.setdefault(fk, r["_order"])
             family_best[fk] = min(family_best.get(fk, 2), _active_rank(r))
+        # Family first, then status inside it: the flat list must follow the
+        # same order as the grouped cards, or models.js reloads on every poll.
         rows.sort(key=lambda r: (
-            _active_rank(r),
             family_best[r["family_key"]],
             first_seen[r["family_key"]],
+            _active_rank(r),
             r["_order"],
         ))
         for r in rows:

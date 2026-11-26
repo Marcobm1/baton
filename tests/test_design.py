@@ -73,3 +73,38 @@ def test_text_contrast_is_wcag_aa(theme):
         for bg in ("panel", "panel-2", "bg"):
             assert _contrast(theme[fg], theme[bg]) >= 4.5, (fg, bg)
     assert _contrast(theme["on-accent"], theme["accent"]) >= 4.5
+
+
+def _rules(css: str):
+    """Yield (selector, body) for every plain rule, including ones inside @media."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        yield " ".join(sel.split()), body
+
+
+def _is_bare(selector: str) -> bool:
+    # A selector made only of element names (button, a:hover, ul li) matches
+    # every such element: nothing in it narrows it with a class, id or attribute.
+    narrowed = re.sub(r":[\w-]+(\([^)]*\))?", "", selector)
+    return not re.search(r"[.#\[]", narrowed)
+
+
+def test_no_important_on_bare_element_selectors():
+    # `button { color: x !important }` beats every class on every button, so a
+    # chip that sets its own text colour turns invisible. That happened in the
+    # dark theme of /chat (suggestion chips, the attach button, Sign out).
+    for name in ("style.css", "quotas.css", "models.css", "machines.css", "chat.css"):
+        for selectors, body in _rules((STATIC / name).read_text(encoding="utf-8")):
+            if "!important" not in body or selectors.lstrip().startswith("@"):
+                continue
+            for sel in selectors.split(","):
+                if sel.strip() == "*" and "transition: none" in body:
+                    continue  # prefers-reduced-motion: meant to beat everything
+                assert not _is_bare(sel.strip()), (name, sel.strip())
+
+
+def test_hidden_attribute_always_wins():
+    # .btn sets display: inline-flex; without a global !important rule the JS
+    # `el.hidden = true` did nothing on buttons (e.g. "Convert to task" showed
+    # on an empty chat).
+    assert "[hidden] { display: none !important; }" in CSS

@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "(Marco) Live smoke check of Claude Code and Codex in /chat (Confirm approvals + resume)"
+next: "UI-1: Near-black dark theme (Claude Code desktop look)"
 updated: 2026-11-26
-updated_by: gemini
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -13,6 +13,7 @@ links:
 ---
 
 ## Done recently
+- 2026-11-26: UI-0: fixed invisible buttons in `/chat` (suggestion chips, attach `＋`, Sign out) and the "Convert to task" link showing on an empty chat; guarded by `tests/test_design.py`.
 - 2026-11-26: Local model tool-calling harness in `/chat`: opt-in **Internet + tools** mode (off by default) with OpenAI-compatible multi-round tool loop (`baton/local_harness.py`), `web_search` (DuckDuckGo HTML or optional `BATON_SEARCH_URL` SearXNG JSON), SSRF-guarded `fetch_url`, `get_datetime`, AST `calculate`, optional allowlisted-folder file/command tools, and mandatory one-shot **Allow / Deny** confirmation on writes, commands, and `.env` reads (`docs/local-harness.md`, `tests/test_local_harness.py`).
 - 2026-11-26: Chat-3 overhaul: magic-byte validated raster image attachments & `Ctrl+V` paste for both local vision models and agent chats (auto-cleaned on close), selectable system prompt presets + custom system prompt, and subtle context-window usage meter in local chat (`baton/models.py`, `baton/routes/chat.py`, `tests/test_chat_vision_presets.py`).
 - 2026-11-26: Chat-2 overhaul: consecutive read/search tool grouping in `/chat` (`.ag-tool-group` keeping diffs, commands, and approvals prominent), bidirectional Chat ↔ Tasks bridge (**Convert to task →** via `/tasks/new?from_thread=...` + **Open in Chat** on `/tasks/{id}`), and delayed Telegram/Webhook alerts when an agent approval waits >30 s (`baton/agent_chat.py`, `baton/notify.py`, `tests/test_chat_phase2_ux.py`).
@@ -34,6 +35,31 @@ links:
 - [x] 2026-11-26 Chat-2: Agent tool grouping + Chat-to-Task bridge + Telegram approval alerts (`baton/agent_chat.py`, `baton/notify.py`, `tests/test_chat_phase2_ux.py`)
 - [x] 2026-11-26 Chat-3: Chat image attachments (vision) + local system prompt presets + context usage meter (`baton/models.py`, `baton/routes/chat.py`, `tests/test_chat_vision_presets.py`)
 - [x] 2026-11-26 Local model tool-calling harness in `/chat`: opt-in Internet + utilities + allowlisted-folder file/command tools with mandatory Allow/Deny on writes, commands, and `.env` reads (`baton/local_harness.py`, `docs/local-harness.md`, `tests/test_local_harness.py`)
+- [x] 2026-11-26 UI-0: Fix invisible buttons and the always-visible "Convert to task" link (global `button` rule no longer forces its colour with `!important`; `[hidden]` always wins; `tests/test_design.py`)
+- [ ] UI-1: Near-black dark theme (Claude Code desktop look)
+  Change only the dark token blocks in `static/style.css` (both copies) to neutral near-black
+  surfaces instead of blue-grey, for the whole app; update the Theme notes in `docs/design.md`.
+  Verify: `pytest -q tests/test_design.py` (dark blocks match, WCAG AA) and a dark screenshot of `/`, `/tasks`, `/chat`.
+  Recommended: claude-code, opus, medium
+- [ ] UI-2: Full-height `/chat` layout like Claude Code desktop
+  On `/chat` only: no `main` max-width/padding, history as a flush full-height left column,
+  conversation centred (~760 px), composer anchored to the bottom, slim header (title, folder, branch,
+  "⋯" menu with Convert to task / Rename / Delete). Keep the mobile drawer and tab bar.
+  Recommended: claude-code, opus, medium
+- [ ] UI-3: Composer as the control centre
+  Agent, model (readable names), effort, folder and permission mode become chips in the composer's
+  bottom row with popovers; locked (not hidden) once the chat starts. Enter / Shift+Enter / Esc / Shift+Tab.
+  Recommended: claude-code, opus, medium
+- [ ] UI-4: Claude Code-style messages
+  Assistant text without a card, compact one-line tool rows with status dots, inline diffs with line
+  numbers, inline approvals answerable with keys 1/2, collapsed "Thinking… Ns", status line with context.
+  Recommended: claude-code, opus, medium
+- [ ] UI-5: One chat component for local models and agents
+  Merge the two branches of `templates/chat.html` into one composer and message renderer.
+  Recommended: claude-code, opus, high
+- [ ] Fix flaky Windows test `tests/test_models.py::test_thermal_guard_without_page_visits[False]`
+  KeyError 'one' failed the Windows job on `main` after the harness commit (#75) but passed on #76: find the race and make it deterministic.
+  Recommended: claude-code, opus, medium
 - [ ] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify
   Allow/Deny on a harmless command, restart Baton or start a new chat, and resume the saved session.
@@ -46,6 +72,7 @@ links:
 - Confirm mode on the host runs approved commands as the host Windows user (Gemini Confirm covers commands only; Codex approved commands write even under `sandbox: "read-only"`).
 
 ## Decisions
+- 2026-11-26 (Marco): UI reference for `/chat` and the app is the Claude Code desktop app; the dark theme becomes near-black like Claude Code across the whole app (replaces "blue-grey, never pure black"). Plan: UI-0 … UI-5 under Next.
 - 2026-11-26: Native local-model tool-calling harness (`baton/local_harness.py`, [docs/local-harness.md](docs/local-harness.md)): opt-in per conversation (Offline by default), built-in DuckDuckGo HTML search + optional `BATON_SEARCH_URL` SearXNG JSON, SSRF-guarded `fetch_url`, `get_datetime`, AST `calculate`, and optional allowlisted-folder tools (`list_files`, `read_file`, `search_files`, `write_file`, `run_command`). Writes, commands, and `.env` reads ALWAYS require one-shot CSRF-protected Allow/Deny confirmation (never unattended, including for abliterated models).
 - 2026-11-26: Three-phase Chat overhaul completed (Chat-1 SQLite history sidebar + upgraded Markdown + sticky scroll, Chat-2 tool grouping + Chat-to-Task bridge + Telegram approval pings, Chat-3 validated image attachments + system presets + context usage meter).
 - 2026-11-26: Three-phase UX overhaul completed (UX-1 global decluttering, UX-2 Projects & Tasks remodel + automatic git diff stats, UX-3 structured agent reports + local `.baton-artifacts/` image gallery + optional Telegram `sendPhoto`, [docs/project-detail.md](docs/project-detail.md)).
@@ -55,6 +82,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-26 (claude-code): UI-0 CSS fix for invisible buttons and `[hidden]`; added UI-1…UI-5 plan (Claude Code look) and the Windows CI fix to Next.
 - 2026-11-26 (gemini): Added opt-in local model tool-calling harness in `/chat` (`baton/local_harness.py`, `/api/chat/{model_id}/harness`, `/api/chat-harness/{run_id}/{permission,cancel}`, `BATON_SEARCH_URL`, `docs/local-harness.md`, `tests/test_local_harness.py`).
 - 2026-11-26 (gemini): Completed Chat-3 overhaul (magic-byte validated image attachments & `Ctrl+V` paste for local vision and agent chats with auto-cleanup on close, system prompt presets + custom system prompt, context usage meter in local chat, `tests/test_chat_vision_presets.py`).
 - 2026-11-26 (gemini): Completed Chat-2 overhaul (grouped read-only tool calls in `/chat`, **Convert to task →** & **Open in Chat** bridge via `from_thread`/`folder`, and delayed Telegram/Webhook alerts for unanswered chat approvals >30 s, `tests/test_chat_phase2_ux.py`).

@@ -121,6 +121,26 @@ _SCHEMA_SQL = (
         logins_count INTEGER
     )""",
     "CREATE INDEX IF NOT EXISTS idx_machine_samples_machine_ts ON machine_samples(machine_id, ts DESC)",
+    """CREATE TABLE IF NOT EXISTS alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        machine_id TEXT NOT NULL,
+        machine_name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        message TEXT NOT NULL,
+        opened_at REAL NOT NULL,
+        updated_at REAL NOT NULL,
+        resolved_at REAL,
+        acked_at REAL,
+        notified_at REAL
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_active ON alerts(resolved_at, opened_at DESC)",
+    """CREATE TABLE IF NOT EXISTS known_logins (
+        machine_id TEXT NOT NULL,
+        login_key TEXT NOT NULL,
+        first_seen REAL NOT NULL,
+        PRIMARY KEY(machine_id, login_key)
+    )""",
 )
 
 _TASK_COLUMNS = (

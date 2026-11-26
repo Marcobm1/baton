@@ -45,9 +45,10 @@
       <span class="brand-text"><span class="brand-name">{{ title }}</span><span class="brand-version">v{{ version }}</span></span>
     </a>
     <p class="side-label">{{ t.nav_panel }}</p>
+    {% set alert_n = active_alerts_count() if active_alerts_count is defined else 0 %}
     <nav class="side-nav" aria-label="{{ t.nav_panel }}">
       {% for key, href, label in sections %}
-      <a href="{{ href }}" {% if nav == key %}aria-current="page"{% endif %}>{{ icon(key) }}<span>{{ label }}</span></a>
+      <a href="{{ href }}" {% if nav == key %}aria-current="page"{% endif %}>{{ icon(key) }}<span>{{ label }}</span>{% if key == 'machines' and alert_n %}<span class="nav-badge" data-alert-badge>{{ alert_n }}</span>{% endif %}</a>
       {% endfor %}
     </nav>
     <div class="side-foot">

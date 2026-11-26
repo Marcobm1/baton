@@ -309,6 +309,11 @@ STRINGS = {
         "mach_token_once": "Copy this token now — Baton only stores its SHA-256 hash and will not show it again.",
         "mach_token_cmd": "Run on that machine:",
         "mach_none_remote": "No remote machines added yet. Your PC above is already being monitored automatically.",
+        "al_active_title": "Active alerts",
+        "al_history_title": "Recent resolved alerts",
+        "al_ack": "Acknowledge", "al_ack_all": "Acknowledge all", "al_acked": "Acknowledged",
+        "al_resolved": "Resolved",
+        "al_sev_warn": "Warning", "al_sev_bad": "Critical",
 
         # Chat page
         "chat_nav": "Chat", "chat_model": "Model", "chat_effort": "Reasoning",
@@ -692,6 +697,11 @@ STRINGS = {
         "mach_token_once": "Copia este token ahora — Baton solo guarda su hash SHA-256 y no lo volverá a mostrar.",
         "mach_token_cmd": "Ejecuta en esa máquina:",
         "mach_none_remote": "Todavía no hay máquinas remotas añadidas. Tu PC de arriba ya se monitoriza automáticamente.",
+        "al_active_title": "Alertas activas",
+        "al_history_title": "Alertas resueltas recientes",
+        "al_ack": "Reconocer", "al_ack_all": "Reconocer todas", "al_acked": "Reconocida",
+        "al_resolved": "Resuelta",
+        "al_sev_warn": "Aviso", "al_sev_bad": "Crítica",
 
         # Página de chat
         "chat_nav": "Chat", "chat_model": "Modelo", "chat_effort": "Razonamiento",

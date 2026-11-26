@@ -1,11 +1,12 @@
-// Agents chat (OpenCode or Gemini over ACP). Baton keeps the conversation on the server:
-// this page sends messages and permission answers (always with the CSRF
-// token) and replays the conversation's events (server-sent events), so a
-// reload or a phone that went to sleep picks up where it was.
+// Agents chat (OpenCode, Gemini, Claude Code, Codex). Baton keeps the active
+// process on the server, persists turns into SQLite (chat_threads/chat_messages)
+// for cross-device history, and replays events over SSE.
 (function () {
   var root = document.querySelector("[data-agents]");
   if (!root || !root.querySelector("[data-form]")) return;
   var T = JSON.parse(document.getElementById("agents-strings").textContent);
+  var bootEl = document.getElementById("chat-bootstrap");
+  var boot = bootEl ? JSON.parse(bootEl.textContent) : {};
   var md = window.BatonChat.md;
   var csrf = root.dataset.csrf;
   function $(s) { return root.querySelector(s); }
@@ -16,12 +17,13 @@
   var fullWarn = $("[data-full-warn]"), fullNote = $("[data-full-note]");
   var confirmRadio = root.querySelector('[data-mode][value="confirm"]');
   var fullRadio = root.querySelector('[data-mode][value="full"]');
+  var scrollBtn = $("[data-scroll-bottom]");
+  var scroller = window.BatonChat.createScroller(scrollBtn);
   var sandboxReady = root.dataset.sandboxReady === "1";
-  // Each agent remembers its own open conversation and last choices.
+
   var agent = root.dataset.agent || "opencode";
   var suffix = agent === "opencode" ? "" : "-" + agent;
   var STORE = "baton-agents-chat" + suffix, PREFS = "baton-agents-prefs" + suffix;
-  // Gemini: each model offers its own thinking levels; OpenCode: all of them.
   var effortsByModel = modelSel.dataset.efforts ? JSON.parse(modelSel.dataset.efforts) : null;
   var allEfforts = Array.from(effortSel.options).map(function (o) { return o.cloneNode(true); });
   function setEfforts() {
@@ -32,8 +34,8 @@
     }).map(function (o) { return o.cloneNode(true); }));
     if (effortSel.querySelector('option[value="' + CSS.escape(was) + '"]')) effortSel.value = was;
   }
-  var chat = null, after = 0, source = null, busy = false, current = null, tools = {}, perms = {};
-  var refused = false;   // a request was denied in this turn: OpenCode then ends it as "cancelled"
+  var chat = null, threadId = "", after = 0, source = null, busy = false, current = null, tools = {}, perms = {};
+  var refused = false;
 
   // ------------------------------------------------------------ helpers
   function el(tag, cls, txt) {
@@ -53,9 +55,29 @@
       });
     });
   }
-  function scrollDown() { window.scrollTo(0, document.body.scrollHeight); }
   function add(node) { log.appendChild(node); empty.hidden = true; return node; }
   function note(cls, msg) { add(el("p", "ag-note " + cls, msg)); }
+
+  function attachCopy(article, getText) {
+    var meta = article.querySelector(".msg-meta");
+    if (!meta) {
+      meta = el("p", "msg-meta muted small");
+      article.appendChild(meta);
+    }
+    if (meta.querySelector("[data-msg-copy]")) return;
+    var copy = el("button", "", T.copy || "Copy");
+    copy.type = "button";
+    copy.setAttribute("data-msg-copy", "");
+    copy.addEventListener("click", function () {
+      try {
+        navigator.clipboard.writeText(getText() || "").then(function () {
+          copy.textContent = T.copied || "Copied";
+          setTimeout(function () { copy.textContent = T.copy || "Copy"; }, 1400);
+        });
+      } catch (e) {}
+    });
+    meta.appendChild(copy);
+  }
 
   function isLocalModel(m) {
     return typeof m === "string" && m.toLowerCase().indexOf("local-") === 0 && m.indexOf("/") > 0;
@@ -174,7 +196,6 @@
     r.addEventListener("change", updateFullMode);
   });
   function lock(info) {
-    // Model, effort, folder, session and mode are fixed on the server for the conversation.
     [modelSel, effortSel, folderSel, resumeSel].forEach(function (s) { if (s) s.disabled = !!info; });
     buttons.forEach(function (button) { button.disabled = !!info; });
     root.querySelectorAll("[data-mode]").forEach(function (r) {
@@ -185,7 +206,6 @@
     fixed.hidden = !info;
     if (info) {
       restoreModel(info.model);
-      // A resumed session can use a model that has since left the catalog.
       modelSel.value = info.model;
       setEfforts();
       effortSel.value = info.effort;
@@ -209,12 +229,91 @@
     if (on) send.setAttribute("data-busy", ""); else send.removeAttribute("data-busy");
   }
 
+  // ------------------------------------------------------------- history
+  function clearView() {
+    if (source) { source.close(); source = null; }
+    if (chat) api("/api/agents/" + encodeURIComponent(chat.id) + "/close").catch(function () {});
+    forget();
+    threadId = "";
+    log.querySelectorAll(":scope > :not([data-empty])").forEach(function (n) { n.remove(); });
+    empty.hidden = false;
+    after = 0; current = null; tools = {}; perms = {};
+    text.disabled = send.disabled = false;
+    setBusy(false);
+    lock(null);
+    sidebar.setActive("");
+  }
+
+  function renderSavedThread(th) {
+    clearView();
+    threadId = th.id || "";
+    sidebar.setActive(threadId);
+    if (th.model) restoreModel(th.model);
+    if (th.effort && effortSel.querySelector('option[value="' + CSS.escape(th.effort) + '"]')) {
+      effortSel.value = th.effort;
+    }
+    if (th.folder_key && folderSel.querySelector('option[value="' + CSS.escape(th.folder_key) + '"]')) {
+      folderSel.value = th.folder_key;
+    }
+    if (resumeSel && th.session_id && resumeSel.querySelector('option[value="' + CSS.escape(th.session_id) + '"]')) {
+      resumeSel.value = th.session_id;
+    }
+    (th.messages || []).forEach(function (m) {
+      if (m.role === "user") {
+        add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", m.content || ""));
+      } else {
+        var a = add(el("article", "msg msg-assistant"));
+        a.innerHTML = '<details class="msg-think" hidden><summary></summary><div class="msg-think-text"></div></details>' +
+                      '<div class="msg-body"></div><p class="msg-meta muted small"></p>';
+        a.querySelector("summary").textContent = T.reasoning;
+        if (m.reasoning) {
+          var tk = a.querySelector(".msg-think");
+          tk.hidden = false;
+          tk.querySelector(".msg-think-text").textContent = m.reasoning;
+        }
+        a.querySelector(".msg-body").innerHTML = md(m.content || "");
+        if (m.content) attachCopy(a, function () { return m.content; });
+      }
+    });
+    history.replaceState(null, "", "/chat?agent=" + encodeURIComponent(agent) + "&thread=" + encodeURIComponent(threadId));
+    scroller.follow(true);
+  }
+
+  var sidebar = window.BatonChat.initSidebar({
+    csrf: csrf,
+    agent: agent,
+    activeId: (boot.active_thread && boot.active_thread.id) || "",
+    initialThreads: boot.threads || [],
+    labels: {
+      empty: T.history_empty,
+      untitled: T.untitled,
+      rename: T.rename,
+      del: T.del,
+      delConfirm: T.del_confirm
+    },
+    onNew: function () {
+      clearView();
+      history.replaceState(null, "", "/chat?agent=" + encodeURIComponent(agent));
+      text.focus();
+    },
+    onSelect: function (th) {
+      fetch("/api/chat-threads/" + encodeURIComponent(th.id), { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (full) { if (full) renderSavedThread(full); })
+        .catch(function () {});
+    },
+    onDeletedActive: function () {
+      clearView();
+      history.replaceState(null, "", "/chat?agent=" + encodeURIComponent(agent));
+    }
+  });
+
   // ------------------------------------------------------------ drawing
   function assistant() {
     if (current) return current;
     var a = add(el("article", "msg msg-assistant"));
     a.innerHTML = '<details class="msg-think" hidden><summary></summary><div class="msg-think-text"></div></details>' +
-                  '<div class="msg-body"></div>';
+                  '<div class="msg-body"></div><p class="msg-meta muted small"></p>';
     a.querySelector("summary").textContent = T.reasoning;
     current = { el: a, text: "", thought: "", queued: false };
     return current;
@@ -227,7 +326,8 @@
       var think = m.el.querySelector(".msg-think");
       if (m.thought) { think.hidden = false; think.querySelector(".msg-think-text").textContent = m.thought; }
       m.el.querySelector(".msg-body").innerHTML = md(m.text);
-      scrollDown();
+      if (m.text) attachCopy(m.el, function () { return m.text; });
+      scroller.follow(false);
     });
   }
   function block(label, body, cls) {
@@ -236,8 +336,6 @@
     d.appendChild(el("pre", cls || "", body));
     return d;
   }
-  // A line diff (longest common subsequence) for small files; big ones show
-  // the old and new text whole.
   function diff(oldText, newText) {
     var a = (oldText || "").split("\n"), b = (newText || "").split("\n"), out = [];
     if (oldText == null || oldText === "") return b.map(function (l) { return ["+", l]; });
@@ -274,7 +372,7 @@
     var card = tools[ev.id];
     if (!card) {
       card = tools[ev.id] = add(el("details", "ag-tool"));
-      current = null;      // text after a tool goes in a new bubble
+      current = null;
     }
     card.innerHTML = "";
     var sum = el("summary");
@@ -323,7 +421,7 @@
   }
   function handle(ev) {
     after = ev.seq + 1;
-    if (ev.type === "user") { current = null; refused = false; add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", ev.text)); }
+    if (ev.type === "user") { current = null; refused = false; add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", ev.text)); scroller.follow(true); return; }
     else if (ev.type === "text") { var m = assistant(); m.text += ev.text; paint(m); return; }
     else if (ev.type === "thought") { var t = assistant(); t.thought += ev.text; paint(t); return; }
     else if (ev.type === "tool") tool(ev);
@@ -342,9 +440,10 @@
       if (ev.reason !== "end_turn" && ev.reason !== "completed" && !(ev.reason === "cancelled" && refused)) {
         note("muted small", ev.reason === "cancelled" ? T.stopped : T.done_reason.replace("{reason}", ev.reason));
       }
+      sidebar.refresh(threadId);
     }
     else if (ev.type === "closed") { closed(); }
-    scrollDown();
+    scroller.follow(false);
   }
   function closed() {
     note("warn", T.closed);
@@ -361,10 +460,9 @@
     source.addEventListener("idle", function () {
       source.close(); source = null;
       setBusy(false);
+      sidebar.refresh(threadId);
     });
     source.onerror = function () {
-      // The browser reconnects by itself (Last-Event-ID); if the conversation
-      // is gone (Baton restarted), say so instead of retrying forever.
       fetch("/api/agents/" + encodeURIComponent(chat.id), { cache: "no-store" }).then(function (r) {
         if (r.status === 404 && source) { source.close(); source = null; forget(); closed(); }
       }).catch(function () {});
@@ -388,14 +486,20 @@
           agent: agent, model: modelSel.value, effort: effortSel.value,
           folder: folderSel.value, mode: mode ? mode.value : "confirm",
           resume: resumeSel ? resumeSel.value : "",
+          thread_id: threadId || ""
         });
         var s = log.querySelector(".ag-starting"); if (s) s.remove();
-        try { localStorage.setItem(STORE, JSON.stringify({ id: chat.id })); } catch (e) {}
+        if (chat.thread_id) {
+          threadId = chat.thread_id;
+          history.replaceState(null, "", "/chat?agent=" + encodeURIComponent(agent) + "&thread=" + encodeURIComponent(threadId));
+        }
+        try { localStorage.setItem(STORE, JSON.stringify({ id: chat.id, thread_id: threadId })); } catch (e) {}
         lock(chat);
       }
       await api("/api/agents/" + encodeURIComponent(chat.id) + "/prompt", { text: content });
       text.value = "";
       autosize();
+      sidebar.refresh(threadId);
       listen();
     } catch (e) {
       var s2 = log.querySelector(".ag-starting"); if (s2) s2.remove();
@@ -418,35 +522,35 @@
   });
   root.querySelectorAll("[data-new]").forEach(function (btn) {
     btn.addEventListener("click", function () {
-      if (source) { source.close(); source = null; }
-      if (chat) api("/api/agents/" + encodeURIComponent(chat.id) + "/close").catch(function () {});
-      forget();
-      log.querySelectorAll(":scope > :not([data-empty])").forEach(function (n) { n.remove(); });
-      empty.hidden = false;
-      after = 0; current = null; tools = {}; perms = {};
-      text.disabled = send.disabled = false;
-      setBusy(false);
-      lock(null);
+      clearView();
+      history.replaceState(null, "", "/chat?agent=" + encodeURIComponent(agent));
       text.focus();
     });
   });
 
-  // A conversation still open on the server (reload, phone back from sleep).
   showPayg();
-  var saved = null;
-  try { saved = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) {}
-  if (saved && saved.id) {
-    fetch("/api/agents/" + encodeURIComponent(saved.id), { cache: "no-store" })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (info) {
-        if (!info) { forget(); return; }
-        chat = info;
-        lock(info);
-        setBusy(info.busy);
-        listen();
-      }).catch(function () {});
+  if (boot.active_thread && boot.active_thread.agent === agent) {
+    renderSavedThread(boot.active_thread);
+  } else {
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) {}
+    if (saved && saved.id) {
+      fetch("/api/agents/" + encodeURIComponent(saved.id), { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (info) {
+          if (!info) { forget(); return; }
+          chat = info;
+          if (info.thread_id) {
+            threadId = info.thread_id;
+            sidebar.setActive(threadId);
+          }
+          lock(info);
+          setBusy(info.busy);
+          listen();
+        }).catch(function () {});
+    }
   }
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden && chat && !source) listen();   // catch up after sleep
+    if (!document.hidden && chat && !source) listen();
   });
 })();

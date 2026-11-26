@@ -1,32 +1,122 @@
-// Chat page: talks to a local model through Baton (/api/chat/<model>), which
-// relays the model's streamed answer (server-sent events). The conversation is
-// kept in this browser only (localStorage, one per model).
+// Local model chat: talks to a local llama-server model through Baton (/api/chat/<model>),
+// persists threads in SQLite (/api/chat-threads) so desktop & phone stay in sync,
+// and supports copy, regenerate, edit & resend, and sticky auto-scroll.
 (function () {
   var root = document.querySelector("[data-chat]");
   if (!root || !root.querySelector("[data-form]")) return;
   var T = JSON.parse(document.getElementById("chat-strings").textContent);
+  var bootEl = document.getElementById("chat-bootstrap");
+  var boot = bootEl ? JSON.parse(bootEl.textContent) : {};
   var csrf = root.dataset.csrf;
   var log = root.querySelector("[data-log]"), empty = root.querySelector("[data-empty]");
   var form = root.querySelector("[data-form]"), text = root.querySelector("[data-text]");
   var send = root.querySelector("[data-send]"), modelSel = root.querySelector("[data-model]");
   var effortSel = root.querySelector("[data-effort]"), off = root.querySelector("[data-off]");
   var offText = root.querySelector("[data-off-text]"), startForm = root.querySelector("[data-start-form]");
-  var messages = [], busy = null, poll = null;
+  var scrollBtn = root.querySelector("[data-scroll-bottom]");
+  var messages = [], threadId = "", busy = null;
 
-  // ------------------------------------------------------------ storage
-  function key() { return "baton-chat:" + modelSel.value; }
-  function save() { try { localStorage.setItem(key(), JSON.stringify(messages.slice(-200))); } catch (e) {} }
-  function load() {
-    try { var v = JSON.parse(localStorage.getItem(key()) || "[]"); return Array.isArray(v) ? v : []; }
-    catch (e) { return []; }
+  var md = window.BatonChat.md;
+  var scroller = window.BatonChat.createScroller(scrollBtn);
+
+  try { var eff = localStorage.getItem("baton-chat-effort"); if (eff && effortSel.querySelector('option[value="' + CSS.escape(eff) + '"]')) effortSel.value = eff; } catch (e) {}
+
+  function api(path, method, body) {
+    return fetch(path, {
+      method: method || "POST",
+      headers: { "Content-Type": "application/json", "X-Baton-CSRF": csrf },
+      body: body != null ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.detail || "HTTP " + r.status);
+        return j;
+      });
+    });
   }
-  try { var eff = localStorage.getItem("baton-chat-effort"); if (eff) effortSel.value = eff; } catch (e) {}
 
-  var md = window.BatonChat.md;   // chat-common.js
+  function persistThread() {
+    if (!messages.length) return Promise.resolve();
+    var payload = {
+      replace: messages.map(function (m) {
+        return { role: m.role, content: m.content || "", reasoning: m.reasoning || "", meta: m.meta || "" };
+      }),
+      model: modelSel.value,
+      effort: effortSel.value
+    };
+    if (threadId) {
+      return api("/api/chat-threads/" + encodeURIComponent(threadId) + "/messages", "POST", payload)
+        .then(function () { sidebar.refresh(threadId); })
+        .catch(function () {});
+    }
+    return api("/api/chat-threads", "POST", {
+      agent: "local", model: modelSel.value, effort: effortSel.value
+    }).then(function (th) {
+      threadId = th.id;
+      history.replaceState(null, "", "/chat?agent=local&thread=" + encodeURIComponent(threadId));
+      return api("/api/chat-threads/" + encodeURIComponent(threadId) + "/messages", "POST", payload);
+    }).then(function () {
+      sidebar.refresh(threadId);
+    }).catch(function () {});
+  }
+
+  function loadThread(id) {
+    if (!id) return;
+    if (busy) busy.abort();
+    fetch("/api/chat-threads/" + encodeURIComponent(id), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (th) {
+        if (!th) return;
+        applyThread(th);
+      }).catch(function () {});
+  }
+
+  function applyThread(th) {
+    threadId = th.id || "";
+    if (th.model && modelSel.querySelector('option[value="' + CSS.escape(th.model) + '"]')) {
+      modelSel.value = th.model;
+    }
+    if (th.effort && effortSel.querySelector('option[value="' + CSS.escape(th.effort) + '"]')) {
+      effortSel.value = th.effort;
+    }
+    messages = (th.messages || []).map(function (m) {
+      return { role: m.role, content: m.content || "", reasoning: m.reasoning || "", meta: m.meta || "" };
+    });
+    sidebar.setActive(threadId);
+    renderAll();
+    showState();
+    history.replaceState(null, "", "/chat?agent=local&thread=" + encodeURIComponent(threadId));
+    scroller.follow(true);
+  }
+
+  function startNew() {
+    if (busy) busy.abort();
+    threadId = "";
+    messages = [];
+    sidebar.setActive("");
+    renderAll();
+    history.replaceState(null, "", "/chat?model=" + encodeURIComponent(modelSel.value));
+    text.focus();
+  }
+
+  var sidebar = window.BatonChat.initSidebar({
+    csrf: csrf,
+    agent: "local",
+    activeId: (boot.active_thread && boot.active_thread.id) || "",
+    initialThreads: boot.threads || [],
+    labels: {
+      empty: T.history_empty,
+      untitled: T.untitled,
+      rename: T.rename,
+      del: T.del,
+      delConfirm: T.del_confirm
+    },
+    onNew: startNew,
+    onSelect: function (th) { loadThread(th.id); },
+    onDeletedActive: startNew
+  });
 
   // ----------------------------------------------------------- messages
-  function scrollDown() { window.scrollTo(0, document.body.scrollHeight); }
-  function bubble(role) {
+  function bubble(role, idx) {
     var el = document.createElement("article");
     el.className = "msg msg-" + role;
     if (role === "assistant") {
@@ -34,22 +124,47 @@
                      '<div class="msg-body"></div><p class="msg-meta muted small"><span></span></p>';
       el.querySelector("summary").textContent = T.reasoning;
     } else {
-      el.innerHTML = '<div class="msg-body"></div>';
+      el.innerHTML = '<div class="msg-body"></div><p class="msg-meta muted small msg-user-meta"></p>';
+      if (typeof idx === "number") attachUserActions(el, idx);
     }
     log.appendChild(el);
     empty.hidden = true;
     return el;
   }
-  function fill(el, m) {
+
+  function attachUserActions(el, idx) {
+    var meta = el.querySelector(".msg-user-meta");
+    if (!meta) return;
+    meta.innerHTML = "";
+    var edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = T.edit;
+    edit.addEventListener("click", function () {
+      if (busy) return;
+      var msg = messages[idx];
+      if (!msg) return;
+      text.value = msg.content || "";
+      messages = messages.slice(0, idx);
+      renderAll();
+      persistThread();
+      autosize();
+      text.focus();
+    });
+    meta.appendChild(edit);
+  }
+
+  function fill(el, m, isLastAssistant) {
     var think = el.querySelector(".msg-think");
     if (m.reasoning) {
       think.hidden = false;
       think.querySelector(".msg-think-text").textContent = m.reasoning;
     }
     el.querySelector(".msg-body").innerHTML = md(m.content || "");
-    el.querySelector(".msg-meta span").textContent = m.meta || "";
     var meta = el.querySelector(".msg-meta");
-    if (m.content && !meta.querySelector("button") && m.meta !== T.thinking && m.meta !== T.writing) {
+    meta.querySelector("span").textContent = m.meta || "";
+    meta.querySelectorAll("button").forEach(function (b) { b.remove(); });
+    var streaming = m.meta === T.thinking || m.meta === T.writing;
+    if (!streaming && m.content) {
       var copy = document.createElement("button");
       copy.type = "button";
       copy.textContent = T.copy;
@@ -63,16 +178,31 @@
       });
       meta.appendChild(copy);
     }
+    if (!streaming && isLastAssistant && !busy && ready()) {
+      var regen = document.createElement("button");
+      regen.type = "button";
+      regen.textContent = T.regenerate;
+      regen.addEventListener("click", function () {
+        if (busy || !messages.length) return;
+        if (messages[messages.length - 1].role === "assistant") messages.pop();
+        if (!messages.length || messages[messages.length - 1].role !== "user") return;
+        renderAll();
+        streamReply();
+      });
+      meta.appendChild(regen);
+    }
   }
+
   function renderAll() {
     log.querySelectorAll(".msg").forEach(function (el) { el.remove(); });
-    messages.forEach(function (m) {
-      var el = bubble(m.role);
-      if (m.role === "assistant") fill(el, m);
+    messages.forEach(function (m, idx) {
+      var el = bubble(m.role, idx);
+      if (m.role === "assistant") fill(el, m, idx === messages.length - 1);
       else el.querySelector(".msg-body").textContent = m.content;
     });
     empty.hidden = messages.length > 0;
   }
+
   function number(x, digits) {
     return Number(x).toLocaleString(T.lang, { minimumFractionDigits: digits, maximumFractionDigits: digits });
   }
@@ -115,17 +245,11 @@
   }
 
   // --------------------------------------------------------------- send
-  async function ask() {
-    var content = text.value.trim();
-    if (!content || busy || !ready()) return;
-    messages.push({ role: "user", content: content });
-    text.value = "";
-    autosize();
-    bubble("user").querySelector(".msg-body").textContent = content;
+  async function streamReply(restoreOnFail) {
     var m = { role: "assistant", content: "", reasoning: "", meta: T.thinking };
     var el = bubble("assistant");
-    fill(el, m);
-    scrollDown();
+    fill(el, m, false);
+    scroller.follow(true);
     busy = new AbortController();
     setBusy(true);
     var timings = null, failed = false, queued = false, done = false;
@@ -135,7 +259,8 @@
         headers: { "Content-Type": "application/json", "X-Baton-CSRF": csrf },
         body: JSON.stringify({
           messages: messages.map(function (x) { return { role: x.role, content: x.content }; }),
-          reasoning_effort: effortSel.value })
+          reasoning_effort: effortSel.value
+        })
       });
       if (!r.ok) {
         var detail = "";
@@ -167,10 +292,10 @@
           queued = true;
           requestAnimationFrame(function () {
             queued = false;
-            if (done) return;   // the answer already ended: keep its final line
+            if (done) return;
             m.meta = m.content ? T.writing : T.thinking;
-            fill(el, m);
-            scrollDown();
+            fill(el, m, false);
+            scroller.follow(false);
           });
         }
       }
@@ -183,18 +308,28 @@
       busy = null;
       if (m.content || m.reasoning) {
         messages.push(m);
-      } else if (failed) {
-        // Nothing came back: take the question out again so it can be resent.
+      } else if (failed && restoreOnFail != null) {
         messages.pop();
-        text.value = content;
+        text.value = restoreOnFail;
         autosize();
       }
-      fill(el, m);
       setBusy(false);
-      save();
-      scrollDown();
+      renderAll();
+      persistThread();
+      scroller.follow(false);
       text.focus();
     }
+  }
+
+  async function ask() {
+    var content = text.value.trim();
+    if (!content || busy || !ready()) return;
+    messages.push({ role: "user", content: content });
+    text.value = "";
+    autosize();
+    var uEl = bubble("user", messages.length - 1);
+    uEl.querySelector(".msg-body").textContent = content;
+    await streamReply(content);
   }
 
   // ------------------------------------------------------------- events
@@ -208,26 +343,21 @@
     if (busy) busy.abort(); else ask();
   });
   modelSel.addEventListener("change", function () {
-    messages = load();
-    renderAll();
     showState();
-    history.replaceState(null, "", "/chat?model=" + encodeURIComponent(modelSel.value));
+    if (!threadId) history.replaceState(null, "", "/chat?model=" + encodeURIComponent(modelSel.value));
   });
   effortSel.addEventListener("change", function () {
     try { localStorage.setItem("baton-chat-effort", effortSel.value); } catch (e) {}
   });
-  root.querySelector("[data-new]").addEventListener("click", function () {
-    if (busy) busy.abort();
-    messages = [];
-    save();
-    renderAll();
-    text.focus();
+  root.querySelectorAll("[data-new]").forEach(function (btn) {
+    btn.addEventListener("click", startNew);
   });
 
-  messages = load();
-  renderAll();
-  showState();
-  scrollDown();
-  // Keep the model's state fresh (loading -> running, stopped elsewhere).
-  poll = setInterval(function () { if (!document.hidden) refresh(); }, 4000);
+  if (boot.active_thread && boot.active_thread.agent === "local") {
+    applyThread(boot.active_thread);
+  } else {
+    renderAll();
+    showState();
+  }
+  setInterval(function () { if (!document.hidden) refresh(); }, 4000);
 })();

@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "(Marco) Configure Telegram bot, BATON_OWNER_TAG, and BATON_CHAT_SCRATCH in .env and test notifications on /machines"
+next: "Chat-2: Agent tool grouping + Chat-to-Task bridge + Telegram approval alerts"
 updated: 2026-11-26
 updated_by: gemini
 open_source: true
@@ -13,11 +13,11 @@ links:
 ---
 
 ## Done recently
+- 2026-11-26: Chat-1 overhaul: SQLite persistent chat history (`chat_threads` + `chat_messages`), collapsible cross-device sidebar with live search/rename/delete, upgraded safe Markdown (GFM tables, code-block copy bar, blockquotes, checklists), sticky auto-scroll with `↓` jump button, copy/regenerate/edit actions, and prompt suggestion chips (`baton/chat_history.py`, `tests/test_chat_history.py`).
 - 2026-11-26: UX-3 structured agent reports + secure local `.baton-artifacts/` image gallery + Telegram `sendPhoto` delivery (`baton/artifacts.py`, `baton/static/lightbox.js`, SQLite `tasks.artifacts` migration, authenticated `/api/tasks/{id}/artifacts/{name}` with magic-byte verification & sandboxed CSP, lightbox gallery on `/tasks/{id}` and `/p/{id}?tab=done`, `tests/test_ux_artifacts.py`).
 - 2026-11-26: UX-2 Projects & Tasks remodel (status filters + "Needs attention" tray + live repo activity on `/`, upgraded Deliveries cards with Markdown reports on `/p/{id}`, automatic `git diff --cached --numstat` capture persisted in SQLite `tasks.diff_stat` and rendered across `/`, `/p/{id}`, `/tasks`, `/tasks/{id}`).
 - 2026-11-26: UX-1 global UI decluttering (removed verbose help prose across all pages, relocated Baton self-update to `/machines`, replaced duplicated host cards on `/models` with a compact VRAM strip, deduplicated `/tasks/{id}` summary + unified top action bar, compact `/chat` permission pills + auto-collapsing active header, mobile tab-bar alert badge, fixed `ChecklistItem.display_title` owner tag slicing).
 - 2026-11-26: Hardening Phase 4 open-source cleanup (`BATON_OWNER_TAG`, `BATON_CHAT_SCRATCH`, `BATON_SCHEDULED_TASK` with injection guard; personal references scrubbed from code, docs, and tests).
-- 2026-11-25: Hardening Phases 1–3, isolated Docker sandbox, Agents chat Phase 2 (Claude Code + Codex + session resume), and Monitoring Phases M1–M3 (`/machines`, push agent, alert engine with hysteresis, Telegram + Webhook notifications for alerts & finished tasks). Archive in [docs/history.md](docs/history.md).
 
 ## Next
 - [x] 2026-11-25 Hardening Phases 1–3 (security, auth, Job Objects, modularization, SQLite WAL, live task SSE, readable Gemini logs)
@@ -29,8 +29,14 @@ links:
 - [x] 2026-11-26 UX-1: Global UI decluttering and layout fixes (`tests/test_ux_cleanup.py`)
 - [x] 2026-11-26 UX-2: Remodel Projects and Tasks views with automatic git diff stats (`baton/worktree.py`, `baton/db.py`, `baton/routes/projects.py`, `tests/test_ux_projects.py`)
 - [x] 2026-11-26 UX-3: Structured agent reports + local image artifacts gallery + Telegram photo (`baton/artifacts.py`, `baton/static/lightbox.js`, `tests/test_ux_artifacts.py`)
-- [ ] (Marco) Configure Telegram bot, `BATON_OWNER_TAG`, and `BATON_CHAT_SCRATCH` in `.env` and test notifications on `/machines`
-  Rotate/set `BATON_TELEGRAM_BOT_TOKEN` and `BATON_TELEGRAM_CHAT_ID`, add `BATON_OWNER_TAG=(Marco)` and `BATON_CHAT_SCRATCH=C:\IA\pruebas-opencode` to `.env`, restart Baton, and click **Enviar aviso de prueba** on `/machines`.
+- [x] 2026-11-26 (Marco) Configure Telegram bot, `BATON_OWNER_TAG`, and `BATON_CHAT_SCRATCH` in `.env` and test notifications on `/machines`
+- [x] 2026-11-26 Chat-1: Persistent SQLite chat history sidebar, upgraded Markdown (tables + code copy), sticky auto-scroll, and regenerate/edit actions (`baton/chat_history.py`, `tests/test_chat_history.py`)
+- [ ] Chat-2: Agent tool grouping + Chat-to-Task bridge + Telegram approval alerts
+  Collapse consecutive read/search tool calls in `/chat` into a compact summary while keeping diffs, commands, and approvals prominent; add a "Convert to task →" button pre-filling `/tasks/new` from any chat thread; notify Telegram when an agent approval request waits >30 s.
+  Recommended: gemini, gemini-4-pro, medium
+- [ ] Chat-3: Chat image attachments (vision) + local system prompt presets + context usage meter
+  Allow pasting/attaching validated raster images (reusing `baton/artifacts.py` magic-byte checks), add selectable system prompt presets and a subtle context-window usage indicator in local chat.
+  Recommended: gemini, gemini-4-pro, medium
 - [ ] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify
   Allow/Deny on a harmless command, restart Baton or start a new chat, and resume the saved session.
@@ -43,6 +49,7 @@ links:
 - Confirm mode on the host runs approved commands as the host Windows user (Gemini Confirm covers commands only; Codex approved commands write even under `sandbox: "read-only"`).
 
 ## Decisions
+- 2026-11-26: Three-phase Chat overhaul plan (Chat-1 SQLite history sidebar + upgraded Markdown + sticky scroll → Chat-2 tool grouping + Chat-to-Task bridge + Telegram approval pings → Chat-3 vision attachments + presets + context meter).
 - 2026-11-26: Three-phase UX overhaul completed (UX-1 global decluttering, UX-2 Projects & Tasks remodel + automatic git diff stats, UX-3 structured agent reports + local `.baton-artifacts/` image gallery + optional Telegram `sendPhoto`, [docs/project-detail.md](docs/project-detail.md)).
 - 2026-11-26: Hardening Phase 4 open-source cleanup: `(Owner)` is now the generic default for `BATON_OWNER_TAG` (plain names auto-wrapped), `BATON_CHAT_SCRATCH` defaults to empty on all OSes, and `BATON_SCHEDULED_TASK` defaults to `Baton` with strict allowlist validation against PowerShell injection ([docs/hardening-roadmap.md](docs/hardening-roadmap.md)).
 - 2026-11-25: Machine monitoring & alerts Phases M1–M3 (`baton/machines.py`, `baton/monitor_agent.py`, `baton/alerts.py`, `baton/notify.py`): read-only push heartbeats with per-machine SHA-256 Bearer tokens, local PC self-monitoring, 24 h `machine_samples`, `AlertEngine` with 2-strike confirmation/hysteresis/cooldowns + sidebar badge, and async **Telegram** (primary) + generic **Webhook/ntfy** notifications for both machine alerts and finished/failed tasks ([docs/machines.md](docs/machines.md)).
@@ -50,6 +57,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-26 (gemini): Completed Chat-1 overhaul (`baton/chat_history.py`, SQLite `chat_threads`/`chat_messages`, collapsible sidebar with search/rename/delete, GFM tables + code-block copy bar, sticky auto-scroll, copy/regenerate/edit actions, `tests/test_chat_history.py`).
 - 2026-11-26 (gemini): Fixed `_load_dotenv` so later duplicate keys in `.env` override earlier empty placeholders, surfaced loaded `.env` path / missing Telegram key hints on `/machines`, and added CSRF-protected manual **Restart Baton** button (`POST /machines/restart`, `SelfUpdate.restart_now`).
 - 2026-11-26 (gemini): Completed UX-3 structured agent reports + secure local `.baton-artifacts/` image gallery + Telegram `sendPhoto` (`baton/artifacts.py`, `baton/static/lightbox.js`, SQLite `tasks.artifacts`, `/api/tasks/{id}/artifacts/{filename}`, `tests/test_ux_artifacts.py`).
 - 2026-11-26 (gemini): Completed UX-2 Projects & Tasks remodel (status filters, "Needs attention" tray, live per-repo activity on `/`, upgraded Deliveries cards on `/p/{id}`, automatic `git diff --cached --numstat` capture + SQLite migration, `tests/test_ux_projects.py`).

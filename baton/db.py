@@ -143,6 +143,30 @@ _SCHEMA_SQL = (
         first_seen REAL NOT NULL,
         PRIMARY KEY(machine_id, login_key)
     )""",
+    """CREATE TABLE IF NOT EXISTS chat_threads (
+        id TEXT PRIMARY KEY,
+        agent TEXT NOT NULL,
+        model TEXT NOT NULL,
+        effort TEXT NOT NULL,
+        folder_key TEXT NOT NULL,
+        folder_label TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_chat_threads_updated ON chat_threads(updated_at DESC)",
+    """CREATE TABLE IF NOT EXISTS chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        reasoning TEXT NOT NULL,
+        meta TEXT NOT NULL,
+        created_at REAL NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat_messages(thread_id, id ASC)",
 )
 
 _TASK_COLUMNS = (

@@ -71,6 +71,22 @@ class SelfUpdate:
         """Force the next check() to retry even if origin/main is on a previously failed SHA."""
         self._force_retry = True
 
+    def restart_now(self) -> tuple[bool, str]:
+        """Trigger a safe server restart (reloading .env) when no tasks are running or queued."""
+        if not self.restart or self.restarting:
+            return False, "unavailable"
+        if not self.runner.reserve_update():
+            return False, "busy"
+        try:
+            self.restart()
+            self.restarting = True
+            self.reason = "restart"
+            return True, "restart"
+        except (OSError, RuntimeError) as exc:
+            self.runner.release_update()
+            self.error = str(exc)
+            return False, str(exc)
+
     def restore_history(self):
         last = {}
         with self.history.open(encoding="utf-8") as log:

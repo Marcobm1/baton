@@ -326,6 +326,13 @@ STRINGS = {
         "ntf_tasks_on": "includes finished/failed tasks",
         "ntf_test_btn": "Send test notification",
         "ntf_off": "Not configured yet. Set BATON_TELEGRAM_BOT_TOKEN + BATON_TELEGRAM_CHAT_ID (or BATON_ALERT_WEBHOOK_URL) in .env and restart Baton.",
+        "ntf_env_file": "Loaded .env",
+        "ntf_missing_token": "BATON_TELEGRAM_BOT_TOKEN is empty.",
+        "ntf_missing_chat_id": "BATON_TELEGRAM_CHAT_ID is empty.",
+        "restart_now": "Restart Baton",
+        "restart_confirm": "Restart Baton now? Active agent chats will disconnect.",
+        "restart_busy": "Cannot restart while tasks are running or queued.",
+        "restart_unavailable": "Restart is not available in this launch mode.",
 
         # Chat page
         "chat_nav": "Chat", "chat_model": "Model", "chat_effort": "Reasoning",
@@ -726,6 +733,13 @@ STRINGS = {
         "ntf_tasks_on": "incluye tareas terminadas o fallidas",
         "ntf_test_btn": "Enviar aviso de prueba",
         "ntf_off": "Sin configurar todavía. Añade BATON_TELEGRAM_BOT_TOKEN + BATON_TELEGRAM_CHAT_ID (o BATON_ALERT_WEBHOOK_URL) en .env y reinicia Baton.",
+        "ntf_env_file": ".env cargado",
+        "ntf_missing_token": "Falta BATON_TELEGRAM_BOT_TOKEN.",
+        "ntf_missing_chat_id": "Falta BATON_TELEGRAM_CHAT_ID.",
+        "restart_now": "Reiniciar Baton",
+        "restart_confirm": "¿Reiniciar Baton ahora? Se cerrarán los chats de agentes activos.",
+        "restart_busy": "No se puede reiniciar mientras haya tareas en marcha o en cola.",
+        "restart_unavailable": "El reinicio no está disponible en este modo de arranque.",
 
         # Página de chat
         "chat_nav": "Chat", "chat_model": "Modelo", "chat_effort": "Razonamiento",

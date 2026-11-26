@@ -157,26 +157,45 @@
         </form>
         {% else %}
         <p class="muted small">{{ t.ntf_off }}</p>
+        {% if notifier and notifier.telegram_bot_token and not notifier.telegram_chat_id %}
+        <p class="warn small">{{ t.ntf_missing_chat_id }}</p>
+        {% elif notifier and notifier.telegram_chat_id and not notifier.telegram_bot_token %}
+        <p class="warn small">{{ t.ntf_missing_token }}</p>
+        {% endif %}
+        {% if env_file %}<p class="muted small">{{ t.ntf_env_file }}: <code>{{ env_file }}</code></p>{% endif %}
         {% endif %}
       </div>
     </details>
 
     {% if updater %}
-    <details class="mach-drawer" id="self-update"{% if updater.pending or updater.error %} open{% endif %}>
+    <details class="mach-drawer" id="self-update"{% if updater.pending or updater.error or restart_result %} open{% endif %}>
       <summary>
         <span>{{ t.update_title }}</span>
         <span class="muted small"><code>{{ updater.running[:12] or '—' }}</code> · {{ t['update_' ~ updater.reason] }}</span>
       </summary>
       <div class="mach-drawer-body">
+        {% if restart_result %}
+        <p class="{{ 'mach-ok' if restart_result.ok else 'warn' }}" role="status">{{ restart_result.msg }}</p>
+        {% endif %}
         <p class="small">{{ t.update_running }} <code>{{ updater.running[:12] or '—' }}</code> ·
            {{ t.update_checked }} {{ updater.checked|when }}</p>
         {% if updater.pending %}<p class="small">{{ t.update_pending }} <code>{{ updater.pending[:12] }}</code></p>{% endif %}
         {% if updater.error %}<p class="stale small">{{ t.update_error }}: {{ updater.error }}</p>{% endif %}
-        {% if updater.enabled %}
-        <form method="post" action="/self-update">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <button type="submit" class="btn ghost small">{{ t.update_now }}</button>
-        </form>
+        {% if updater.enabled or updater.restart %}
+        <div class="task-actions">
+          {% if updater.enabled %}
+          <form method="post" action="/self-update">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="btn ghost small">{{ t.update_now }}</button>
+          </form>
+          {% endif %}
+          {% if updater.restart %}
+          <form method="post" action="/machines/restart" onsubmit="return confirm({{ t.restart_confirm|tojson|forceescape }})">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="btn ghost small">{{ t.restart_now }}</button>
+          </form>
+          {% endif %}
+        </div>
         {% endif %}
       </div>
     </details>

@@ -333,7 +333,80 @@
     };
   }
 
-  window.BatonChat = { esc: esc, md: md, createScroller: createScroller, initSidebar: initSidebar };
+  // Image attachment picker & clipboard paste helper (PNG, JPEG, WebP, GIF; max 4, <= 4 MiB each).
+  var ALLOWED_IMG = { "image/png": 1, "image/jpeg": 1, "image/webp": 1, "image/gif": 1 };
+  function createAttachments(root, textarea) {
+    var btn = root.querySelector("[data-attach-btn]");
+    var input = root.querySelector("[data-attach-input]");
+    var bar = root.querySelector("[data-attach-bar]");
+    var items = [];
+    if (!btn || !input || !bar) {
+      return { list: function () { return []; }, clear: function () {}, renderThumbs: function () {} };
+    }
+    function renderBar() {
+      bar.innerHTML = "";
+      bar.hidden = items.length === 0;
+      items.forEach(function (url, idx) {
+        var wrap = document.createElement("span");
+        wrap.className = "attach-thumb";
+        var img = document.createElement("img");
+        img.src = url;
+        img.alt = "";
+        var rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "attach-rm";
+        rm.textContent = "✕";
+        rm.addEventListener("click", function () { items.splice(idx, 1); renderBar(); });
+        wrap.appendChild(img);
+        wrap.appendChild(rm);
+        bar.appendChild(wrap);
+      });
+    }
+    function addFiles(fileList) {
+      Array.from(fileList || []).forEach(function (file) {
+        if (items.length >= 4) return;
+        if (!ALLOWED_IMG[file.type] || file.size <= 0 || file.size > 4 * 1024 * 1024) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          if (typeof reader.result === "string" && items.length < 4) {
+            items.push(reader.result);
+            renderBar();
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+    btn.addEventListener("click", function () { if (!textarea.disabled) input.click(); });
+    input.addEventListener("change", function () { addFiles(input.files); input.value = ""; });
+    textarea.addEventListener("paste", function (ev) {
+      var clip = ev.clipboardData && ev.clipboardData.files;
+      if (clip && clip.length) {
+        var imgs = Array.from(clip).filter(function (f) { return ALLOWED_IMG[f.type]; });
+        if (imgs.length) { ev.preventDefault(); addFiles(imgs); }
+      }
+    });
+    return {
+      list: function () { return items.slice(); },
+      clear: function () { items = []; renderBar(); },
+      renderThumbs: function (container, urls) {
+        if (!container || !urls || !urls.length) return;
+        var row = document.createElement("div");
+        row.className = "msg-imgs";
+        urls.forEach(function (u) {
+          var img = document.createElement("img");
+          img.src = u;
+          img.alt = "";
+          row.appendChild(img);
+        });
+        container.appendChild(row);
+      }
+    };
+  }
+
+  window.BatonChat = {
+    esc: esc, md: md, createScroller: createScroller,
+    initSidebar: initSidebar, createAttachments: createAttachments
+  };
 
   // Agent switcher: the page is drawn for one agent; switching reloads it.
   var sw = document.querySelector("[data-agent-switch]");

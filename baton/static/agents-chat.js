@@ -19,6 +19,7 @@
   var fullRadio = root.querySelector('[data-mode][value="full"]');
   var scrollBtn = $("[data-scroll-bottom]");
   var scroller = window.BatonChat.createScroller(scrollBtn);
+  var attachments = window.BatonChat.createAttachments(root, text);
   var sandboxReady = root.dataset.sandboxReady === "1";
 
   var agent = root.dataset.agent || "opencode";
@@ -254,6 +255,7 @@
     log.querySelectorAll(":scope > :not([data-empty])").forEach(function (n) { n.remove(); });
     empty.hidden = false;
     after = 0; current = null; activeGroup = null; tools = {}; perms = {};
+    attachments.clear();
     text.disabled = send.disabled = false;
     setBusy(false);
     lock(null);
@@ -561,7 +563,8 @@
   // ---------------------------------------------------------------- send
   async function ask() {
     var content = text.value.trim();
-    if (!content || busy) return;
+    var imgs = attachments.list();
+    if ((!content && !imgs.length) || busy) return;
     setBusy(true);
     try {
       if (!chat) {
@@ -582,8 +585,9 @@
         try { localStorage.setItem(STORE, JSON.stringify({ id: chat.id, thread_id: threadId })); } catch (e) {}
         lock(chat);
       }
-      await api("/api/agents/" + encodeURIComponent(chat.id) + "/prompt", { text: content });
+      await api("/api/agents/" + encodeURIComponent(chat.id) + "/prompt", { text: content, images: imgs });
       text.value = "";
+      attachments.clear();
       autosize();
       sidebar.refresh(threadId);
       listen();

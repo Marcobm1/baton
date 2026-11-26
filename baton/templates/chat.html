@@ -128,7 +128,10 @@
     </div>
   </div>
   <button type="button" class="scroll-bottom" data-scroll-bottom hidden aria-label="{{ t.chat_scroll_bottom }}">↓</button>
+  <div class="attach-bar" data-attach-bar hidden></div>
   <form class="chat-input" data-form>
+    <input type="file" data-attach-input accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+    <button type="button" class="attach-btn" data-attach-btn title="{{ t.chat_attach }}" aria-label="{{ t.chat_attach }}">＋</button>
     <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
     <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
   </form>
@@ -143,6 +146,12 @@
   'stop': t.chat_stop, 'send': t.chat_send, 'reasoning': t.chat_reasoning, 'thinking': t.chat_thinking,
   'writing': t.chat_writing, 'stopped': t.chat_stopped, 'error': t.chat_error, 'copy': t.chat_copy,
   'copied': t.chat_copied, 'regenerate': t.chat_regenerate, 'edit': t.chat_edit,
+  'ctx_label': t.chat_ctx_label,
+  'presets': {
+    'coder': t.chat_sys_coder,
+    'tutor': t.chat_sys_tutor,
+    'reviewer': t.chat_sys_reviewer
+  },
   'off': t.chat_off, 'loading': t.chat_loading, 'busy': t.chat_busy,
   'start': t.m_start, 'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled,
   'rename': t.chat_rename, 'del': t.chat_delete, 'del_confirm': t.chat_delete_confirm,
@@ -163,14 +172,14 @@
           <optgroup label="{{ g.label }}">
             {% for m in g.models %}
             <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
-                    {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
+                    {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
             {% endfor %}
           </optgroup>
           {% endfor %}
           {% else %}
           {% for m in view.models %}
           <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
-                  {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
+                  {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
           {% endfor %}
           {% endif %}
         </select></label>
@@ -179,6 +188,14 @@
           {% for e in ['none', 'low', 'medium', 'high'] %}
           <option value="{{ e }}" {% if e == 'low' %}selected{% endif %}>{{ t['chat_effort_' ~ e] }}</option>
           {% endfor %}
+        </select></label>
+      <label><span class="label">{{ t.chat_preset }}</span>
+        <select data-preset>
+          <option value="">{{ t.chat_preset_default }}</option>
+          <option value="coder">{{ t.chat_preset_coder }}</option>
+          <option value="tutor">{{ t.chat_preset_tutor }}</option>
+          <option value="reviewer">{{ t.chat_preset_reviewer }}</option>
+          <option value="custom">{{ t.chat_preset_custom }}</option>
         </select></label>
       <a class="btn ghost small" data-to-task hidden href="/tasks/new">{{ t.chat_to_task }} →</a>
       <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
@@ -189,6 +206,7 @@
   {% if not view.models %}
   <p class="muted">{{ t.m_no_config.format(path=view.config.path) }}</p>
   {% else %}
+  <textarea class="custom-sys small" data-custom-system rows="2" hidden placeholder="{{ t.chat_custom_sys_placeholder }}" aria-label="{{ t.chat_preset_custom }}"></textarea>
   <div class="warn chat-off" data-off hidden>
     <span data-off-text></span>
     <form method="post" data-start-form>
@@ -207,7 +225,14 @@
     </div>
   </div>
   <button type="button" class="scroll-bottom" data-scroll-bottom hidden aria-label="{{ t.chat_scroll_bottom }}">↓</button>
+  <div class="ctx-meter small muted" data-ctx-meter hidden>
+    <span data-ctx-text></span>
+    <span class="ctx-bar"><span class="ctx-fill" data-ctx-fill></span></span>
+  </div>
+  <div class="attach-bar" data-attach-bar hidden></div>
   <form class="chat-input" data-form>
+    <input type="file" data-attach-input accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+    <button type="button" class="attach-btn" data-attach-btn title="{{ t.chat_attach }}" aria-label="{{ t.chat_attach }}">＋</button>
     <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
     <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
   </form>

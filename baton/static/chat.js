@@ -14,12 +14,59 @@
   var effortSel = root.querySelector("[data-effort]"), off = root.querySelector("[data-off]");
   var offText = root.querySelector("[data-off-text]"), startForm = root.querySelector("[data-start-form]");
   var scrollBtn = root.querySelector("[data-scroll-bottom]");
-  var messages = [], threadId = "", busy = null;
+  var presetSel = root.querySelector("[data-preset]");
+  var customSys = root.querySelector("[data-custom-system]");
+  var ctxMeter = root.querySelector("[data-ctx-meter]");
+  var ctxText = root.querySelector("[data-ctx-text]");
+  var ctxFill = root.querySelector("[data-ctx-fill]");
+  var messages = [], threadId = "", busy = null, lastUsedTokens = 0;
 
   var md = window.BatonChat.md;
   var scroller = window.BatonChat.createScroller(scrollBtn);
+  var attachments = window.BatonChat.createAttachments(root, text);
 
   try { var eff = localStorage.getItem("baton-chat-effort"); if (eff && effortSel.querySelector('option[value="' + CSS.escape(eff) + '"]')) effortSel.value = eff; } catch (e) {}
+  if (presetSel) {
+    try {
+      var savedPreset = localStorage.getItem("baton-chat-preset") || "";
+      if (presetSel.querySelector('option[value="' + CSS.escape(savedPreset) + '"]')) presetSel.value = savedPreset;
+      if (customSys) customSys.value = localStorage.getItem("baton-chat-custom-sys") || "";
+    } catch (e) {}
+  }
+  function syncPresetUi() {
+    if (customSys && presetSel) customSys.hidden = presetSel.value !== "custom";
+  }
+  function currentSystemPrompt() {
+    if (!presetSel || !presetSel.value) return "";
+    if (presetSel.value === "custom") return customSys ? customSys.value.trim() : "";
+    return (T.presets && T.presets[presetSel.value]) || "";
+  }
+  syncPresetUi();
+
+  function formatTok(n) {
+    return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k" : String(n);
+  }
+  function updateContextMeter() {
+    if (!ctxMeter || !ctxText || !ctxFill) return;
+    var o = option();
+    var limit = o ? parseInt(o.dataset.ctx || "0", 10) : 0;
+    if (!limit || (!messages.length && !lastUsedTokens)) {
+      ctxMeter.hidden = true;
+      return;
+    }
+    var approx = Math.round(
+      (currentSystemPrompt().length + messages.reduce(function (acc, m) {
+        return acc + (m.content || "").length + (m.reasoning || "").length;
+      }, 0)) / 4
+    );
+    var used = lastUsedTokens > 0 ? Math.max(lastUsedTokens, approx) : approx;
+    var pct = Math.min(100, Math.round((used / limit) * 100));
+    ctxMeter.hidden = false;
+    ctxMeter.classList.toggle("is-warn", pct >= 75 && pct < 90);
+    ctxMeter.classList.toggle("is-bad", pct >= 90);
+    ctxText.textContent = (T.ctx_label || "Context") + ": " + formatTok(used) + " / " + formatTok(limit) + " · " + pct + "%";
+    ctxFill.style.width = pct + "%";
+  }
 
   function api(path, method, body) {
     return fetch(path, {
@@ -81,6 +128,7 @@
 
   function applyThread(th) {
     threadId = th.id || "";
+    lastUsedTokens = 0;
     syncToTask();
     if (th.model && modelSel.querySelector('option[value="' + CSS.escape(th.model) + '"]')) {
       modelSel.value = th.model;
@@ -94,6 +142,7 @@
     sidebar.setActive(threadId);
     renderAll();
     showState();
+    updateContextMeter();
     history.replaceState(null, "", "/chat?agent=local&thread=" + encodeURIComponent(threadId));
     scroller.follow(true);
   }
@@ -101,10 +150,13 @@
   function startNew() {
     if (busy) busy.abort();
     threadId = "";
+    lastUsedTokens = 0;
+    attachments.clear();
     syncToTask();
     messages = [];
     sidebar.setActive("");
     renderAll();
+    updateContextMeter();
     history.replaceState(null, "", "/chat?model=" + encodeURIComponent(modelSel.value));
     text.focus();
   }
@@ -156,7 +208,9 @@
       if (!msg) return;
       text.value = msg.content || "";
       messages = messages.slice(0, idx);
+      lastUsedTokens = 0;
       renderAll();
+      updateContextMeter();
       persistThread();
       autosize();
       text.focus();
@@ -208,8 +262,16 @@
     log.querySelectorAll(".msg").forEach(function (el) { el.remove(); });
     messages.forEach(function (m, idx) {
       var el = bubble(m.role, idx);
-      if (m.role === "assistant") fill(el, m, idx === messages.length - 1);
-      else el.querySelector(".msg-body").textContent = m.content;
+      if (m.role === "assistant") {
+        fill(el, m, idx === messages.length - 1);
+      } else {
+        if (m.images && m.images.length) attachments.renderThumbs(el.querySelector(".msg-body"), m.images);
+        if (m.content) {
+          var p = document.createElement("span");
+          p.textContent = m.content;
+          el.querySelector(".msg-body").appendChild(p);
+        }
+      }
     });
     empty.hidden = messages.length > 0;
   }
@@ -230,6 +292,7 @@
     startForm.action = "/models/" + encodeURIComponent(o.value) + "/start";
     send.disabled = !ready() && !busy;
     text.disabled = !ready();
+    updateContextMeter();
   }
   function refresh() {
     if (busy) return;
@@ -241,6 +304,7 @@
           var o = modelSel.querySelector('option[value="' + CSS.escape(m.id) + '"]');
           if (o) {
             o.dataset.status = m.status;
+            o.dataset.ctx = m.ctx || 0;
             o.textContent = (m.uses_gpu ? "● " : "") + (o.dataset.name || m.name);
           }
         });
@@ -253,6 +317,23 @@
     if (on) send.setAttribute("data-busy", ""); else send.removeAttribute("data-busy");
     modelSel.disabled = on;
     showState();
+  }
+
+  function buildPayloadMessages() {
+    var out = [];
+    var sys = currentSystemPrompt();
+    if (sys) out.push({ role: "system", content: sys });
+    messages.forEach(function (x) {
+      if (x.role === "user" && x.images && x.images.length) {
+        var parts = [];
+        if (x.content) parts.push({ type: "text", text: x.content });
+        x.images.forEach(function (url) { parts.push({ type: "image_url", image_url: { url: url } }); });
+        out.push({ role: "user", content: parts });
+      } else {
+        out.push({ role: x.role, content: x.content || "" });
+      }
+    });
+    return out;
   }
 
   // --------------------------------------------------------------- send
@@ -269,7 +350,7 @@
         method: "POST", signal: busy.signal,
         headers: { "Content-Type": "application/json", "X-Baton-CSRF": csrf },
         body: JSON.stringify({
-          messages: messages.map(function (x) { return { role: x.role, content: x.content }; }),
+          messages: buildPayloadMessages(),
           reasoning_effort: effortSel.value
         })
       });
@@ -310,6 +391,10 @@
           });
         }
       }
+      if (timings) {
+        var usedN = (timings.prompt_n || 0) + (timings.predicted_n || 0);
+        if (usedN > 0) lastUsedTokens = usedN;
+      }
       m.meta = timings ? number(timings.predicted_n, 0) + " tokens · " + number(timings.predicted_per_second, 1) + " tok/s" : "";
     } catch (e) {
       if (e.name === "AbortError") { m.meta = T.stopped; }
@@ -326,6 +411,7 @@
       }
       setBusy(false);
       renderAll();
+      updateContextMeter();
       persistThread();
       scroller.follow(false);
       text.focus();
@@ -334,12 +420,13 @@
 
   async function ask() {
     var content = text.value.trim();
-    if (!content || busy || !ready()) return;
-    messages.push({ role: "user", content: content });
+    var imgs = attachments.list();
+    if ((!content && !imgs.length) || busy || !ready()) return;
+    messages.push({ role: "user", content: content, images: imgs });
     text.value = "";
+    attachments.clear();
     autosize();
-    var uEl = bubble("user", messages.length - 1);
-    uEl.querySelector(".msg-body").textContent = content;
+    renderAll();
     await streamReply(content);
   }
 
@@ -360,6 +447,19 @@
   effortSel.addEventListener("change", function () {
     try { localStorage.setItem("baton-chat-effort", effortSel.value); } catch (e) {}
   });
+  if (presetSel) {
+    presetSel.addEventListener("change", function () {
+      syncPresetUi();
+      updateContextMeter();
+      try { localStorage.setItem("baton-chat-preset", presetSel.value); } catch (e) {}
+    });
+  }
+  if (customSys) {
+    customSys.addEventListener("input", function () {
+      updateContextMeter();
+      try { localStorage.setItem("baton-chat-custom-sys", customSys.value); } catch (e) {}
+    });
+  }
   root.querySelectorAll("[data-new]").forEach(function (btn) {
     btn.addEventListener("click", startNew);
   });

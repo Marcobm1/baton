@@ -15,6 +15,7 @@
     {% elif task.branch and report.pushed %}<a class="btn ghost small" href="https://github.com/{{ task.repo }}/tree/{{ task.branch|urlencode }}">{{ task.branch }} ↗</a>{% endif %}
     {% if task.issue_url %}<a class="btn" href="{{ task.issue_url }}">{{ t.open_issue_link }} ↗</a>{% endif %}
     {% if not pending and task.finished %}<a class="btn ghost" href="/tasks/new?followup={{ task.id|urlencode }}">{{ t.continue_task }}</a>{% endif %}
+    {% if task.repo %}<a class="btn ghost small" href="/chat?agent={{ task.agent if task.agent in ('opencode', 'gemini', 'claude-code', 'codex') else 'claude-code' }}&amp;folder={{ task.repo|urlencode }}">{{ t.open_in_chat }}</a>{% endif %}
     {% if ranking_job %}<a class="btn ghost small" href="/ranking/{{ ranking_job }}#your-score">{{ t.rate_job }}</a>{% endif %}
   </div>
 

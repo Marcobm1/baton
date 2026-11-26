@@ -581,7 +581,9 @@ class AgentChats:
                  turn_timeout: float = TURN_TIMEOUT,
                  reap_interval: float = REAP_INTERVAL,
                  sandbox_image: str = DEFAULT_SANDBOX_IMAGE,
-                 sandbox_command: Callable[[Path, str, str], list[str] | None] | None = None):
+                 sandbox_command: Callable[[Path, str, str], list[str] | None] | None = None,
+                 on_permission_wait: Callable[[dict[str, Any]], None] | None = None,
+                 permission_notify_after: float = 30.0):
         self.command = command                  # OpenCode
         self.gemini_command = gemini_command
         self.claude_command = claude_command
@@ -593,10 +595,74 @@ class AgentChats:
         self.reap_interval = reap_interval
         self.sandbox_image = sandbox_image
         self.sandbox_command = sandbox_command  # optional override for fake ACP sandbox tests
+        self.on_permission_wait = on_permission_wait
+        self.permission_notify_after = max(0.0, float(permission_notify_after))
         self._chats: dict[str, Any] = {}
         self._lock = threading.Lock()
         self._stop_reaper = threading.Event()
         self._reaper: threading.Thread | None = None
+
+    def _attach_permission_notifier(self, chat: Any) -> None:
+        """Schedule a delayed alert whenever a permission stays unanswered past `permission_notify_after`."""
+        cb = self.on_permission_wait
+        if cb is None:
+            return
+        delay = self.permission_notify_after
+        orig_emit = chat.emit
+        timers: dict[str, threading.Timer] = {}
+        tlock = threading.Lock()
+        agent_label = {"opencode": "OpenCode", "gemini": "Gemini",
+                       "claude-code": "Claude Code", "codex": "Codex"}.get(chat.agent, chat.agent)
+
+        def _wrapped_emit(event_type: str, /, **data: Any) -> None:
+            orig_emit(event_type, **data)
+            if event_type == "permission":
+                pid = str(data.get("id") or "")
+                if not pid:
+                    return
+                payload = {
+                    "chat_id": chat.id,
+                    "agent": chat.agent,
+                    "agent_label": agent_label,
+                    "folder": chat.folder_label,
+                    "title": str(data.get("title") or ""),
+                    "kind": str(data.get("kind") or ""),
+                    "command": str(data.get("command") or ""),
+                }
+
+                def _fire() -> None:
+                    with tlock:
+                        timers.pop(pid, None)
+                    with chat.cond:
+                        still_waiting = chat.alive and pid in chat.pending
+                    if still_waiting:
+                        try:
+                            cb(payload)
+                        except Exception:
+                            pass
+
+                timer = threading.Timer(delay, _fire)
+                timer.daemon = True
+                with tlock:
+                    prev = timers.pop(pid, None)
+                    timers[pid] = timer
+                if prev:
+                    prev.cancel()
+                timer.start()
+            elif event_type == "permission_done":
+                pid = str(data.get("id") or "")
+                with tlock:
+                    t = timers.pop(pid, None)
+                if t:
+                    t.cancel()
+            elif event_type == "closed":
+                with tlock:
+                    active = list(timers.values())
+                    timers.clear()
+                for t in active:
+                    t.cancel()
+
+        chat.emit = _wrapped_emit
 
     def sandbox_ready(self) -> bool:
         """True if an isolated Docker sandbox (or injected test sandbox) can launch."""
@@ -724,6 +790,7 @@ class AgentChats:
                     folder_key=folder_key, resume_id=resume_id, on_session=_on_session,
                     permission_timeout=self.permission_timeout, turn_timeout=self.turn_timeout,
                 )
+            self._attach_permission_notifier(chat)
             try:
                 chat.start(command, env)
             except (AcpError, OSError) as exc:
@@ -777,6 +844,7 @@ class AgentChats:
                          isolated=isolated,
                          permission_timeout=self.permission_timeout,
                          turn_timeout=self.turn_timeout)
+        self._attach_permission_notifier(chat)
         try:
             chat.start(command, env)
         except (AcpError, OSError) as exc:

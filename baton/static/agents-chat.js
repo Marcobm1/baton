@@ -160,6 +160,12 @@
       if (p[1] && p[0].querySelector('option[value="' + CSS.escape(p[1]) + '"]')) p[0].value = p[1];
     });
   } catch (e) {}
+  if (boot.selected_folder) {
+    var matchOpt = Array.from(folderSel.options).find(function (o) {
+      return o.value.toLowerCase() === String(boot.selected_folder).toLowerCase();
+    });
+    if (matchOpt) folderSel.value = matchOpt.value;
+  }
   function savePrefs() {
     try {
       localStorage.setItem(PREFS, JSON.stringify({ model: modelSel.value, effort: effortSel.value, folder: folderSel.value }));
@@ -230,14 +236,24 @@
   }
 
   // ------------------------------------------------------------- history
+  var toTaskLinks = root.querySelectorAll("[data-to-task]");
+  function syncToTask() {
+    toTaskLinks.forEach(function (a) {
+      a.hidden = !threadId;
+      if (threadId) a.href = "/tasks/new?from_thread=" + encodeURIComponent(threadId);
+    });
+  }
+  var activeGroup = null;
+
   function clearView() {
     if (source) { source.close(); source = null; }
     if (chat) api("/api/agents/" + encodeURIComponent(chat.id) + "/close").catch(function () {});
     forget();
     threadId = "";
+    syncToTask();
     log.querySelectorAll(":scope > :not([data-empty])").forEach(function (n) { n.remove(); });
     empty.hidden = false;
-    after = 0; current = null; tools = {}; perms = {};
+    after = 0; current = null; activeGroup = null; tools = {}; perms = {};
     text.disabled = send.disabled = false;
     setBusy(false);
     lock(null);
@@ -247,6 +263,7 @@
   function renderSavedThread(th) {
     clearView();
     threadId = th.id || "";
+    syncToTask();
     sidebar.setActive(threadId);
     if (th.model) restoreModel(th.model);
     if (th.effort && effortSel.querySelector('option[value="' + CSS.escape(th.effort) + '"]')) {
@@ -311,6 +328,7 @@
   // ------------------------------------------------------------ drawing
   function assistant() {
     if (current) return current;
+    activeGroup = null;
     var a = add(el("article", "msg msg-assistant"));
     a.innerHTML = '<details class="msg-think" hidden><summary></summary><div class="msg-think-text"></div></details>' +
                   '<div class="msg-body"></div><p class="msg-meta muted small"></p>';
@@ -368,11 +386,71 @@
     wrap.appendChild(pre);
     return wrap;
   }
+  function readToolCategory(ev) {
+    if ((ev.diffs || []).length) return null;
+    var k = String(ev.kind || "").toLowerCase();
+    var n = String(ev.name || ev.title || "").toLowerCase();
+    if (k === "execute" || k === "edit" || k === "write" || k === "delete") return null;
+    if (k === "search" || k === "glob" || k === "grep" || /\b(grep|glob|search|find)\b/.test(n)) return "search";
+    if (k === "read" || k === "fetch" || k === "list" || /\b(read|view_file|ls|list)\b/.test(n)) return "read";
+    return null;
+  }
+  function updateGroupSummary(grp) {
+    var reads = 0, searches = 0, running = 0, failed = 0;
+    grp.items.forEach(function (it) {
+      if (it.cat === "search") searches++;
+      else reads++;
+      if (it.status === "pending" || it.status === "in_progress") running++;
+      else if (it.status === "failed") failed++;
+    });
+    var parts = [];
+    if (reads) parts.push((T.grp_read || "{n} read").replace("{n}", String(reads)));
+    if (searches) parts.push((T.grp_search || "{n} search").replace("{n}", String(searches)));
+    if (!parts.length) parts.push((T.grp_steps || "{n} steps").replace("{n}", String(grp.items.length)));
+    grp.titleEl.textContent = parts.join(" · ");
+    var st = running ? "in_progress" : (failed ? "failed" : "completed");
+    grp.statusEl.className = "ag-status ag-" + st;
+    grp.statusEl.textContent = T["st_" + st] || st;
+  }
+  function ensureReadGroup() {
+    if (activeGroup) return activeGroup;
+    var box = add(el("details", "ag-tool-group"));
+    var sum = el("summary");
+    var titleEl = el("span", "ag-group-title", "");
+    var statusEl = el("span", "ag-status", "");
+    sum.appendChild(titleEl);
+    sum.appendChild(statusEl);
+    var list = el("div", "ag-tool-group-list");
+    box.appendChild(sum);
+    box.appendChild(list);
+    activeGroup = { el: box, list: list, titleEl: titleEl, statusEl: statusEl, items: new Map() };
+    return activeGroup;
+  }
   function tool(ev) {
+    var cat = readToolCategory(ev);
     var card = tools[ev.id];
+    var grp = card && card._group ? card._group : null;
     if (!card) {
-      card = tools[ev.id] = add(el("details", "ag-tool"));
       current = null;
+      if (cat) {
+        grp = ensureReadGroup();
+        card = tools[ev.id] = el("details", "ag-tool");
+        card._group = grp;
+        grp.list.appendChild(card);
+        empty.hidden = true;
+      } else {
+        activeGroup = null;
+        card = tools[ev.id] = add(el("details", "ag-tool"));
+      }
+    } else if (!cat && grp) {
+      // Tool gained a diff/edit payload on update: promote out of read-only group.
+      grp.items.delete(ev.id);
+      if (grp.items.size === 0) grp.el.remove();
+      else updateGroupSummary(grp);
+      card._group = null;
+      grp = null;
+      activeGroup = null;
+      log.appendChild(card);
     }
     card.innerHTML = "";
     var sum = el("summary");
@@ -384,8 +462,13 @@
     if (ev.input) card.appendChild(block(T.input, ev.input));
     (ev.diffs || []).forEach(function (d) { card.appendChild(diffBlock(d)); });
     if (ev.output) card.appendChild(block(T.output, ev.output));
+    if (grp) {
+      grp.items.set(ev.id, { cat: cat || "read", status: ev.status || "pending" });
+      updateGroupSummary(grp);
+    }
   }
   function permission(ev) {
+    activeGroup = null;
     var box = perms[ev.id] = add(el("div", "ag-perm"));
     current = null;
     box.appendChild(el("strong", "", T.perm_title + ": " + (ev.title || ev.kind)));
@@ -421,7 +504,7 @@
   }
   function handle(ev) {
     after = ev.seq + 1;
-    if (ev.type === "user") { current = null; refused = false; add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", ev.text)); scroller.follow(true); return; }
+    if (ev.type === "user") { current = null; activeGroup = null; refused = false; add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", ev.text)); scroller.follow(true); return; }
     else if (ev.type === "text") { var m = assistant(); m.text += ev.text; paint(m); return; }
     else if (ev.type === "thought") { var t = assistant(); t.thought += ev.text; paint(t); return; }
     else if (ev.type === "tool") tool(ev);
@@ -429,14 +512,16 @@
     else if (ev.type === "permission_done") { settle(ev.id, ev.outcome); refused = refused || ev.outcome !== "allowed"; }
     else if (ev.type === "plan") {
       current = null;
+      activeGroup = null;
       note("muted small", T.plan + ": " + ev.entries.map(function (e) { return (e.status === "completed" ? "☑ " : "☐ ") + e.content; }).join(" · "));
     }
     else if (ev.type === "notice") {
       note("muted small", (T[ev.key] || ev.key).replace("{effort}", ev.effort || "").replace("{session}", ev.session || ""));
     }
-    else if (ev.type === "error") { current = null; note("warn", T.error + " " + ev.text); }
+    else if (ev.type === "error") { current = null; activeGroup = null; note("warn", T.error + " " + ev.text); }
     else if (ev.type === "done") {
       current = null;
+      activeGroup = null;
       if (ev.reason !== "end_turn" && ev.reason !== "completed" && !(ev.reason === "cancelled" && refused)) {
         note("muted small", ev.reason === "cancelled" ? T.stopped : T.done_reason.replace("{reason}", ev.reason));
       }
@@ -491,6 +576,7 @@
         var s = log.querySelector(".ag-starting"); if (s) s.remove();
         if (chat.thread_id) {
           threadId = chat.thread_id;
+          syncToTask();
           history.replaceState(null, "", "/chat?agent=" + encodeURIComponent(agent) + "&thread=" + encodeURIComponent(threadId));
         }
         try { localStorage.setItem(STORE, JSON.stringify({ id: chat.id, thread_id: threadId })); } catch (e) {}
@@ -542,6 +628,7 @@
           chat = info;
           if (info.thread_id) {
             threadId = info.thread_id;
+            syncToTask();
             sidebar.setActive(threadId);
           }
           lock(info);

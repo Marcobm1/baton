@@ -124,6 +124,7 @@ async def chat_page(
     error: str = "",
     agent: Literal["local", "opencode", "gemini", "claude-code", "codex"] | None = None,
     thread: str = "",
+    folder: str = "",
     ctx: AppContext = CTX,
 ):
     active_thread = await asyncio.to_thread(ctx.chat_history.get_thread, thread) if thread else None
@@ -170,6 +171,7 @@ async def chat_page(
     return ctx.page(
         request, "chat.html", "chat", view=view, selected=selected, error=error[:300],
         agent=agent, oc=oc, efforts=EFFORTS, threads=threads, active_thread=active_thread,
+        selected_folder=folder,
     )
 
 

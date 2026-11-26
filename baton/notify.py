@@ -297,6 +297,35 @@ class Notifier:
             body = f"{body}\n{note}".strip()
         self.send_async(title, body, severity="bad" if status == "failed" else "info", photo=photo)
 
+    def format_permission(self, info: dict[str, Any]) -> tuple[str, str]:
+        es = self.lang == "es"
+        agent = str(info.get("agent_label") or info.get("agent") or "Agent")
+        folder = str(info.get("folder") or "")
+        command = str(info.get("command") or "").strip()
+        summary = str(info.get("title") or info.get("kind") or "").strip()
+        title = (f"🔐 Baton · Permiso pendiente · {agent}" if es
+                 else f"🔐 Baton · Approval waiting · {agent}")
+        lines: list[str] = []
+        if folder:
+            lines.append(f"Carpeta: {folder}" if es else f"Folder: {folder}")
+        if command:
+            lines.append((f"Comando: {command}" if es else f"Command: {command}")[:260])
+        elif summary:
+            lines.append(summary[:260])
+        lines.append(
+            "Abre /chat en Baton para permitir o denegar antes de que caduque."
+            if es else
+            "Open /chat in Baton to allow or deny before it times out."
+        )
+        return title, "\n".join(lines)
+
+    def notify_permission(self, info: dict[str, Any]) -> None:
+        """Notify asynchronously when an agent chat approval has been waiting unanswered."""
+        if not self.configured:
+            return
+        title, body = self.format_permission(info)
+        self.send_async(title, body, severity="warn")
+
     def send_test(self) -> tuple[bool, str]:
         es = self.lang == "es"
         title = "🔔 Baton · Aviso de prueba" if es else "🔔 Baton · Test notification"

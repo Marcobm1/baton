@@ -252,3 +252,51 @@ class ChatHistory:
             conn.execute("DELETE FROM chat_messages WHERE thread_id = ?", (thread_id,))
             cur = conn.execute("DELETE FROM chat_threads WHERE id = ?", (thread_id,))
             return cur.rowcount > 0
+
+
+def thread_task_draft(thread: dict[str, Any], *, lang: str = "en") -> dict[str, str]:
+    """Convert a saved chat thread into pre-filled fields for /tasks/new."""
+    es = lang == "es"
+    title = str(thread.get("title") or "").strip()[:200]
+    msgs = [m for m in (thread.get("messages") or []) if isinstance(m, dict)]
+    if not title:
+        first_user = next((str(m.get("content") or "").strip() for m in msgs if m.get("role") == "user"), "")
+        title = _clip_title(first_user.splitlines()[0]) if first_user else ("Tarea desde chat" if es else "Task from chat")
+
+    header = "Contexto desde /chat:" if es else "Context from /chat:"
+    user_lbl = "Usuario" if es else "User"
+    asst_lbl = "Asistente" if es else "Assistant"
+    lines = [header]
+    budget = 4200
+    tail = msgs[-8:]
+    for m in tail:
+        role = user_lbl if m.get("role") == "user" else asst_lbl
+        body = str(m.get("content") or "").strip()
+        if not body:
+            continue
+        snippet = body[:1000] + ("…" if len(body) > 1000 else "")
+        entry = f"\n**{role}:**\n{snippet}"
+        if sum(len(x) for x in lines) + len(entry) > budget:
+            break
+        lines.append(entry)
+
+    folder_key = str(thread.get("folder_key") or "").strip()
+    repo = folder_key if "/" in folder_key else ""
+    agent = str(thread.get("agent") or "")
+    if agent == "local":
+        agent, model, effort = "", "", ""
+    else:
+        model = str(thread.get("model") or "")
+        effort = str(thread.get("effort") or "")
+        if effort == "default":
+            effort = ""
+
+    return {
+        "title": title[:200],
+        "details": "\n".join(lines).strip()[:4800],
+        "repo": repo,
+        "agent": agent,
+        "model": model,
+        "effort": effort,
+    }
+

@@ -105,7 +105,11 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         lang=settings.lang,
     )
     alerts = AlertEngine(settings.data_dir, on_opened=notifier.notify_alert)
-    agent_chats = AgentChats(data_dir=settings.data_dir, sandbox_image=settings.sandbox_image)
+    agent_chats = AgentChats(
+        data_dir=settings.data_dir,
+        sandbox_image=settings.sandbox_image,
+        on_permission_wait=notifier.notify_permission,
+    )
     chat_history = ChatHistory(settings.data_dir)
     ranking = store.ranking
 

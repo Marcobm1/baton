@@ -34,6 +34,14 @@
     });
   }
 
+  var toTaskLinks = root.querySelectorAll("[data-to-task]");
+  function syncToTask() {
+    toTaskLinks.forEach(function (a) {
+      a.hidden = !threadId;
+      if (threadId) a.href = "/tasks/new?from_thread=" + encodeURIComponent(threadId);
+    });
+  }
+
   function persistThread() {
     if (!messages.length) return Promise.resolve();
     var payload = {
@@ -45,13 +53,14 @@
     };
     if (threadId) {
       return api("/api/chat-threads/" + encodeURIComponent(threadId) + "/messages", "POST", payload)
-        .then(function () { sidebar.refresh(threadId); })
+        .then(function () { syncToTask(); sidebar.refresh(threadId); })
         .catch(function () {});
     }
     return api("/api/chat-threads", "POST", {
       agent: "local", model: modelSel.value, effort: effortSel.value
     }).then(function (th) {
       threadId = th.id;
+      syncToTask();
       history.replaceState(null, "", "/chat?agent=local&thread=" + encodeURIComponent(threadId));
       return api("/api/chat-threads/" + encodeURIComponent(threadId) + "/messages", "POST", payload);
     }).then(function () {
@@ -72,6 +81,7 @@
 
   function applyThread(th) {
     threadId = th.id || "";
+    syncToTask();
     if (th.model && modelSel.querySelector('option[value="' + CSS.escape(th.model) + '"]')) {
       modelSel.value = th.model;
     }
@@ -91,6 +101,7 @@
   function startNew() {
     if (busy) busy.abort();
     threadId = "";
+    syncToTask();
     messages = [];
     sidebar.setActive("");
     renderAll();

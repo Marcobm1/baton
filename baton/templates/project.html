@@ -143,6 +143,16 @@
         {% if headline %}<p class="delivery-preview small">{{ headline }}</p>{% endif %}
         <details class="delivery-report"><summary class="small">{{ t.agent_summary }}</summary><div class="md small">{{ task.summary|md|safe }}</div></details>
         {% endif %}
+        {% if task.artifacts %}
+        <div class="delivery-thumbs">
+          {% for art in task.artifacts[:4] %}
+          {% set url = '/api/tasks/' ~ (task.id|urlencode) ~ '/artifacts/' ~ (art.name|urlencode) %}
+          <a href="{{ url }}" data-lightbox-src="{{ url }}" data-lightbox-cap="{{ art.caption or art.name }}" title="{{ art.caption or art.name }}">
+            <img src="{{ url }}" alt="{{ art.caption or art.name }}" loading="lazy">
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
         {% if task.diff_stat and task.diff_stat.paths %}
         <details class="diff-files small"><summary>{{ t.changed_files }} ({{ task.diff_stat.files }})</summary>
           <ul class="diff-file-list">{% for f in task.diff_stat.paths %}<li><code>{{ f.path }}</code> <span class="diff-chip">{% if f.binary %}<span class="muted">bin</span>{% else %}<span class="diff-ins">+{{ f.ins }}</span> <span class="diff-del">-{{ f.del }}</span>{% endif %}</span></li>{% endfor %}</ul>
@@ -159,6 +169,14 @@
   {% endmacro %}
   <section class="deliveries-list">{% if finished %}{{ history(done_page['items']) }}{{ m.pager(done_page, {'tab': 'done'}) }}
     {% else %}<p class="muted">{{ t.nothing_done }}</p>{% endif %}</section>
+  <dialog id="artifact-lightbox" class="lightbox">
+    <div class="lightbox-body">
+      <button type="button" class="btn ghost small lightbox-close" data-lb-close>{{ t.close_label }} ✕</button>
+      <img data-lb-img alt="">
+      <p class="small muted" data-lb-cap hidden></p>
+    </div>
+  </dialog>
+  <script src="/static/lightbox.js?v={{ css_v }}" defer></script>
 
   {% else %}
   {% for key in ['blockers', 'decisions'] if content[key] %}

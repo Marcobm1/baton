@@ -610,4 +610,34 @@ details.more > summary { cursor: pointer; color: var(--accent); font-size: .9rem
 .milestone-row { display: flex; justify-content: space-between; align-items: center; gap: .6rem;
   padding: .45rem .75rem; border-radius: var(--radius-sm); background: var(--panel-2); }
 
+/* UX-3: Structured report blocks, image artifact gallery, delivery thumbnails, native lightbox */
+.structured-report { display: flex; flex-direction: column; gap: .65rem; }
+.rep-block { padding: .65rem .85rem; border-radius: var(--radius-sm); background: var(--panel-2);
+  border: 1px solid var(--line); }
+.rep-block.rep-summary { border-left: 3px solid var(--accent); }
+.rep-block.rep-checks { border-left: 3px solid var(--ok); }
+.rep-block.rep-next { border-left: 3px solid var(--warn); }
+.rep-block .md > :first-child { margin-top: .25rem; }
+.rep-block .md > :last-child { margin-bottom: 0; }
+.task-artifacts { margin-top: 1.2rem; }
+.artifact-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: .8rem; margin-top: .6rem; }
+.artifact-card { margin: 0; padding: .45rem; border-radius: var(--radius-sm); background: var(--panel-2);
+  border: 1px solid var(--line); display: flex; flex-direction: column; gap: .4rem; }
+.artifact-card a { display: block; overflow: hidden; border-radius: 6px; }
+.artifact-card img { display: block; width: 100%; height: 150px; object-fit: cover; transition: transform .15s; }
+.artifact-card a:hover img { transform: scale(1.02); }
+.artifact-card figcaption { padding: 0 .2rem; overflow-wrap: anywhere; }
+.delivery-thumbs { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .35rem; }
+.delivery-thumbs a { display: block; width: 92px; height: 62px; border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--line); background: var(--panel); }
+.delivery-thumbs img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.lightbox { padding: 0; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--panel); color: var(--ink); max-width: min(94vw, 1100px); max-height: 92vh; box-shadow: var(--shadow); }
+.lightbox::backdrop { background: color-mix(in srgb, var(--ink) 65%, transparent); }
+.lightbox-body { display: flex; flex-direction: column; gap: .6rem; padding: .85rem; align-items: center; }
+.lightbox-close { align-self: flex-end; }
+.lightbox img { max-width: 100%; max-height: 76vh; border-radius: 6px; object-fit: contain; }
+.lightbox p { margin: 0; text-align: center; }
+
+
 

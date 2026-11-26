@@ -56,7 +56,8 @@ _SCHEMA_SQL = (
         priority TEXT NOT NULL,
         started_at REAL,
         review_rating TEXT,
-        diff_stat TEXT
+        diff_stat TEXT,
+        artifacts TEXT
     )""",
     "CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)",
@@ -149,7 +150,7 @@ _TASK_COLUMNS = (
     "status", "branch", "base", "worktree", "pr_url", "issue_url", "message",
     "finished_at", "open_pr", "model", "steps", "effort", "summary",
     "issue_number", "reviewer", "review", "reviewer_model", "reviewer_effort",
-    "merged", "priority", "started_at", "review_rating", "diff_stat",
+    "merged", "priority", "started_at", "review_rating", "diff_stat", "artifacts",
 )
 
 _TASK_DEFAULTS = {
@@ -176,6 +177,7 @@ _TASK_DEFAULTS = {
     "started_at": None,
     "review_rating": None,
     "diff_stat": None,
+    "artifacts": [],
 }
 
 _TASK_REQUIRED = ("id", "repo", "title", "details", "agent", "where", "created_at")
@@ -226,6 +228,8 @@ def _row_from_legacy_dict(raw: dict) -> tuple | None:
     rating_json = json.dumps(rating) if isinstance(rating, dict) else None
     diff_stat = merged["diff_stat"]
     diff_json = json.dumps(diff_stat) if isinstance(diff_stat, dict) else None
+    arts = merged["artifacts"]
+    arts_json = json.dumps(arts) if isinstance(arts, list) and arts else None
     return (
         str(merged["id"]),
         str(merged["repo"]),
@@ -257,6 +261,7 @@ def _row_from_legacy_dict(raw: dict) -> tuple | None:
         float(merged["started_at"]) if merged["started_at"] is not None else None,
         rating_json,
         diff_json,
+        arts_json,
     )
 
 
@@ -265,6 +270,8 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
     if "diff_stat" not in cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN diff_stat TEXT")
+    if "artifacts" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN artifacts TEXT")
 
 
 def migrate_legacy_tasks(data_dir: Path, conn: sqlite3.Connection) -> int:

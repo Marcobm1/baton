@@ -161,7 +161,40 @@ class Notifier:
         except httpx.HTTPError as exc:
             return False, _mask(f"Webhook error: {exc}", self.telegram_bot_token, self.webhook_url)
 
-    def send_sync(self, title: str, body: str, *, severity: str = "info") -> tuple[bool, list[str]]:
+    def _send_telegram_photo(
+        self,
+        client: httpx.Client,
+        title: str,
+        body: str,
+        photo_path: Path,
+        mime: str,
+    ) -> tuple[bool, str]:
+        url = f"https://api.telegram.org/bot{self.telegram_bot_token}/sendPhoto"
+        caption = f"{title}\n{body}".strip()[:1020]
+        try:
+            with photo_path.open("rb") as fh:
+                resp = client.post(
+                    url,
+                    data={"chat_id": self.telegram_chat_id, "caption": caption},
+                    files={"photo": (photo_path.name, fh, mime)},
+                )
+            if 200 <= resp.status_code < 300:
+                return True, "Telegram: ok (photo)"
+            return False, _mask(
+                f"Telegram photo HTTP {resp.status_code}: {resp.text[:160]}",
+                self.telegram_bot_token, self.webhook_url,
+            )
+        except (httpx.HTTPError, OSError) as exc:
+            return False, _mask(f"Telegram photo error: {exc}", self.telegram_bot_token, self.webhook_url)
+
+    def send_sync(
+        self,
+        title: str,
+        body: str,
+        *,
+        severity: str = "info",
+        photo: tuple[Path, str] | None = None,
+    ) -> tuple[bool, list[str]]:
         """Send to all configured channels synchronously. Returns `(any_ok, messages)`."""
         if not self.configured:
             return False, ["No notification channels configured."]
@@ -169,7 +202,12 @@ class Notifier:
         any_ok = False
         with self._client_factory() as client:
             if self.telegram_ready:
-                ok, msg = self._send_telegram(client, title, body)
+                if photo is not None:
+                    ok, msg = self._send_telegram_photo(client, title, body, photo[0], photo[1])
+                    if not ok:
+                        ok, msg = self._send_telegram(client, title, body)
+                else:
+                    ok, msg = self._send_telegram(client, title, body)
                 any_ok = any_ok or ok
                 results.append(msg)
             if self.webhook_ready:
@@ -184,6 +222,7 @@ class Notifier:
         body: str,
         *,
         severity: str = "info",
+        photo: tuple[Path, str] | None = None,
         on_sent: Callable[[bool], None] | None = None,
     ) -> None:
         if not self.configured:
@@ -191,7 +230,7 @@ class Notifier:
 
         def _worker() -> None:
             try:
-                ok, msgs = self.send_sync(title, body, severity=severity)
+                ok, msgs = self.send_sync(title, body, severity=severity, photo=photo)
                 if not ok:
                     _log.warning("Notification delivery failed: %s", "; ".join(msgs))
                 if on_sent is not None:
@@ -224,6 +263,22 @@ class Notifier:
             on_sent=lambda ok: self._mark_alert_notified(aid) if (ok and aid) else None,
         )
 
+    def _first_task_photo(self, task: Any) -> tuple[Path, str] | None:
+        if self.data_dir is None or not self.telegram_ready:
+            return None
+        arts = getattr(task, "artifacts", None) or []
+        task_id = str(getattr(task, "id", "") or "")
+        if not arts or not task_id:
+            return None
+        from .artifacts import resolve_artifact_path
+
+        for item in arts:
+            name = str(item.get("name") or "") if isinstance(item, dict) else ""
+            resolved = resolve_artifact_path(self.data_dir, task_id, name)
+            if resolved is not None:
+                return resolved
+        return None
+
     def notify_task(self, task: Any) -> None:
         """Hook for `runner.on_finished`: notifies on done/failed tasks (skips cancelled)."""
         if not self.configured or not self.notify_tasks:
@@ -232,7 +287,15 @@ class Notifier:
         if status not in ("done", "failed"):
             return
         title, body = self.format_task(task)
-        self.send_async(title, body, severity="bad" if status == "failed" else "info")
+        photo = self._first_task_photo(task) if status == "done" else None
+        arts = getattr(task, "artifacts", None) or []
+        if photo is not None and len(arts) > 1:
+            extra = len(arts) - 1
+            note = f"(+{extra} imagen más en Baton)" if self.lang == "es" and extra == 1 else (
+                f"(+{extra} imágenes más en Baton)" if self.lang == "es" else f"(+{extra} more in Baton)"
+            )
+            body = f"{body}\n{note}".strip()
+        self.send_async(title, body, severity="bad" if status == "failed" else "info", photo=photo)
 
     def send_test(self) -> tuple[bool, str]:
         es = self.lang == "es"

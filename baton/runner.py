@@ -57,6 +57,7 @@ from .agents import (
     next_task_request as next_task_request,
     opencode_models as opencode_models,
 )
+from .artifacts import collect_worktree_artifacts
 from .git_lock import GitLockTimeout, run_locked
 from .ping import _NO_WINDOW, agent_env, find_agy, find_claude, find_codex
 from .proc import attach_job, close_job, kill_tree
@@ -484,6 +485,9 @@ class Runner:
             else:
                 task.summary = extract_summary(output)
             self._check_cancelled(task)
+            task.artifacts = collect_worktree_artifacts(wt, self.store.dir, task.id, task.summary)
+            if task.artifacts:
+                self._log(task, f"== Collected {len(task.artifacts)} image artifact(s)")
             step(f"Agent finished (exit code {proc.returncode})")
             if proc.returncode != 0:
                 raise RuntimeError(f"The agent stopped with exit code {proc.returncode}; see the log.")

@@ -18,6 +18,7 @@ from .. import quotas, usage
 from ..agent_chat import AgentChats
 from ..auth import LoginRateLimiter
 from ..config import Settings
+from ..machines import MachineStore
 from ..models import LocalModels
 from ..ping import Scheduler, fetch_gemini_quota
 from ..ranking import Ranking
@@ -38,6 +39,7 @@ class AppContext:
     scheduler: Scheduler
     store: TaskStore
     models: LocalModels
+    machines: MachineStore
     agent_chats: AgentChats
     ranking: Ranking
     runner: Any

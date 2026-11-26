@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from . import api, auth, chat, models, projects, quotas, ranking, tasks
+from . import api, auth, chat, machines, models, projects, quotas, ranking, tasks
 from .deps import AppContext
 
 ROUTERS = (
@@ -14,6 +14,7 @@ ROUTERS = (
     ranking.router,
     tasks.router,
     models.router,
+    machines.router,
     chat.router,
     api.router,
 )

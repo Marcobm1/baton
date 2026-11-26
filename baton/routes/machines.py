@@ -53,6 +53,7 @@ def _render_machines(
         request, "machines.html", "machines",
         machines=cards, active_alerts=active, recent_alerts=recent,
         notifier=ctx.notifier, notify_result=notify_result,
+        updater=ctx.updater,
         created=created, error=error,
     )
 

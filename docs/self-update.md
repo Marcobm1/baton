@@ -1,7 +1,7 @@
 # Updating the running Baton checkout
 
-Decision, 2026-11-24. The server owns one update worker. The timer, the
-Quotas form and the task completion callback wake the same worker. The
+Decision, 2026-11-24 (UI moved to `/machines#self-update` on 2026-11-26). The server owns one update worker. The timer, the
+Machines page form and the task completion callback wake the same worker. The
 checkout is identified from the loaded Baton package so starting the service
 from another directory cannot update an unrelated repository.
 

@@ -43,7 +43,7 @@
     {% set sha = p.status_sha %}
     {% for item in content.owner_actions %}
     <form class="project-row owner-row" method="post" action="/p/{{ p.id }}/done">
-      <div class="owner-text"><strong>{{ item.title[7:]|trim }}</strong>
+      <div class="owner-text"><strong>{{ item.display_title }}</strong>
         {% if item.detail %}<details><summary class="small">{{ t.details }}</summary><div class="md small">{{ item.detail|repo_md(p)|safe }}</div></details>{% endif %}</div>
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="line" value="{{ item.line }}">

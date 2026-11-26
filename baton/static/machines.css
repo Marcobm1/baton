@@ -23,9 +23,14 @@
               border-radius: var(--radius); padding: .9rem 1.1rem; margin: 1rem 0; }
 .mach-token pre { margin: .45rem 0 0; padding: .55rem .7rem; background: var(--panel-2);
                   border: 1px solid var(--line); border-radius: var(--radius-sm); overflow-x: auto; }
-.mach-add { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-            padding: 1rem 1.1rem; margin-top: 1.2rem; max-width: 560px; }
-.mach-add-row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: flex-end; margin-top: .6rem; }
+.mach-drawers { display: flex; flex-direction: column; gap: .65rem; margin-top: 1.2rem; max-width: 680px; }
+.mach-drawer { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .7rem 1rem; }
+.mach-drawer summary { cursor: pointer; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: .8rem; flex-wrap: wrap; list-style: none; }
+.mach-drawer summary::-webkit-details-marker { display: none; }
+.mach-drawer-body { margin-top: .7rem; display: flex; flex-direction: column; gap: .5rem; }
+.mach-drawer-body p { margin: 0; }
+.mach-drawer-body form { margin: 0; }
+.mach-add-row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: flex-end; margin-top: .7rem; }
 .mach-add-row label { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: .25rem; }
 .mach-add-row input[type="text"] { padding: .48rem .65rem; border: 1px solid var(--line);
                                    border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); }

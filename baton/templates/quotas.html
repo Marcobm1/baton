@@ -7,8 +7,18 @@
   {% if brand %}<img class="q-logo" src="/static/{{ brand }}.svg" width="22" height="22" alt="">{% endif %}
 {%- endmacro %}
 <section class="quotas">
-<h2>{{ t.quotas }}</h2>
-<p class="muted small">{{ t.quotas_help }}</p>
+<div class="page-head">
+  <h2>{{ t.quotas }}</h2>
+  {% if sched.enabled %}
+  <span class="muted small">
+    {% if sched.claude_minutes %}Claude /{{ sched.claude_minutes }}m{% endif %}
+    {% if sched.claude_minutes and sched.codex_minutes %} · {% endif %}
+    {% if sched.codex_minutes %}Codex /{{ sched.codex_minutes }}m{% endif %}
+    {% if sched.hours %} ({{ sched.hours }}h){% endif %}
+    {% for name, r in sched_results.items() %} · {{ name|capitalize }} {% if r.ok %}<span title="{{ r.msg }}">✓</span>{% else %}<span class="stale" title="{{ r.msg }}">✗</span>{% endif %}{% endfor %}
+  </span>
+  {% endif %}
+</div>
 {% if providers %}
 <div class="quota-grid">
   {% for pv in providers %}
@@ -19,7 +29,7 @@
         {{ logo(pv.provider) }}
         {{ provider_name }}{% if pv.plan %} <small>{{ pv.plan }}</small>{% endif %}
       </strong>
-      <span class="q-kind">{{ t.seen }} {{ pv.age_s|dur }} {{ t.ago }}</span>
+      <span class="q-kind" title="{{ t['source_' ~ pv.source] }}">{{ t.seen }} {{ pv.age_s|dur }} {{ t.ago }}</span>
     </div>
     {% for kind in ['5h', 'week', 'month'] %}{% set q = pv.windows.get(kind) %}{% if q %}
     <div class="q-row v-{{ q.verdict }}" title="{{ t['v_' ~ q.verdict] }}">
@@ -34,7 +44,6 @@
       <p class="verdict small">{{ t['v_' ~ q.verdict] }}</p>
     </div>
     {% endif %}{% endfor %}
-    <p class="muted small">{{ t['source_' ~ pv.source] }}</p>
   </article>
   {% endfor %}
 </div>
@@ -45,18 +54,7 @@
 {% if go_error %}<p class="small"><span class="stale">OpenCode Go: {{ go_error }}</span></p>{% endif %}
 {% if gemini_error %}<p class="small"><span class="stale">Gemini: {{ gemini_error }}</span></p>{% endif %}
 
-<p class="muted small">{{ t.auto }}:
-  {% if sched.enabled %}
-    {% if sched.claude_minutes %}Claude {{ t.every }} {{ sched.claude_minutes }} {{ t.minutes }}{% endif %}
-    {% if sched.claude_minutes and sched.codex_minutes %} · {% endif %}
-    {% if sched.codex_minutes %}Codex {{ t.every }} {{ sched.codex_minutes }} {{ t.minutes }}{% endif %}
-    {% if sched.hours %} ({{ sched.hours }} h){% endif %}
-    {% for name, r in sched_results.items() %} · {{ name|capitalize }}: {{ t.last_check }} {{ r.age|dur }} {{ t.ago }} {% if r.ok %}<span title="{{ r.msg }}">✓</span>{% else %}<span class="stale" title="{{ r.msg }}">✗ {{ r.msg }}</span>{% endif %}{% endfor %}
-  {% else %}{{ t.auto_off }}{% endif %}
-</p>
-
-<h2 id="tokens">{{ t.tokens_title }}</h2>
-<p class="muted small">{{ t.tokens_help }}</p>
+<h2 id="tokens" title="{{ t.tokens_help }}">{{ t.tokens_title }}</h2>
 {% if tokens.apps %}
 <div class="tok-grid">
   {% for a in tokens.apps %}
@@ -79,19 +77,5 @@
   {% endfor %}
 </div>
 {% else %}<p class="muted">{{ t.no_tokens }}</p>{% endif %}
-</section>
-<section id="self-update">
-  <h2>{{ t.update_title }}</h2>
-  <p>{{ t.update_running }} <code>{{ updater.running[:12] or '—' }}</code> ·
-     {{ t.update_checked }} {{ updater.checked|when }}</p>
-  {% if updater.pending %}<p>{{ t.update_pending }} <code>{{ updater.pending[:12] }}</code></p>{% endif %}
-  <p>{{ t['update_' ~ updater.reason] }}</p>
-  {% if updater.error %}<p class="stale">{{ t.update_error }}: {{ updater.error }}</p>{% endif %}
-  {% if updater.enabled %}
-  <form method="post" action="/self-update">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <button type="submit">{{ t.update_now }}</button>
-  </form>
-  {% endif %}
 </section>
 {% endblock %}

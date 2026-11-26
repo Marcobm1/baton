@@ -31,7 +31,7 @@
 {% macro q(changes) -%}?{{ base|combine(changes)|dictsort|selectattr(1)|list|urlencode }}{%- endmacro %}
 {% macro score(value) -%}{{ '%.1f'|format(value) if value is not none else '—' }}{%- endmacro %}
 
-<div class="page-head ranking-head"><h1>{{ t.ranking }}</h1>
+<div class="page-head ranking-head"><h2>{{ t.ranking }}</h2>
   <nav class="chips" aria-label="{{ t.origin }}">
     {% for value, label in [('all', t.all_origins), ('task', t.baton_task), ('delegation', t.delegation)] %}
     <a class="chip" href="{{ q({'origin': value, 'page': none, 'model': none}) }}"{% if value == origin %} aria-current="true"{% endif %}>{{ label }}</a>
@@ -54,16 +54,15 @@
 <section class="card leaderboard" aria-labelledby="board-title">
   <div class="board-head">
     <h2 id="board-title">{{ t.score_chart }}</h2>
-    <nav class="score-switch" aria-label="{{ t.sort_by }}">
-      {% for key in ('agent', 'human', 'combined') %}
-      <a href="{{ q({'view': key, 'page': none}) }}"{% if view == key %} aria-current="page"{% endif %}>{{ t['view_' ~ key] }}</a>
-      {% endfor %}
-    </nav>
-  </div>
-  <div class="board-options">
-    <p class="small muted">{{ t['view_help_' ~ view] if not real else t.view_help_real }}</p>
-    <a class="chip toggle" href="{{ q({'real': none if real else 1, 'page': none}) }}" role="switch" aria-checked="{{ 'true' if real else 'false' }}"
-       {% if real %}aria-current="true"{% endif %}>{{ '☑' if real else '☐' }} {{ t.only_reviewed }}</a>
+    <div class="board-controls">
+      <a class="chip toggle" href="{{ q({'real': none if real else 1, 'page': none}) }}" role="switch" aria-checked="{{ 'true' if real else 'false' }}"
+         title="{{ t.view_help_real }}"{% if real %} aria-current="true"{% endif %}>{{ '☑' if real else '☐' }} {{ t.only_reviewed }}</a>
+      <nav class="score-switch" aria-label="{{ t.sort_by }}">
+        {% for key in ('agent', 'human', 'combined') %}
+        <a href="{{ q({'view': key, 'page': none}) }}"{% if view == key %} aria-current="page"{% endif %} title="{{ t['view_help_' ~ key] }}">{{ t['view_' ~ key] }}</a>
+        {% endfor %}
+      </nav>
+    </div>
   </div>
   {% if rows|rejectattr(view, 'none')|list|length == 0 %}<p class="muted">{{ t.chart_empty }}</p>{% endif %}
   <ol class="board">

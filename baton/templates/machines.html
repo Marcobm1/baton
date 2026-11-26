@@ -4,8 +4,9 @@
 {% block styles %}<link rel="stylesheet" href="/static/machines.css?v={{ css_v }}">{% endblock %}
 {% block main %}
 <section data-machines>
-  <h1>{{ t.mach_title }}</h1>
-  <p class="muted">{{ t.mach_sub }}</p>
+  <div class="page-head">
+    <h2>{{ t.mach_title }}</h2>
+  </div>
 
   {% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
 
@@ -13,7 +14,7 @@
   {% set has_bad = active_alerts|selectattr('severity', 'equalto', 'bad')|list|length > 0 %}
   <section class="alerts-box{% if has_bad %} has-bad{% endif %}" role="region" aria-label="{{ t.al_active_title }}">
     <div class="alerts-head">
-      <h2>{{ t.al_active_title }} ({{ active_alerts|length }})</h2>
+      <h3>{{ t.al_active_title }} ({{ active_alerts|length }})</h3>
       {% if active_alerts|length > 1 %}
       <form method="post" action="/machines/alerts/ack-all">
         <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -59,7 +60,7 @@
     <article class="mach-card{% if m.status == 'offline' %} is-offline{% endif %}" data-machine-id="{{ m.id }}">
       <div class="mach-head">
         <div>
-          <h2 class="mach-name">{{ m.name }}{% if m.local %}<span class="mach-tag">{{ t.mach_this_pc }}</span>{% endif %}</h2>
+          <h3 class="mach-name">{{ m.name }}{% if m.local %}<span class="mach-tag">{{ t.mach_this_pc }}</span>{% endif %}</h3>
           <p class="mach-os" data-field="os">{{ m.os_info or '—' }}</p>
         </div>
         <span class="mach-badge st-{{ m.status }}" data-field="status">
@@ -107,10 +108,6 @@
     {% endfor %}
   </div>
 
-  {% if machines|length <= 1 %}
-  <p class="muted small">{{ t.mach_none_remote }}</p>
-  {% endif %}
-
   {% if recent_alerts %}
   <details class="alerts-history">
     <summary>{{ t.al_history_title }} ({{ recent_alerts|length }})</summary>
@@ -129,35 +126,62 @@
   </details>
   {% endif %}
 
-  <section class="mach-add">
-    <h3>{{ t.mach_add_title }}</h3>
-    <p class="muted small">{{ t.mach_add_help }}</p>
-    <form method="post" action="/machines/add" class="mach-add-row">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <label>
-        <span class="label">{{ t.mach_add_name }}</span>
-        <input type="text" name="name" maxlength="60" required placeholder="{{ t.mach_add_placeholder }}">
-      </label>
-      <button type="submit" class="btn">{{ t.mach_add_btn }}</button>
-    </form>
-  </section>
+  <div class="mach-drawers">
+    <details class="mach-drawer"{% if error %} open{% endif %}>
+      <summary>＋ {{ t.mach_add_title }}</summary>
+      <form method="post" action="/machines/add" class="mach-add-row">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>
+          <span class="label">{{ t.mach_add_name }}</span>
+          <input type="text" name="name" maxlength="60" required placeholder="{{ t.mach_add_placeholder }}">
+        </label>
+        <button type="submit" class="btn">{{ t.mach_add_btn }}</button>
+      </form>
+    </details>
 
-  <section class="mach-add" data-notify-box>
-    <h3>{{ t.ntf_title }}</h3>
-    {% if notify_result %}
-    <p class="{{ 'mach-ok' if notify_result.ok else 'warn' }}" role="status">{{ notify_result.msg }}</p>
+    <details class="mach-drawer" data-notify-box{% if notify_result %} open{% endif %}>
+      <summary>
+        <span>{{ t.ntf_title }}</span>
+        <span class="muted small">{% if notifier and notifier.configured %}{{ notifier.channels|join(' · ') }} ✓{% else %}—{% endif %}</span>
+      </summary>
+      <div class="mach-drawer-body">
+        {% if notify_result %}
+        <p class="{{ 'mach-ok' if notify_result.ok else 'warn' }}" role="status">{{ notify_result.msg }}</p>
+        {% endif %}
+        {% if notifier and notifier.configured %}
+        <p class="small">{{ t.ntf_active }}: <strong>{{ notifier.channels|join(' · ') }}</strong>
+          {% if notifier.notify_tasks %} · {{ t.ntf_tasks_on }}{% endif %}</p>
+        <form method="post" action="/machines/notify/test">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="btn ghost small">{{ t.ntf_test_btn }}</button>
+        </form>
+        {% else %}
+        <p class="muted small">{{ t.ntf_off }}</p>
+        {% endif %}
+      </div>
+    </details>
+
+    {% if updater %}
+    <details class="mach-drawer" id="self-update"{% if updater.pending or updater.error %} open{% endif %}>
+      <summary>
+        <span>{{ t.update_title }}</span>
+        <span class="muted small"><code>{{ updater.running[:12] or '—' }}</code> · {{ t['update_' ~ updater.reason] }}</span>
+      </summary>
+      <div class="mach-drawer-body">
+        <p class="small">{{ t.update_running }} <code>{{ updater.running[:12] or '—' }}</code> ·
+           {{ t.update_checked }} {{ updater.checked|when }}</p>
+        {% if updater.pending %}<p class="small">{{ t.update_pending }} <code>{{ updater.pending[:12] }}</code></p>{% endif %}
+        {% if updater.error %}<p class="stale small">{{ t.update_error }}: {{ updater.error }}</p>{% endif %}
+        {% if updater.enabled %}
+        <form method="post" action="/self-update">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="btn ghost small">{{ t.update_now }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </details>
     {% endif %}
-    {% if notifier and notifier.configured %}
-    <p class="small">{{ t.ntf_active }}: <strong>{{ notifier.channels|join(' · ') }}</strong>
-      {% if notifier.notify_tasks %} · {{ t.ntf_tasks_on }}{% endif %}</p>
-    <form method="post" action="/machines/notify/test">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button type="submit" class="btn ghost small">{{ t.ntf_test_btn }}</button>
-    </form>
-    {% else %}
-    <p class="muted small">{{ t.ntf_off }}</p>
-    {% endif %}
-  </section>
+  </div>
 </section>
 <script id="mach-strings" type="application/json">{{ {'online': t.mach_online, 'offline': t.mach_offline, 'pending': t.mach_pending, 'last_seen': t.mach_last_seen}|tojson }}</script>
 <script src="/static/machines.js?v={{ css_v }}" defer></script>

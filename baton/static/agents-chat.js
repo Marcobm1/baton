@@ -181,6 +181,7 @@
       if (info) r.disabled = true;
       else if (r.value === "confirm") r.disabled = false;
     });
+    root.classList.toggle("is-started", !!info);
     fixed.hidden = !info;
     if (info) {
       restoreModel(info.model);
@@ -415,17 +416,19 @@
     if (busy && chat) api("/api/agents/" + encodeURIComponent(chat.id) + "/cancel").catch(function () {});
     else ask();
   });
-  $("[data-new]").addEventListener("click", function () {
-    if (source) { source.close(); source = null; }
-    if (chat) api("/api/agents/" + encodeURIComponent(chat.id) + "/close").catch(function () {});
-    forget();
-    log.querySelectorAll(":scope > :not([data-empty])").forEach(function (n) { n.remove(); });
-    empty.hidden = false;
-    after = 0; current = null; tools = {}; perms = {};
-    text.disabled = send.disabled = false;
-    setBusy(false);
-    lock(null);
-    text.focus();
+  root.querySelectorAll("[data-new]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      if (source) { source.close(); source = null; }
+      if (chat) api("/api/agents/" + encodeURIComponent(chat.id) + "/close").catch(function () {});
+      forget();
+      log.querySelectorAll(":scope > :not([data-empty])").forEach(function (n) { n.remove(); });
+      empty.hidden = false;
+      after = 0; current = null; tools = {}; perms = {};
+      text.disabled = send.disabled = false;
+      setBusy(false);
+      lock(null);
+      text.focus();
+    });
   });
 
   // A conversation still open on the server (reload, phone back from sleep).

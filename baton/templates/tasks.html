@@ -6,7 +6,6 @@
   <h2>{{ t.tasks_nav }}</h2>
   <a class="btn" href="/tasks/new">＋ {{ t.task_button }}</a>
 </div>
-<p class="muted small">{{ t.tasks_help }}</p>
 {% if not tasks %}<p class="muted">{{ t.no_tasks }}</p>{% endif %}
 {% import "_macros.html" as m with context %}
 {% macro row(x) %}

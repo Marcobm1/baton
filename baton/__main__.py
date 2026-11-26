@@ -6,9 +6,12 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+_SAFE_TASK_NAME = re.compile(r"^[A-Za-z0-9 _.-]{1,128}$")
 
 
 def _settings():
@@ -17,9 +20,12 @@ def _settings():
     return Settings.from_env()
 
 
-def windows_restart(data_dir: Path):
+def windows_restart(data_dir: Path, task_name: str = "Baton"):
     """Hand off to an independent process before the server starts shutting down."""
-    subprocess.run(["schtasks", "/Query", "/TN", "Baton"], check=True,
+    name = (task_name or "").strip()
+    if not _SAFE_TASK_NAME.fullmatch(name):
+        raise ValueError(f"Unsafe Windows scheduled task name: {task_name!r}")
+    subprocess.run(["schtasks", "/Query", "/TN", name], check=True,
                    capture_output=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
     # The scheduled action can include the venv launcher, which exits just
     # after pythonw. Wait for Task Scheduler to release the instance as well.
@@ -28,15 +34,15 @@ def windows_restart(data_dir: Path):
         Wait-Process -Id {os.getpid()} -ErrorAction SilentlyContinue
         $scheduler = New-Object -ComObject Schedule.Service
         $scheduler.Connect()
-        $task = $scheduler.GetFolder('\\').GetTask('Baton')
+        $task = $scheduler.GetFolder('\\').GetTask('{name}')
         for ($i = 0; $i -lt 120; $i++) {{
             if ($task.State -eq 3) {{
-                schtasks /Run /TN Baton
+                schtasks /Run /TN '{name}'
                 if ($LASTEXITCODE -eq 0) {{ exit 0 }}
             }}
             Start-Sleep -Seconds 1
         }}
-        throw 'Baton scheduled task did not become ready or restart.'
+        throw 'Scheduled task {name} did not become ready or restart.'
     """
     with (data_dir / "update-restart.log").open("ab") as log:
         subprocess.Popen(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
@@ -63,9 +69,9 @@ def cmd_serve(args) -> int:
         nonlocal restarting
         if os.name == "nt":
             try:
-                windows_restart(s.data_dir)
-            except subprocess.SubprocessError as exc:
-                raise RuntimeError("Could not prepare scheduled task Baton") from exc
+                windows_restart(s.data_dir, s.scheduled_task)
+            except (subprocess.SubprocessError, ValueError) as exc:
+                raise RuntimeError(f"Could not prepare scheduled task {s.scheduled_task}") from exc
         restarting = True
         server.should_exit = True
 

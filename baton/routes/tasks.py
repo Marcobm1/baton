@@ -289,7 +289,7 @@ async def task_create(
         body = (f"@claude {details or title}\n\n---\n"
                 "Task created from Baton. Follow this repository's AGENTS.md / CLAUDE.md, "
                 "open a pull request with the change, and update STATUS.md in it. "
-                f"{next_task_request(await asyncio.to_thread(ctx.runner.model_choices))} "
+                f"{next_task_request(await asyncio.to_thread(ctx.runner.model_choices), owner_tag=ctx.settings.owner_tag)} "
                 f"Post your report in a comment on this issue. {SUMMARY_REQUEST}")
         try:
             issue = await ctx.hub.create_issue(repo, title, body)

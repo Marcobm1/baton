@@ -136,11 +136,12 @@ See [self-update and recovery](docs/self-update.md) for the handoff details.
 That's all: the next time the page refreshes (every 5 minutes, or with the
 *Refresh* button) the project appears.
 
-Prefix an owner-only checklist title with `(Marco)`, for example
-`- [ ] (Marco) Rate the GLM 5.3 deliveries`. The project card links to
-**Your turn**. Open it and choose **Done** to commit the checked box to
-the project's STATUS.md. This requires **Contents: write** and permission to
-update the default branch. If the file changes, reload before trying again.
+Prefix an owner-only checklist title with `(Owner)` (configurable via
+`BATON_OWNER_TAG`), for example `- [ ] (Owner) Rate the latest deliveries`.
+The project card links to **Your turn**. Open it and choose **Done** to commit
+the checked box to the project's STATUS.md. This requires **Contents: write**
+and permission to update the default branch. If the file changes, reload before
+trying again.
 
 On a finished task, **Continue** opens an editable follow-up with the previous
 destination and available model settings. The draft includes the assignment,
@@ -277,8 +278,8 @@ where it runs:
 | OpenCode | `opencode run --auto --agent baton -m <model>` | Any model OpenCode lists (free ones, OpenCode Go, your ChatGPT plan, Ollama…). Baton's own `baton` agent starts by denying everything, then allows reading, editing and the terminal, and denies commits, pushes, branch changes, `gh`, MCP tools, Code Mode and subagents. **No OS sandbox:** its terminal runs as you and can write outside the folder (tested), so only send it tasks you wrote. |
 | Local AI | `codex exec --oss --local-provider ollama -s workspace-write -m <model>` | Needs `BATON_LOCAL_MODEL` and Ollama or LM Studio. Keeps the sandbox; abliterated models never get full permissions. |
 
-Full permissions for Claude Code, Codex and Gemini were Marco's decision on
-2026-11-25: they still start in the task's own worktree, but nothing stops them
+Full permissions for Claude Code, Codex and Gemini are an intentional
+trade-off: they still start in the task's own worktree, but nothing stops them
 from writing elsewhere or using the network, so send them only tasks you wrote
 (see [`docs/auto-merge.md`](docs/auto-merge.md)).
 
@@ -454,14 +455,15 @@ the model stays on `127.0.0.1`). See [docs/models.md](docs/models.md).
 ### Agents chat (OpenCode and Gemini)
 
 On the Chat page, pick **Agent → OpenCode** to chat with OpenCode about one
-folder: one of your local clones or the scratch folder (`BATON_CHAT_SCRATCH`,
-`C:\IA\pruebas-opencode` by default on Windows). Any model OpenCode lists works,
-including the local `local-inkling` / `local-qwen` providers. Baton talks to
+folder: one of your local clones or an optional scratch folder (`BATON_CHAT_SCRATCH`,
+empty by default). Any model OpenCode lists works,
+including local providers. Baton talks to
 OpenCode over ACP (stdin/stdout, no port) and shows every tool call with its
 arguments and result. In **Confirm** mode reads inside the folder run without
 asking; any write, edit, command or access outside the folder shows the exact
 command or diff with **Allow / Deny** (denied after 10 minutes without an
-answer). **All permissions** is disabled until the isolated container exists.
+answer). **All permissions** is available only for local non-abliterated models
+inside the isolated Docker sandbox (`baton/sandbox.py`).
 See [docs/agents-chat.md](docs/agents-chat.md).
 
 **Agent → Gemini** works the same way over `agy acp`, with a model and its
@@ -470,6 +472,11 @@ thinking level (only the levels that model offers). Baton puts agy in its own
 inside the folder without asking, and Baton cannot add its own rules as it does
 for OpenCode (checked with agy 1.5.17). Use the scratch folder or a clone whose
 changes you can review with `git diff`.
+
+**Agent → Claude Code** and **Agent → Codex** run in Confirm mode over their
+native interactive protocols (`claude -p --input-format stream-json --permission-prompt-tool stdio`
+and `codex app-server`) with per-tool Allow/Deny and session resume persisted
+in SQLite.
 
 ## Configuration
 
@@ -480,6 +487,7 @@ All settings are environment variables (or a `.env` file); see
 |---|---|---|
 | `GITHUB_TOKEN` | — | Read-only for browsing. Marking owner actions done requires Contents: write. Without a token only public repos are visible. |
 | `BATON_OWNER` | token's user | Whose repositories to scan. |
+| `BATON_OWNER_TAG` | `(Owner)` | Checklist prefix for owner-only actions in `STATUS.md` ("Your turn"). Plain names are wrapped automatically (e.g. `Alice` → `(Alice)`). |
 | `BATON_REPOS` | — | Only these repos (`owner/name,...`). |
 | `BATON_EXCLUDE` | — | Skip these repos. |
 | `BATON_LANG` | `en` | `en` or `es`. |
@@ -492,7 +500,8 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_DATA_DIR` | `~/.baton` | Quota readings, tasks, logs and task worktrees. |
 | `BATON_LOCAL_ROOT` | — | Folder that contains your clones (for local tasks). |
 | `BATON_LOCAL_PATHS` | — | `owner/repo=path;...` when a clone isn't found automatically. |
-| `BATON_CHAT_SCRATCH` | `C:\IA\pruebas-opencode` (Windows) | Scratch folder offered by the Agents chat next to your clones (empty = none). |
+| `BATON_CHAT_SCRATCH` | — | Optional scratch folder offered by the Agents chat next to your clones (empty = clones only). |
+| `BATON_SANDBOX_IMAGE` | `baton-opencode-sandbox:latest` | Docker image for isolated Agents chat ("All permissions" mode with local models). |
 | `BATON_LOCAL_MODEL` | — | Model for the Local AI agent (e.g. an Ollama model name). |
 | `BATON_TASK_TIMEOUT_MINUTES` | `60` | Stop a local task after this long. |
 | `BATON_GIT_NAME` / `BATON_GIT_EMAIL` | Baton | Commit identity when the clone has none. |
@@ -501,6 +510,7 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_REVIEW_CLAUDE_MODEL`, `BATON_REVIEW_CLAUDE_EFFORT` | `opus`, `medium` | Model and reasoning effort Claude Code reviews OpenCode and local-AI work with. Empty = the CLI's default. A value the CLI doesn't list falls back to its default. |
 | `BATON_MAX_PARALLEL` | `3` | Local tasks running at the same time on this computer (always one per repository); the rest wait in the queue. |
 | `BATON_SELF_UPDATE` | `1` | Automatically update a native Baton checkout. Set to `0` to disable automatic and manual update checks. |
+| `BATON_SCHEDULED_TASK` | `Baton` | Windows Task Scheduler name restarted after native self-updates. |
 | `CODEX_HOME` | `~/.codex` | Where Codex keeps its logs. |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Where Claude Code keeps its logs (tokens spent). |
 | `BATON_OPENCODE_BIN` | found on PATH | Path to `opencode.exe` if it isn't found. |
@@ -508,6 +518,9 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_OPENCODE_DB` | `~/.local/share/opencode/opencode.db` | OpenCode's database (tokens spent; read-only). |
 | `BATON_OPENCODE_GO_KEY` | — | Optional: your OpenCode Go key, only to show its quota. Type it yourself. |
 | `BATON_ACCESS_KEY` | — | Optional (recommended when running local agents): locks the web UI and API behind a 30-day signed `HttpOnly` session cookie so local processes on `127.0.0.1` cannot call Baton endpoints. `/healthz` stays open. |
+| `BATON_TELEGRAM_BOT_TOKEN`, `BATON_TELEGRAM_CHAT_ID` | — | Optional Telegram Bot credentials for machine alerts and finished/failed task notices. |
+| `BATON_ALERT_WEBHOOK_URL` | — | Optional generic JSON Webhook or ntfy.sh URL for alerts and task notices. |
+| `BATON_NOTIFY_TASKS` | `1` | `1` sends task completion/failure notices via configured channels; `0` sends machine alerts only. |
 
 ## CLI
 

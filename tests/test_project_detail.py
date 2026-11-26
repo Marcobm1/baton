@@ -192,8 +192,8 @@ def test_cached_project_survives_github_outage(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("agent_task", [True, False])
 def test_owner_actions(tmp_path, monkeypatch, agent_task):
-    source = "---\nname: Hub\nstatus: active\nupdated: 2026-11-24\nnext: (Marco) Rate\n---\n"
-    source += "## Siguiente\n- [ ] (Marco) Rate\n  First\n* [ ] (Marco) Rate\n  Second\n"
+    source = "---\nname: Hub\nstatus: active\nupdated: 2026-11-24\nnext: (Owner) Rate\n---\n"
+    source += "## Siguiente\n- [ ] (Owner) Rate\n  First\n* [ ] (Owner) Rate\n  Second\n"
     if agent_task:
         source += "- [ ] Export CSV\n"
     source = source.replace("\n", "\r\n")
@@ -216,7 +216,7 @@ def test_owner_actions(tmp_path, monkeypatch, agent_task):
     for page in (client.get("/").text, client.get("/p/u/hub/sub").text):
         assert "Te toca" in page
         links = re.findall(r'href="(/tasks/new[^"]*)"', page)
-        assert not any("Marco" in url for url in links)
+        assert not any("Owner" in url for url in links)
         assert any("Export+CSV" in url for url in links) == agent_task
         assert ("Lanzar siguiente tarea" in page) == agent_task
     assert project.status.next_task == ("Export CSV" if agent_task else "")
@@ -234,7 +234,7 @@ def test_owner_actions(tmp_path, monkeypatch, agent_task):
     import datetime as dt
     today = dt.date.today().isoformat()
     written = base64.b64decode(writes[0]["content"]).decode()
-    assert f"* [x] {today} (Marco) Rate\r\n" in written
+    assert f"* [x] {today} (Owner) Rate\r\n" in written
     assert f"updated: {today}\r\n" in written
     assert "updated_by: human\r\n" in written
     assert not parse(written).problems
@@ -245,7 +245,7 @@ def test_mark_agent_task_done(tmp_path, monkeypatch):
     import datetime as dt
     from baton.runner import Task, TaskStore
     source = ("---\nname: Hub\nstatus: active\nupdated: 2026-11-24\nnext: Future phase\n---\n"
-              "## Next\n- [ ] Future phase\n  Nothing left.\n- [ ] (Marco) Rate it\n"
+              "## Next\n- [ ] Future phase\n  Nothing left.\n- [ ] (Owner) Rate it\n"
               "- [ ] Ranking: export CSV\n- [x] Old\n").replace("\n", "\r\n")
     project = Project("u/hub", "u/hub", "STATUS.md", "main", False, "", None, parse(source))
     writes = []
@@ -295,7 +295,7 @@ def test_mark_agent_task_done(tmp_path, monkeypatch):
 
 def test_task_done_in_another_repository(tmp_path, monkeypatch):
     from baton.project_detail import target_repo
-    assert target_repo("Build it.\nRepo: Marcobm1/proyectos\nCheck.") == ("Marcobm1/proyectos", "Build it.\nCheck.")
+    assert target_repo("Build it.\nRepo: owner/hub\nCheck.") == ("owner/hub", "Build it.\nCheck.")
     assert target_repo("no repo here") == ("", "no repo here")
 
     baton_source = ("---\nname: Baton\nstatus: active\nupdated: 2026-11-24\n---\n## Next\n"

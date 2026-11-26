@@ -30,7 +30,8 @@ Keep drafts within the task form limits (200 characters for the title and
 
 ## Owner actions
 
-An unchecked title starting with `(Marco)` belongs in **Your turn**. It counts
+An unchecked title starting with `(Owner)` (configurable via `BATON_OWNER_TAG`)
+belongs in **Your turn**. It counts
 toward progress. Only an agent task can become a launch draft. **Done** posts
 the selected Markdown line and the Git blob ID of the displayed STATUS.md
 with the form's CSRF token. Baton verifies that line is still an open owner

@@ -126,7 +126,7 @@ def test_windows_restart_waits_for_own_pid(tmp_path, monkeypatch):
     assert query.call_args.args[0] == ["schtasks", "/Query", "/TN", "Baton"]
     script = spawn.call_args.args[0][-1]
     assert f"Wait-Process -Id {os.getpid()}" in script
-    assert "schtasks /Run /TN Baton" in script
+    assert "schtasks /Run /TN 'Baton'" in script
     assert "CommandLine" not in script and "baton serve" not in script
 
 

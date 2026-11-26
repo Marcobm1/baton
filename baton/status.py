@@ -35,7 +35,7 @@ from typing import Any
 
 import yaml
 
-from .project_detail import sections
+from .project_detail import DEFAULT_OWNER_TAG, normalize_owner_tag, sections
 
 STATUSES = ("active", "planned", "paused", "done")
 PRIORITIES = ("high", "medium", "low")
@@ -64,17 +64,18 @@ class Status:
     tasks_done: int = 0
     tasks_total: int = 0
     problems: list[str] = field(default_factory=list)
+    owner_tag: str = DEFAULT_OWNER_TAG
 
     @cached_property
     def sections(self):
-        return sections(self.body)
+        return sections(self.body, owner_tag=self.owner_tag)
 
     @property
     def next_task(self) -> str:
         """First pending agent checklist item, falling back to an agent front-matter title."""
         upcoming = self.sections.upcoming
         text = upcoming[0].title if upcoming else self.next
-        if text.startswith("(Marco)"):
+        if self.owner_tag and text.startswith(self.owner_tag):
             return ""
         text = re.sub(r"[`*_]", "", text).strip()
         return text
@@ -125,7 +126,7 @@ def _as_date(value: Any) -> dt.date | None:
         return None
 
 
-def parse(text: str, fallback_name: str = "") -> Status:
+def parse(text: str, fallback_name: str = "", *, owner_tag: str = DEFAULT_OWNER_TAG) -> Status:
     """Parse a STATUS.md. Never raises: problems are collected in .problems."""
     problems: list[str] = []
     meta: dict[str, Any] = {}
@@ -195,6 +196,7 @@ def parse(text: str, fallback_name: str = "") -> Status:
         tasks_done=sum(1 for b in boxes if b.lower() == "x"),
         tasks_total=len(boxes),
         problems=problems,
+        owner_tag=normalize_owner_tag(owner_tag),
     )
 
 

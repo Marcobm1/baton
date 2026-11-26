@@ -125,6 +125,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         github=hub, auto_merge=settings.auto_merge, quota_left=quota_left,
         max_parallel=settings.max_parallel,
         review_models={"claude-code": (settings.review_claude_model, settings.review_claude_effort)},
+        owner_tag=settings.owner_tag,
     )
     runner.on_finished = notifier.notify_task
 

@@ -99,10 +99,12 @@ class Runner:
                  auto_merge: bool = False,
                  quota_left: Callable[[str], float | None] | None = None,
                  max_parallel: int = 3,
-                 review_models: dict[str, tuple[str, str]] | None = None):
+                 review_models: dict[str, tuple[str, str]] | None = None,
+                 owner_tag: str = "(Owner)"):
         self.store = store
         # Reviewer -> (model, effort); "" keeps the CLI's own default.
         self.review_models = review_models or {}
+        self.owner_tag = owner_tag
         self.max_parallel = max(1, max_parallel)   # local tasks at once on this computer
         self.repos = repos
         self.timeout = timeout
@@ -394,7 +396,7 @@ class Runner:
             choices = self.model_choices()
         except Exception:  # never let model discovery stop a task
             choices = ""
-        return build_prompt(task, choices=choices)
+        return build_prompt(task, choices=choices, owner_tag=self.owner_tag)
 
     # --------------------------------------------------------- execution loop
     def _run(self, task: Task) -> None:

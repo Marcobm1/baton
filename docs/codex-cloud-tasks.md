@@ -37,7 +37,7 @@ mention in the issue body would only establish that GitHub accepted the issue.
 ## Smoke test
 
 Run this in a test repository with a disposable branch and a connected GitHub
-account. Marco can set up access in Codex and use the intended Baton GitHub
+account. You can set up access in Codex and use the intended Baton GitHub
 identity for the API test. Keep credentials in their existing clients. Use a
 small request with an observable diff, such as adding `codex-trigger-check`
 to a test file on the disposable branch, and leave any resulting PR unmerged.

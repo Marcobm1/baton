@@ -271,7 +271,9 @@ class Hub:
                     private=bool(repo.get("private")),
                     html_url=html,
                     pushed_at=_parse_time(repo.get("pushed_at")),
-                    status=status_mod.parse(text, fallback_name=fallback),
+                    status=status_mod.parse(
+                        text, fallback_name=fallback, owner_tag=self.settings.owner_tag
+                    ),
                 )
             )
         return projects
@@ -315,7 +317,7 @@ class Hub:
         today = dt.date.today().isoformat()
         lines[line] = re.sub(r"\[ \]\s*", f"[x] {today} ", lines[line], count=1)
         body = "".join(lines)
-        remaining = [item.title for item in sections(body).upcoming]
+        remaining = [item.title for item in sections(body, owner_tag=status.owner_tag).upcoming]
         nxt = remaining[0] if remaining else ""
         if nxt and (": " in nxt or nxt[0] in "\"'[{&*!|>%@`#"):
             nxt = json.dumps(nxt, ensure_ascii=False)        # keep the YAML valid

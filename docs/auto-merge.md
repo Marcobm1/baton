@@ -1,7 +1,7 @@
 # Auto-merge of local tasks (2026-11-23, rules changed 2026-11-25)
 
-Marco asked for tasks sent from Baton to merge by themselves. On 2026-11-25 he
-changed the rules: Claude Code, Codex and Gemini (Antigravity CLI) now run
+Tasks sent from Baton can merge by themselves. Under the 2026-11-25 policy,
+Claude Code, Codex and Gemini (Antigravity CLI) run
 with **full permissions** and their work merges **without any review**; only
 OpenCode and local-AI work is reviewed, always by Claude Code.
 
@@ -21,24 +21,24 @@ OpenCode and local-AI work is reviewed, always by Claude Code.
   tests always leave the PR open (tests are not a review, so they still count
   for Claude Code, Codex and Gemini).
 - **No tests.** Before 2026-11-25 a Claude Code or Codex task in a repository
-  without tests was reviewed by the *other* one. Now it merges directly: Marco
-  trusts these three agents with full permissions anyway, and the extra review
-  cost quota and time on every such task.
+  without tests was reviewed by the *other* one. Now it merges directly: these
+  three agents already run with full permissions, and the extra review cost
+  quota and time on every such task.
 - **Reviewer for OpenCode/local AI:** always Claude Code (before: whichever of
   Claude Code and Codex had more 5-hour quota left). If Claude Code isn't
   installed or its 5-hour window shows 0 % left, the PR stays open.
-- **Reviewer model:** Opus at medium effort by default (`opus` is Opus 5.5 on
-  Marco's PC). `BATON_REVIEW_CLAUDE_MODEL` / `_EFFORT` change it; set them
-  empty for the CLI's own default. A model or effort the CLI doesn't list is
-  ignored (CLI default) rather than making the review fail and leaving the PR
-  open. The model and effort are saved on the task and shown next to
-  "Review by". The Codex reviewer settings were removed with Codex reviews.
+- **Reviewer model:** Opus at medium effort by default (`BATON_REVIEW_CLAUDE_MODEL`
+  / `_EFFORT` change it; set them empty for the CLI's own default). A model or
+  effort the CLI doesn't list is ignored (CLI default) rather than making the
+  review fail and leaving the PR open. The model and effort are saved on the
+  task and shown next to "Review by". The Codex reviewer settings were removed
+  with Codex reviews.
 - **The reviewer keeps limited permissions** (`--permission-mode auto`): it
   reads work by a less trusted model, which could hide instructions for it in
   the files (prompt injection), so it does not get full permissions.
-- **Fixes.** Marco chose "the reviewer fixes it" over "leave it open": the
-  reviewer edits the same worktree, Baton commits `Review fixes by …`, pushes,
-  and the tests must pass again on the new commit. One review round only.
+- **Fixes.** The reviewer fixes issues directly rather than leaving the PR open:
+  the reviewer edits the same worktree, Baton commits `Review fixes by …`,
+  pushes, and the tests must pass again on the new commit. One review round only.
 - **Verdict.** The review starts with `Verdict: APPROVE`, `FIXED` or `BLOCK`.
   `BLOCK`, no verdict, a crash or a timeout leave the PR open. The review is
   posted as a PR comment either way.
@@ -47,7 +47,7 @@ OpenCode and local-AI work is reviewed, always by Claude Code.
   method: a merge commit, like the rest of the history. With auto-merge on,
   PRs are opened as ready (GitHub can't merge drafts).
 
-## What full permissions mean (the trade-off Marco accepted)
+## What full permissions mean (the accepted trade-off)
 
 The agent still starts inside the task's own git worktree, and Baton still
 commits, pushes and merges itself. But with full permissions nothing stops the
@@ -57,7 +57,7 @@ sandbox; Claude Code loses the auto-mode classifier; Gemini runs every tool
 without asking (agy still blocks its own system command denylist). In exchange
 tasks never stall on a permission and can install packages, run servers or
 search the web. Send these agents only tasks you wrote; content from outside
-(web pages, other people's repositories, honeypot data) belongs with OpenCode
+(web pages, other people's repositories, untrusted data) belongs with OpenCode
 or local AI, which keep their limits and get a review. Abliterated local models
 never get full permissions.
 
@@ -68,7 +68,7 @@ never get full permissions.
 - **Review in GitHub Actions** (`@claude`) would spend Actions minutes; the
   review runs locally like the task itself.
 - **Keep reviewing trusted agents in repositories without tests**: safer, but
-  Marco preferred speed and quota for the agents he already trusts.
+  trades away speed and quota for agents that are already trusted.
 
 ## Limits
 

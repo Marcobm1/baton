@@ -31,8 +31,9 @@ the service while it is updating.
 
 The updater records validation in `updates.jsonl` before requesting a graceful
 Uvicorn shutdown. On Windows a hidden PowerShell process outside the server
-job waits for that specific PID and for the scheduler to report the Baton
-task ready, then calls `schtasks /Run /TN Baton`. A separate restart log in
+job waits for that specific PID and for the scheduler to report the configured
+task (`BATON_SCHEDULED_TASK`, default `Baton`) ready, then calls
+`schtasks /Run /TN '<task>'`. A separate restart log in
 the data directory captures helper errors if the server is already down.
 On other native platforms the process replaces itself with the same serve
 command. At startup the new process records its commit as running, so a

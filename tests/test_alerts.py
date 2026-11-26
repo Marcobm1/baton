@@ -114,15 +114,15 @@ def test_offline_unusual_gpu_network_and_new_login_rules(tmp_path):
     assert engine.active_alerts() == []
 
     # 4. Login sessions: first sighting seeds silently; unseen user@host fires immediately until acked.
-    assert engine.evaluate([_card(logins=[{"user": "marco", "host": "local"}])], now=t + 300) == []
+    assert engine.evaluate([_card(logins=[{"user": "alice", "host": "local"}])], now=t + 300) == []
     ev_login = engine.evaluate(
-        [_card(logins=[{"user": "marco", "host": "local"}, {"user": "guest", "host": "10.0.0.9"}])],
+        [_card(logins=[{"user": "alice", "host": "local"}, {"user": "guest", "host": "10.0.0.9"}])],
         now=t + 330,
     )
     assert len(ev_login) == 1 and ev_login[0]["kind"] == "login_unusual"
     assert "guest@10.0.0.9" in ev_login[0]["message"]
-    # Even if guest logs out, one-shot login alert stays open until Marco acknowledges it!
-    engine.evaluate([_card(logins=[{"user": "marco", "host": "local"}])], now=t + 360)
+    # Even if guest logs out, one-shot login alert stays open until the owner acknowledges it!
+    engine.evaluate([_card(logins=[{"user": "alice", "host": "local"}])], now=t + 360)
     assert len(engine.active_alerts()) == 1
     assert engine.acknowledge(ev_login[0]["id"], now=t + 390) is True
     assert engine.active_alerts() == []

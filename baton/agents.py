@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from .ping import _NO_WINDOW, agent_env, find_agy, find_claude, find_codex
+from .project_detail import DEFAULT_OWNER_TAG, normalize_owner_tag
 from .task_models import catalog
 from .task_store import Task
 
@@ -138,9 +139,9 @@ def agy_events(output: str) -> tuple[str, dict]:
     return model, result
 
 
-NEXT_TASK_REQUEST = (
+NEXT_TASK_REQUEST_TEMPLATE = (
     "When you finish a task, mark its checklist item complete in the project's STATUS.md. "
-    "Prefix owner-only actions with (Marco). Find links in tasks.json or on GitHub yourself. "
+    "Prefix owner-only actions with {owner_tag}. Find links in tasks.json or on GitHub yourself. "
     "Prepare the first unchecked agent task under ## Next so an agent can do it independently. Reuse or add "
     "a short title and an indented description of the work and how to check it. "
     "A provisional draft is fine. Set the front matter next field to that title. "
@@ -148,6 +149,7 @@ NEXT_TASK_REQUEST = (
     "description. If this task belongs in another repository, say so in your report instead "
     "of changing files outside this one."
 )
+NEXT_TASK_REQUEST = NEXT_TASK_REQUEST_TEMPLATE.format(owner_tag=DEFAULT_OWNER_TAG)
 
 RECOMMEND_REQUEST = (
     "In that description add one line `Recommended: <agent>, <model>, <effort>` naming the "
@@ -158,11 +160,12 @@ RECOMMEND_REQUEST = (
 )
 
 
-def next_task_request(choices: str = "") -> str:
+def next_task_request(choices: str = "", *, owner_tag: str = DEFAULT_OWNER_TAG) -> str:
     """The next-task instructions, with the recommendation line when choices are known."""
+    base = NEXT_TASK_REQUEST_TEMPLATE.format(owner_tag=normalize_owner_tag(owner_tag))
     if not choices:
-        return NEXT_TASK_REQUEST
-    return f"{NEXT_TASK_REQUEST} {RECOMMEND_REQUEST.format(choices=choices)}"
+        return base
+    return f"{base} {RECOMMEND_REQUEST.format(choices=choices)}"
 
 
 SUMMARY_REQUEST = (
@@ -295,7 +298,7 @@ def format_model_choices(
     return " | ".join(parts)
 
 
-def build_prompt(task: Task, *, choices: str = "") -> str:
+def build_prompt(task: Task, *, choices: str = "", owner_tag: str = DEFAULT_OWNER_TAG) -> str:
     return PROMPT.format(
         repo=task.repo,
         branch=task.branch,
@@ -303,7 +306,7 @@ def build_prompt(task: Task, *, choices: str = "") -> str:
         agent=task.agent,
         title=task.title,
         summary_request=SUMMARY_REQUEST,
-        next_task_request=next_task_request(choices),
+        next_task_request=next_task_request(choices, owner_tag=owner_tag),
         details=task.details or "(no more details)",
     )
 

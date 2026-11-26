@@ -67,6 +67,6 @@ Owner decisions (2026-11-25):
 
 ---
 
-## Phase 4 — Open-Source Release Cleanup (Deferred)
-- Make `(Marco)`, `C:\IA\pruebas-opencode`, and Windows scheduled task `"Baton"` configurable (`BATON_OWNER_TAG`, `BATON_CHAT_SCRATCH`, `BATON_SCHEDULED_TASK`) with generic defaults.
-- Scrub personal references from `README.md`, `docs/`, and tests before public release.
+## Phase 4 — Open-Source Release Cleanup (Completed)
+- Made owner tag (`BATON_OWNER_TAG`, default `(Owner)`), chat scratch folder (`BATON_CHAT_SCRATCH`, default empty), and Windows scheduled task (`BATON_SCHEDULED_TASK`, default `Baton`, validated against shell/PowerShell injection) configurable with generic defaults.
+- Scrubbed personal references from code, `README.md`, `docs/`, and tests for a clean open-source release.

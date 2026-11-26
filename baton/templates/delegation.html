@@ -2,15 +2,20 @@
 {% block refresh %}{% endblock %}
 {% block title %}{{ t.baton_task if job.task_id else t.delegation }} #{{ job.id }} · {{ title }}{% endblock %}
 {% block main %}
-<a href="/ranking?origin={{ origin }}&amp;view={{ view }}">{{ t.ranking }}</a>
-<h1>{{ t.baton_task if job.task_id else t.delegation }} #{{ job.id }} · {{ job.model or t.unknown_model }}</h1>
-<p>{{ job.started|when }} · {{ t.baton_task if job.task_id else job.kind }} · {{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}</p>
-{% if job.task_id %}<p><a href="/tasks/{{ job.task_id }}">{{ job.title }}</a> · {{ t.merged if job.merged else t.not_merged }}</p>{% endif %}
-<h2>{{ t.objective }}</h2>
-<pre class="log">{{ job.prompt }}</pre>
-<h2>{{ t.result }}</h2>
-<pre class="log">{{ job.result or '' }}</pre>
-<h2>{{ t.agent_review }}</h2>
+<p><a href="/ranking?origin={{ origin }}&amp;view={{ view }}">← {{ t.ranking }}</a></p>
+<h2>{{ t.baton_task if job.task_id else t.delegation }} #{{ job.id }} · {{ job.model or t.unknown_model }}</h2>
+<p class="muted small">{{ job.started|when }} · {{ t.baton_task if job.task_id else job.kind }} · {{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}{% if job.task_id %} · <a href="/tasks/{{ job.task_id }}">{{ job.title }}</a> · {{ t.merged if job.merged else t.not_merged }}{% endif %}</p>
+<details class="inline-help">
+  <summary>{{ t.objective }}</summary>
+  <pre class="log">{{ job.prompt }}</pre>
+</details>
+{% if job.result %}
+<details class="inline-help">
+  <summary>{{ t.result }}</summary>
+  <pre class="log">{{ job.result }}</pre>
+</details>
+{% endif %}
+<h3>{{ t.agent_review }}</h3>
 {% if job.report %}<pre class="log">{{ job.report }}</pre>{% endif %}
 {% if reviews.agent %}
 <p>{{ agents[reviews.agent.reviewer] }}
@@ -20,7 +25,7 @@
 {% elif estimate[0] is not none %}
 <p><b>{{ estimate[0] }}/10</b> · {{ t.estimated }} · {{ t[estimate[1]] }}</p>
 {% else %}<p class="muted">{{ t.insufficient }}</p>{% endif %}
-<h2 id="your-score">{{ t.human_review }}</h2>
+<h3 id="your-score">{{ t.human_review }}</h3>
 <p>{{ t.scale }}</p>
 <form class="task-form" method="post" action="/ranking/{{ job.id }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">

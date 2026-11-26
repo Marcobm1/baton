@@ -65,7 +65,7 @@
         <button type="submit" class="btn-link">{{ t.auth_sign_out }}</button>
       </form>
       {% endif %}
-      <p class="side-meta">Baton {{ version }} · <a href="https://github.com/Marcobm1/baton">GitHub</a></p>
+      <p class="side-meta"><a href="https://github.com/Marcobm1/baton">GitHub</a></p>
     </div>
   </aside>
 
@@ -80,7 +80,7 @@
 
   <nav class="tab-bar" aria-label="{{ t.nav_panel }}">
     {% for key, href, label in sections %}
-    <a href="{{ href }}" {% if nav == key %}aria-current="page"{% endif %}>{{ icon(key) }}<span>{{ label }}</span></a>
+    <a href="{{ href }}" {% if nav == key %}aria-current="page"{% endif %}>{{ icon(key) }}<span>{{ label }}</span>{% if key == 'machines' and alert_n %}<span class="tab-badge" data-alert-badge>{{ alert_n }}</span>{% endif %}</a>
     {% endfor %}
   </nav>
 </div>

@@ -22,7 +22,6 @@ async def quotas_page(request: Request, ctx: AppContext = CTX):
         request, "quotas.html", "quotas",
         go_error=go_error,
         gemini_error=gemini_error,
-        updater=ctx.updater,
         providers=quotas.by_provider(
             quotas.all_windows(ctx.settings.data_dir, ctx.settings.codex_home)
         ),
@@ -41,4 +40,4 @@ async def update_now(request: Request, csrf: str = Form(""), ctx: AppContext = C
     if ctx.updater.enabled:
         ctx.updater.request_manual()
         ctx.update_requested.set()
-    return RedirectResponse("/quotas#self-update", status_code=303)
+    return RedirectResponse("/machines#self-update", status_code=303)

@@ -47,7 +47,8 @@ def test_task_summary_page_and_legacy_history(tmp_path):
     )]), encoding="utf-8")
     store = TaskStore(tmp_path)
     client = TestClient(create_app(Settings(data_dir=tmp_path, lang="es")))
-    assert "No se guardó un resumen" in client.get("/tasks/test").text
+    before = client.get("/tasks/test").text
+    assert "sin cambios" in before and "Resumen de la tarea" not in before
     task = store.get("test")
     assert task is not None
     task.summary = "Checked **both paths**. <script>alert(1)</script>"

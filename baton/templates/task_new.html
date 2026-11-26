@@ -21,7 +21,6 @@
 
   <fieldset class="wide where">
     <legend>{{ t.where_title }}</legend>
-    <p class="muted small">{{ t.where_local_help }}</p>
     <div class="choices">
       {% set first = namespace(done=false) %}
       {% for key in ['claude-code', 'codex', 'gemini', 'opencode', 'local'] %}
@@ -31,7 +30,6 @@
         <input type="radio" name="where" value="local:{{ key }}" {% if why %}disabled{% elif pick and not first.done %}checked{% set first.done = true %}{% endif %}>
         <span class="c-title">{{ agents[key] }}{% if key == initial.agent == "local" and initial.model %} · {{ initial.model }}{% endif %}</span>
         <span class="small muted">{% if why %}{{ why }}{% else %}{{ t['agent_help_' ~ key|replace('-', '_')] }}{% endif %}</span>
-
       </label>
       {% endfor %}
     </div>
@@ -56,11 +54,14 @@
       <p class="warn small" id="oc-payg-warning" {% if not oc_payg_initial %}hidden{% endif %}>{{ t.oc_payg_warning }}</p>
     </div>
     {% endif %}
-    <p class="muted small">{{ t.auto_merge_option if auto_merge else t.open_pr_option }}</p>
     <label id="priority-settings">{{ t.priority }}
       <select name="priority">{% for p in priorities %}<option value="{{ p }}" {% if p == 'normal' %}selected{% endif %}>{{ t['prio_' ~ p] }}</option>{% endfor %}</select>
     </label>
-    <p class="muted small">{{ t.priority_help|format(max_parallel) }}</p>
+    <details class="inline-help small muted">
+      <summary>{{ t.merge_queue_help_label }}</summary>
+      <p>{{ t.auto_merge_option if auto_merge else t.open_pr_option }}</p>
+      <p>{{ t.priority_help|format(max_parallel) }}</p>
+    </details>
 
     {% if cloud %}
     <details class="cloud" {% if initial.agent == "cloud" %}open{% endif %}>

@@ -74,16 +74,25 @@
   {% elif not oc.folders %}
   <p class="warn">{{ t.ag_no_folders }}</p>
   {% else %}
-  <fieldset class="ag-mode">
-    <legend class="label">{{ t.ag_mode }}</legend>
-    <label><input type="radio" name="ag-mode" value="confirm" checked data-mode>
-      <span><strong>{{ t.ag_confirm }}</strong> <span class="muted small">{{ t['ag_confirm_help' ~ suffix] }}</span></span></label>
-    <label class="ag-full{% if oc.sandbox_ready %} ag-full-ready{% endif %}"><input type="radio" name="ag-mode" value="full"{% if not oc.sandbox_ready %} disabled{% endif %} data-mode>
-      <span><strong>{{ t.ag_full }}</strong> <span class="small" data-full-note>{{ t.ag_full_help if oc.sandbox_ready else t.ag_full_off }}</span></span></label>
-  </fieldset>
+  <div class="ag-mode-bar">
+    <div class="ag-mode-pills" role="radiogroup" aria-label="{{ t.ag_mode }}">
+      <label class="ag-pill"><input type="radio" name="ag-mode" value="confirm" checked data-mode><span>{{ t.ag_confirm }}</span></label>
+      <label class="ag-pill ag-full{% if oc.sandbox_ready %} ag-full-ready{% endif %}"><input type="radio" name="ag-mode" value="full"{% if not oc.sandbox_ready %} disabled{% endif %} data-mode><span>{{ t.ag_full }}</span></label>
+    </div>
+    <details class="ag-mode-info">
+      <summary class="small muted" title="{{ t.ag_mode }}">?</summary>
+      <div class="ag-mode-info-body small muted">
+        <p><strong>{{ t.ag_confirm }}:</strong> {{ t['ag_confirm_help' ~ suffix] }}</p>
+        <p><strong>{{ t.ag_full }}:</strong> <span data-full-note>{{ t.ag_full_help if oc.sandbox_ready else t.ag_full_off }}</span></p>
+      </div>
+    </details>
+  </div>
   <p class="ag-full-warn small" role="alert" data-full-warn hidden>{{ t.ag_full_warn }}</p>
   <p class="warn small" data-payg-warn hidden>{{ t.oc_payg_warning }}</p>
-  <p class="muted small ag-fixed" data-fixed hidden><span data-fixed-text></span> <span class="ag-full-badge" data-full-badge hidden>{{ t.ag_full_badge }}</span></p>
+  <div class="muted small ag-fixed" data-fixed hidden>
+    <span><span data-fixed-text></span> <span class="ag-full-badge" data-full-badge hidden>{{ t.ag_full_badge }}</span></span>
+    <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
+  </div>
   <div class="chat-log" data-log aria-live="polite">
     <p class="muted chat-empty" data-empty>{{ t['ag_empty' ~ suffix] }}</p>
   </div>
@@ -91,7 +100,6 @@
     <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
     <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
   </form>
-  <p class="muted small chat-hint">{{ t.ag_hint }}</p>
   {% endif %}
 </section>
 <script id="agents-strings" type="application/json">{{ js|tojson }}</script>
@@ -155,7 +163,6 @@
     <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
     <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
   </form>
-  <p class="muted small chat-hint">{{ t.chat_hint }}</p>
   {% endif %}
 </section>
 <script id="chat-strings" type="application/json">{{ js|tojson }}</script>

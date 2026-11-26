@@ -81,6 +81,12 @@ class ChecklistItem:
     def owner_action(self) -> bool:
         return bool(self.owner_tag) and self.title.startswith(self.owner_tag)
 
+    @property
+    def display_title(self) -> str:
+        if self.owner_action:
+            return self.title[len(self.owner_tag):].strip()
+        return self.title
+
     def __post_init__(self):
         if not self.recommended:
             self.recommended, self.detail = recommendation(self.detail)

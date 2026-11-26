@@ -37,7 +37,7 @@ def test_simulated_claude_errors(detail, reason, advice):
     log = f"== Running Claude Code…\n{reason}\n== Agent finished (exit code 1)\n!! exit code 1"
     html = detail("failed", log, model="Fable")
     overview = html.split("<details")[0]
-    assert advice in overview and "no comunicó comprobaciones" in overview
+    assert advice in overview
     assert reason in unescape(overview)
 
 
@@ -52,7 +52,7 @@ def test_old_success_and_remote_branch(detail):
 
 def test_queue_and_running(detail):
     html = detail("queued", base="main")
-    assert "Pendiente de iniciar" in html and "copia local" in html and "main" in html
+    assert "en cola" in html and "<code>main</code>" in html
     html = detail("running", steps=["12:00:00 Running Claude Code…"])
     assert "12:00:00 Running" in html and "no ha comunicado su progreso" in html
     html = detail("running", "== Running Claude Code…\nProgress: Reading tests.\n")
@@ -65,7 +65,7 @@ def test_old_record_loads_without_optional_fields(tmp_path):
         id="old", repo="x/demo", title="Review", details="", agent="codex",
         where="local", created_at=0, status="no-changes")]))
     html = client.get("/tasks/old").text
-    assert "sin cambios" in html and "no comunicó comprobaciones" in html
+    assert "sin cambios" in html and "no comunicó comprobaciones" not in html
 
 def test_git_failure_after_claude_success(detail):
     log = ("== Running Claude Code…\nSummary: Documented the usage limit.\n"

@@ -140,7 +140,7 @@ def test_update_button_csrf(tmp_path, monkeypatch, checkout):
     update.repo = "owner/baton"
     monkeypatch.setattr(web, "Runner", lambda *args, **kwargs: update.runner)
     with TestClient(create_app(Settings(data_dir=tmp_path, codex_home=tmp_path, lang="es"))) as client:
-        html = client.get("/quotas").text
+        html = client.get("/machines").text
         assert "Actualizar ahora" in html and update.running[:12] in html
         assert checked.wait(5)
         checked.clear()
@@ -153,7 +153,8 @@ def test_update_button_csrf(tmp_path, monkeypatch, checkout):
         assert client.post("/self-update").status_code == 403
         assert client.post("/self-update", data={"csrf": token},
                            headers={"origin": "https://example.org"}).status_code == 403
-        assert client.post("/self-update", data={"csrf": token}, follow_redirects=False).status_code == 303
+        resp = client.post("/self-update", data={"csrf": token}, follow_redirects=False)
+        assert resp.status_code == 303 and resp.headers["location"] == "/machines#self-update"
         assert checked.wait(5)
     assert update.check.call_count >= 2
 

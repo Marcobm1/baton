@@ -4,72 +4,46 @@
 {% block refresh %}<noscript><meta http-equiv="refresh" content="30"></noscript>{% endblock %}
 {% block styles %}<link rel="stylesheet" href="/static/models.css?v={{ css_v }}">{% endblock %}
 {% block main %}
-{% macro meter(label, key) -%}
-<div class="m-row lv-{{ view.levels.get(key, 'ok') }}" data-lv="{{ key }}">
-  <div class="q-line"><span class="label">{{ label }}</span><b data-k="{{ key }}">{{ view.show[key] }}</b></div>
-  {% if (key ~ '_w') in view.show %}
-  <div class="bar thin"><span class="fill" data-w="{{ key }}_w" style="width: {{ [view.show[key ~ '_w'], 100]|min|round(1) }}%"></span></div>
-  {% endif %}
-</div>
-{%- endmacro %}
 <section class="models-page" data-models>
-<h2>{{ t.models_nav }}</h2>
-<p class="muted small">{{ t.models_help }}</p>
+<div class="page-head">
+  <h2>{{ t.models_nav }}</h2>
+  <a class="btn ghost small" href="/machines">{{ t.m_machine }} ↗</a>
+</div>
 {% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
 
-<div class="m-grid">
-  <article class="quota m-card">
-    <div class="q-head"><strong>{{ t.m_machine }}</strong>
-      <span class="q-kind">{{ view.machine.host }} · {{ view.machine.cores }} {{ t.m_cores }}</span></div>
-    {{ meter(t.m_cpu, 'cpu') }}
-    {{ meter(t.m_ram, 'ram') }}
-    {{ meter(t.m_disk_free, 'disk') }}
-    <p class="muted small">{{ t.m_uptime }}: <span data-k="uptime">{{ view.show.uptime }}</span></p>
-  </article>
-
-  <article class="quota m-card">
-    {% if view.gpu %}
-    <div class="q-head"><strong>{{ t.m_gpu }}</strong><span class="q-kind">{{ view.gpu.name }}</span></div>
-    {{ meter(t.m_gpu_load, 'gpu_load') }}
-    {{ meter(t.m_vram, 'vram') }}
-    {{ meter(t.m_temp, 'temp') }}
-    {{ meter(t.m_power, 'power') }}
-    {% else %}
-    <div class="q-head"><strong>{{ t.m_gpu }}</strong></div>
-    <p class="muted">{{ t.m_no_gpu }}</p>
-    {% endif %}
-  </article>
-
-  {% if view.gpu %}
-  <article class="quota m-card">
-    <div class="q-head"><strong>{{ t.m_budget }}</strong><span class="q-kind" data-k="vram">{{ view.show.vram }}</span></div>
-    <div class="bar m-budget"><span class="fill" data-w="vram_w" style="width: {{ [view.show.vram_w, 100]|min|round(1) }}%"></span></div>
-    {% if view.budget.parts %}
-    <ul class="m-parts">
-      {% for part in view.budget.parts %}<li><span>{{ part.name }}</span><b>{{ part.gb }} GiB</b></li>{% endfor %}
-    </ul>
-    {% else %}<p class="muted small">{{ t.m_budget_none }}</p>{% endif %}
-    <p class="muted small">{{ t.m_budget_help }}</p>
-  </article>
-  {% endif %}
-</div>
-
-<div class="m-section-head">
-  <h2 class="m-title">{{ t.m_models }}</h2>
-  {% if view.groups|length > 1 %}
-  <div class="chips m-filters" role="group" aria-label="{{ t.m_family_filter }}" data-family-filters>
-    <button type="button" class="chip" data-family-filter="all" aria-pressed="true" aria-current="true">
-      {{ t.m_all_families }} <span class="count">{{ view.models|length }}</span>
-    </button>
-    {% for g in view.groups %}
-    <button type="button" class="chip" data-family-filter="{{ g.key }}" aria-pressed="false">
-      {% if g.active %}<span class="m-dot" aria-hidden="true"></span>{% endif %}
-      {{ g.label }} <span class="count">{{ g.models|length }}</span>
-    </button>
-    {% endfor %}
+{% if view.gpu %}
+<article class="quota m-vram-strip">
+  <div class="m-vram-top">
+    <strong>{{ view.gpu.name }}</strong>
+    <div class="m-vram-meta small">
+      <span class="lv-{{ view.levels.get('vram', 'ok') }}" data-lv="vram">{{ t.m_vram }} <b data-k="vram">{{ view.show.vram }}</b></span>
+      <span class="lv-{{ view.levels.get('temp', 'ok') }}" data-lv="temp"><b data-k="temp">{{ view.show.temp }}</b></span>
+      <span class="lv-{{ view.levels.get('gpu_load', 'ok') }}" data-lv="gpu_load">{{ t.m_gpu }} <b data-k="gpu_load">{{ view.show.gpu_load }}</b></span>
+    </div>
+  </div>
+  <div class="bar thin m-budget"><span class="fill" data-w="vram_w" style="width: {{ [view.show.vram_w, 100]|min|round(1) }}%"></span></div>
+  {% if view.budget.parts %}
+  <div class="m-vram-parts small muted">
+    {% for part in view.budget.parts %}<span>{{ part.name }} <b>{{ part.gb }} GiB</b></span>{% endfor %}
   </div>
   {% endif %}
+</article>
+{% endif %}
+
+{% if view.groups|length > 1 %}
+<div class="chips m-filters" role="group" aria-label="{{ t.m_family_filter }}" data-family-filters>
+  <button type="button" class="chip" data-family-filter="all" aria-pressed="true" aria-current="true">
+    {{ t.m_all_families }} <span class="count">{{ view.models|length }}</span>
+  </button>
+  {% for g in view.groups %}
+  <button type="button" class="chip" data-family-filter="{{ g.key }}" aria-pressed="false">
+    {% if g.active %}<span class="m-dot" aria-hidden="true"></span>{% endif %}
+    {{ g.label }} <span class="count">{{ g.models|length }}</span>
+  </button>
+  {% endfor %}
 </div>
+{% endif %}
+
 {% if not view.config.found %}<p class="muted">{{ t.m_no_config.format(path=view.config.path) }}</p>{% endif %}
 {% if view.config.problems %}
 <div class="warn"><b>{{ t.m_problems }}</b>
@@ -99,25 +73,20 @@
         <span class="pill m-{{ m.status }}">{{ t['m_status_' ~ m.status] }}</span>
       </div>
       {% if m.description %}<p class="c-summary">{{ m.description }}</p>{% endif %}
-      <dl class="m-facts">
-        <div><dt class="label">{{ t.m_port }}</dt><dd>{{ m.port }}</dd></div>
-        <div><dt class="label">{{ t.m_vram_est }}</dt><dd>{{ view.show[p ~ 'vram'] }}</dd></div>
-        {% if m.ctx %}<div><dt class="label">{{ t.m_ctx }}</dt><dd>{{ view.show[p ~ 'ctx'] }}</dd></div>{% endif %}
-        <div class="wide"><dt class="label">{{ t.m_file }}</dt>
-          <dd><code>{{ m.file_name }}</code>{% if not m.file_ok %} <span class="stale">{{ t.m_file_missing }}</span>{% endif %}</dd></div>
-      </dl>
+      <p class="m-specs small muted" title="{{ m.file_name }}">
+        {{ view.show[p ~ 'vram'] }}{% if m.ctx %} · {{ view.show[p ~ 'ctx'] }} ctx{% endif %} · :{{ m.port }}
+        {% if not m.file_ok %}<span class="stale"> · {{ t.m_file_missing }} (<code>{{ m.file_name }}</code>)</span>{% endif %}
+      </p>
       {% if m.uses_gpu %}
       <dl class="m-stats">
         <div><dt class="label">{{ t.m_gen }}</dt><dd data-k="{{ p }}gen">{{ view.show[p ~ 'gen'] }}</dd></div>
         <div><dt class="label">{{ t.m_prompt }}</dt><dd data-k="{{ p }}prompt">{{ view.show[p ~ 'prompt'] }}</dd></div>
         <div><dt class="label">{{ t.m_served }}</dt><dd data-k="{{ p }}served">{{ view.show[p ~ 'served'] }}</dd></div>
-        <div><dt class="label">{{ t.m_served_prompt }}</dt><dd data-k="{{ p }}served_prompt">{{ view.show[p ~ 'served_prompt'] }}</dd></div>
         <div><dt class="label">{{ t.m_busy }}</dt><dd data-k="{{ p }}busy">{{ view.show[p ~ 'busy'] }}</dd></div>
         <div><dt class="label">{{ t.m_model_uptime }}</dt><dd data-k="{{ p }}uptime">{{ view.show[p ~ 'uptime'] }}</dd></div>
       </dl>
-      <p class="muted small">{{ t.m_served_help }}</p>
       {% elif m.served.generated %}
-      <p class="muted small">{{ t.m_served }}: {{ view.show[p ~ 'served'] }} · {{ t.m_served_prompt }}: {{ view.show[p ~ 'served_prompt'] }}</p>
+      <p class="muted small">{{ t.m_served }}: {{ view.show[p ~ 'served'] }}</p>
       {% endif %}
       {% if m.crashed %}
       <details class="m-crash"><summary class="stale">{{ t.m_crashed }}</summary><pre class="log">{{ m.crashed }}</pre></details>

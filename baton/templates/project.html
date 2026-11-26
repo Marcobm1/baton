@@ -117,19 +117,47 @@
 
   {% elif tab == 'done' %}
   {% macro history(entries) %}
-    {% for row in entries %}<div class="project-row">
+    {% for row in entries %}
       {% set task = row.task %}
       {% if task %}
-        <a href="/tasks/{{ task.id|urlencode }}">{{ row.title }}</a>
-        <div class="small muted">{% if task.finished_at %}{{ task.finished_at|when }} · {% endif %}
-          {{ agents.get(task.agent, task.agent) }} · {{ t['st_' ~ task.status] }}
-          {% if task.pr_url.startswith('https://github.com/') %} · <a href="{{ task.pr_url }}">PR</a> · {{ t.merged if task.merged else t.not_merged }}{% endif %}
+      <article class="delivery-card st-{{ task.status }}">
+        <div class="delivery-head">
+          <div class="delivery-title-wrap">
+            <span class="pill st st-{{ task.status }}">{{ t['st_' ~ task.status] }}</span>
+            <a class="delivery-title" href="/tasks/{{ task.id|urlencode }}">{{ row.title }}</a>
+          </div>
+          {% if task.diff_stat %}
+          <span class="diff-chip small" title="{{ task.diff_stat.files }} {{ t.files_changed }}">
+            <span class="diff-ins">+{{ task.diff_stat.insertions }}</span>
+            <span class="diff-del">-{{ task.diff_stat.deletions }}</span>
+            <span class="muted">· {{ task.diff_stat.files }} {{ t.files_changed }}</span>
+          </span>
+          {% endif %}
         </div>
-        {% if task.summary %}<details><summary>{{ t.agent_summary }}</summary><pre>{{ task.summary }}</pre></details>{% endif %}
-      {% else %}{{ row.title }} <span class="badge">STATUS.md</span>{% endif %}
-    </div>{% endfor %}
+        <div class="delivery-meta small muted">
+          {% if task.finished_at %}{{ task.finished_at|when }} · {% endif %}{{ agents.get(task.agent, task.agent) }}{% if task.model %} · {{ task.model }}{% endif %}
+          {% if task.pr_url.startswith('https://github.com/') %} · <a href="{{ task.pr_url }}">PR ↗</a> · {{ t.merged if task.merged else t.not_merged }}{% endif %}
+        </div>
+        {% if task.summary %}
+        {% set headline = summary_headline(task.summary) if summary_headline is defined else '' %}
+        {% if headline %}<p class="delivery-preview small">{{ headline }}</p>{% endif %}
+        <details class="delivery-report"><summary class="small">{{ t.agent_summary }}</summary><div class="md small">{{ task.summary|md|safe }}</div></details>
+        {% endif %}
+        {% if task.diff_stat and task.diff_stat.paths %}
+        <details class="diff-files small"><summary>{{ t.changed_files }} ({{ task.diff_stat.files }})</summary>
+          <ul class="diff-file-list">{% for f in task.diff_stat.paths %}<li><code>{{ f.path }}</code> <span class="diff-chip">{% if f.binary %}<span class="muted">bin</span>{% else %}<span class="diff-ins">+{{ f.ins }}</span> <span class="diff-del">-{{ f.del }}</span>{% endif %}</span></li>{% endfor %}</ul>
+        </details>
+        {% endif %}
+      </article>
+      {% else %}
+      <div class="project-row milestone-row">
+        <span>{{ row.title }}</span>
+        <span class="badge">STATUS.md</span>
+      </div>
+      {% endif %}
+    {% endfor %}
   {% endmacro %}
-  <section>{% if finished %}{{ history(done_page['items']) }}{{ m.pager(done_page, {'tab': 'done'}) }}
+  <section class="deliveries-list">{% if finished %}{{ history(done_page['items']) }}{{ m.pager(done_page, {'tab': 'done'}) }}
     {% else %}<p class="muted">{{ t.nothing_done }}</p>{% endif %}</section>
 
   {% else %}

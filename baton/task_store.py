@@ -62,6 +62,7 @@ class Task:
     priority: str = "normal"        # high | normal | low: order in the queue
     started_at: float | None = None  # when it left the queue
     review_rating: dict | None = None
+    diff_stat: dict | None = None
 
     @property
     def finished(self) -> bool:
@@ -97,6 +98,11 @@ def _task_from_row(row: sqlite3.Row) -> Task:
         rating = json.loads(row["review_rating"]) if row["review_rating"] else None
     except ValueError:
         rating = None
+    raw_diff = row["diff_stat"] if "diff_stat" in row.keys() else None
+    try:
+        diff_stat = json.loads(raw_diff) if raw_diff else None
+    except ValueError:
+        diff_stat = None
     return Task(
         id=row["id"],
         repo=row["repo"],
@@ -127,6 +133,7 @@ def _task_from_row(row: sqlite3.Row) -> Task:
         priority=row["priority"],
         started_at=row["started_at"],
         review_rating=rating if isinstance(rating, dict) else None,
+        diff_stat=diff_stat if isinstance(diff_stat, dict) else None,
     )
 
 
@@ -134,8 +141,8 @@ _UPSERT_SQL = """INSERT INTO tasks(
     id, repo, title, details, agent, where_kind, created_at, status, branch, base,
     worktree, pr_url, issue_url, message, finished_at, open_pr, model, steps, effort,
     summary, issue_number, reviewer, review, reviewer_model, reviewer_effort, merged,
-    priority, started_at, review_rating
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    priority, started_at, review_rating, diff_stat
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     repo = excluded.repo,
     title = excluded.title,
@@ -164,7 +171,8 @@ ON CONFLICT(id) DO UPDATE SET
     merged = excluded.merged,
     priority = excluded.priority,
     started_at = excluded.started_at,
-    review_rating = excluded.review_rating"""
+    review_rating = excluded.review_rating,
+    diff_stat = excluded.diff_stat"""
 
 
 class TaskStore:
@@ -204,6 +212,7 @@ class TaskStore:
             task.reviewer_model, task.reviewer_effort, 1 if task.merged else 0,
             task.priority, task.started_at,
             json.dumps(task.review_rating) if task.review_rating is not None else None,
+            json.dumps(task.diff_stat) if task.diff_stat is not None else None,
         )
         with self.lock:
             with db_connect(self.dir) as conn:

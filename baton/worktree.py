@@ -87,6 +87,38 @@ def git_run(cwd: Path, *args: str, check: bool = True) -> str:
     return r.stdout.strip()
 
 
+def parse_numstat(output: str, max_paths: int = 50) -> dict | None:
+    """Parse `git diff --cached --numstat` into summary counts and per-file entries."""
+    files = 0
+    insertions = 0
+    deletions = 0
+    paths: list[dict] = []
+    for raw in (output or "").splitlines():
+        parts = raw.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        ins_s, del_s, path = parts
+        path = path.strip()
+        if not path:
+            continue
+        files += 1
+        binary = ins_s == "-" or del_s == "-"
+        ins = 0 if binary else int(ins_s) if ins_s.isdigit() else 0
+        dels = 0 if binary else int(del_s) if del_s.isdigit() else 0
+        insertions += ins
+        deletions += dels
+        if len(paths) < max_paths:
+            paths.append({"path": path, "ins": ins, "del": dels, "binary": binary})
+    if not files:
+        return None
+    return {
+        "files": files,
+        "insertions": insertions,
+        "deletions": deletions,
+        "paths": paths,
+    }
+
+
 def branch_published(repo_dir: Path, branch: str) -> bool | None:
     """True if the branch exists on origin, False if not, None if unknown."""
     try:

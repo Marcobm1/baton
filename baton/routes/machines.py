@@ -38,16 +38,32 @@ def _evaluate(ctx: AppContext, cards: list[dict]) -> None:
     )
 
 
+def _render_machines(
+    request: Request,
+    ctx: AppContext,
+    *,
+    cards: list[dict],
+    active: list[dict],
+    recent: list[dict],
+    created: dict | None = None,
+    error: str = "",
+    notify_result: dict | None = None,
+):
+    return ctx.page(
+        request, "machines.html", "machines",
+        machines=cards, active_alerts=active, recent_alerts=recent,
+        notifier=ctx.notifier, notify_result=notify_result,
+        created=created, error=error,
+    )
+
+
 @router.get("/machines", response_class=HTMLResponse)
 async def machines_page(request: Request, ctx: AppContext = CTX):
     cards = await asyncio.to_thread(ctx.machines.list_machines)
     await asyncio.to_thread(_evaluate, ctx, cards)
     active = await asyncio.to_thread(ctx.alerts.active_alerts)
     recent = await asyncio.to_thread(ctx.alerts.recent_alerts)
-    return ctx.page(
-        request, "machines.html", "machines",
-        machines=cards, active_alerts=active, recent_alerts=recent, created=None, error="",
-    )
+    return _render_machines(request, ctx, cards=cards, active=active, recent=recent)
 
 
 @router.post("/machines/add", response_class=HTMLResponse)
@@ -68,9 +84,23 @@ async def machines_add(
     cards = await asyncio.to_thread(ctx.machines.list_machines)
     active = await asyncio.to_thread(ctx.alerts.active_alerts)
     recent = await asyncio.to_thread(ctx.alerts.recent_alerts)
-    return ctx.page(
-        request, "machines.html", "machines",
-        machines=cards, active_alerts=active, recent_alerts=recent, created=created, error=error,
+    return _render_machines(request, ctx, cards=cards, active=active, recent=recent, created=created, error=error)
+
+
+@router.post("/machines/notify/test", response_class=HTMLResponse)
+async def notify_test(
+    request: Request,
+    csrf: str = Form(""),
+    ctx: AppContext = CTX,
+):
+    ctx.check_post(request, csrf)
+    ok, msg = await asyncio.to_thread(ctx.notifier.send_test)
+    cards = await asyncio.to_thread(ctx.machines.list_machines)
+    active = await asyncio.to_thread(ctx.alerts.active_alerts)
+    recent = await asyncio.to_thread(ctx.alerts.recent_alerts)
+    return _render_machines(
+        request, ctx, cards=cards, active=active, recent=recent,
+        notify_result={"ok": ok, "msg": msg},
     )
 
 

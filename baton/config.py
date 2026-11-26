@@ -95,6 +95,12 @@ class Settings:
     access_key: str = field(default="", repr=False)
     # Docker image used for isolated Agents chat ("All permissions" mode).
     sandbox_image: str = "baton-opencode-sandbox:latest"
+    # Optional mobile notifications (Telegram Bot and/or generic Webhook/ntfy).
+    # All BATON_* vars are stripped from agent subprocesses by agent_env().
+    telegram_bot_token: str = field(default="", repr=False)
+    telegram_chat_id: str = ""
+    alert_webhook_url: str = field(default="", repr=False)
+    notify_tasks: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -143,4 +149,8 @@ class Settings:
             opencode_go_key=os.environ.get("BATON_OPENCODE_GO_KEY", "").strip(),
             access_key=os.environ.get("BATON_ACCESS_KEY", "").strip(),
             sandbox_image=os.environ.get("BATON_SANDBOX_IMAGE", "baton-opencode-sandbox:latest").strip(),
+            telegram_bot_token=os.environ.get("BATON_TELEGRAM_BOT_TOKEN", "").strip(),
+            telegram_chat_id=os.environ.get("BATON_TELEGRAM_CHAT_ID", "").strip(),
+            alert_webhook_url=os.environ.get("BATON_ALERT_WEBHOOK_URL", "").strip(),
+            notify_tasks=os.environ.get("BATON_NOTIFY_TASKS", "1") != "0",
         )

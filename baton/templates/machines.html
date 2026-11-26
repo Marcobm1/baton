@@ -141,6 +141,23 @@
       <button type="submit" class="btn">{{ t.mach_add_btn }}</button>
     </form>
   </section>
+
+  <section class="mach-add" data-notify-box>
+    <h3>{{ t.ntf_title }}</h3>
+    {% if notify_result %}
+    <p class="{{ 'mach-ok' if notify_result.ok else 'warn' }}" role="status">{{ notify_result.msg }}</p>
+    {% endif %}
+    {% if notifier and notifier.configured %}
+    <p class="small">{{ t.ntf_active }}: <strong>{{ notifier.channels|join(' · ') }}</strong>
+      {% if notifier.notify_tasks %} · {{ t.ntf_tasks_on }}{% endif %}</p>
+    <form method="post" action="/machines/notify/test">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button type="submit" class="btn ghost small">{{ t.ntf_test_btn }}</button>
+    </form>
+    {% else %}
+    <p class="muted small">{{ t.ntf_off }}</p>
+    {% endif %}
+  </section>
 </section>
 <script id="mach-strings" type="application/json">{{ {'online': t.mach_online, 'offline': t.mach_offline, 'pending': t.mach_pending, 'last_seen': t.mach_last_seen}|tojson }}</script>
 <script src="/static/machines.js?v={{ css_v }}" defer></script>

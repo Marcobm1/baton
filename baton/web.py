@@ -38,6 +38,7 @@ from .github import Hub
 from .i18n import ordinal, strings
 from .machines import MachineStore
 from .models import LocalModels
+from .notify import Notifier
 from .ping import Scheduler, find_agy, find_claude, find_codex
 from .routes import AppContext, register_routes
 from .runner import (
@@ -94,7 +95,15 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     store = TaskStore(settings.data_dir)
     models = LocalModels(settings.data_dir)
     machines = MachineStore(settings.data_dir)
-    alerts = AlertEngine(settings.data_dir)
+    notifier = Notifier(
+        telegram_bot_token=settings.telegram_bot_token,
+        telegram_chat_id=settings.telegram_chat_id,
+        webhook_url=settings.alert_webhook_url,
+        notify_tasks=settings.notify_tasks,
+        data_dir=settings.data_dir,
+        lang=settings.lang,
+    )
+    alerts = AlertEngine(settings.data_dir, on_opened=notifier.notify_alert)
     agent_chats = AgentChats(data_dir=settings.data_dir, sandbox_image=settings.sandbox_image)
     ranking = store.ranking
 
@@ -117,6 +126,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         max_parallel=settings.max_parallel,
         review_models={"claude-code": (settings.review_claude_model, settings.review_claude_effort)},
     )
+    runner.on_finished = notifier.notify_task
 
     # Tasks that were running when Baton stopped can't be resumed: mark them
     # failed. Queued tasks keep their place and start when the server is up.
@@ -160,6 +170,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         models=models,
         machines=machines,
         alerts=alerts,
+        notifier=notifier,
         agent_chats=agent_chats,
         ranking=ranking,
         runner=runner,
@@ -253,6 +264,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             loop = asyncio.get_running_loop()
 
             def finished(task):
+                notifier.notify_task(task)
                 if updater.reason == "busy" or (task.merged and task.repo.lower() == updater.repo):
                     loop.call_soon_threadsafe(update_requested.set)
 
@@ -267,7 +279,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             with contextlib.suppress(asyncio.CancelledError):
                 await loop_task
         await asyncio.to_thread(agent_chats.close_all)   # no OpenCode left behind
-        runner.on_finished = None
+        runner.on_finished = notifier.notify_task
         if update_task:
             update_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

@@ -21,6 +21,7 @@ from ..auth import LoginRateLimiter
 from ..config import Settings
 from ..machines import MachineStore
 from ..models import LocalModels
+from ..notify import Notifier
 from ..ping import Scheduler, fetch_gemini_quota
 from ..ranking import Ranking
 from ..task_report import task_report
@@ -42,6 +43,7 @@ class AppContext:
     models: LocalModels
     machines: MachineStore
     alerts: AlertEngine
+    notifier: Notifier
     agent_chats: AgentChats
     ranking: Ranking
     runner: Any

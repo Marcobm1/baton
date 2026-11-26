@@ -46,3 +46,4 @@
                   border-radius: var(--radius); padding: .75rem 1rem; }
 .alerts-history summary { cursor: pointer; font-weight: 600; }
 .alerts-history-list { display: flex; flex-direction: column; gap: .45rem; margin-top: .7rem; }
+.mach-ok { color: var(--ok); font-weight: 600; font-size: .88rem; }

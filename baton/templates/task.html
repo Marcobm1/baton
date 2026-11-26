@@ -7,7 +7,8 @@
          data-no-step="{{ t.no_step }}" data-no-progress="{{ t.no_progress }}" data-no-log="{{ t.no_log }}">
   <h2>{{ task.title }} <span id="task-status" class="pill st st-{{ task.status }}">{{ t['st_' ~ task.status] }}</span>{% if task.merged %} <span class="pill st-done">{{ t.merged }}</span>{% endif %}</h2>
   <p class="c-meta small">{{ task.repo }} · {{ agents.get(task.agent, task.agent) }}
-    {% if task.where == 'cloud' %} · {{ t.where_cloud }}{% else %} · {{ task.model or (t.unrecorded if task.agent == 'local' else t.cli_default) }}{% if task.effort %} · {{ task.effort }}{% endif %}{% endif %}{% if task.status == 'queued' and task.base %} · <code>{{ task.base }}</code>{% endif %}{% if task.status == 'cancelled' and task.finished_at %} · {{ t.cancelled_at }} {{ task.finished_at|when }}{% endif %}</p>
+    {% if task.where == 'cloud' %} · {{ t.where_cloud }}{% else %} · {{ task.model or (t.unrecorded if task.agent == 'local' else t.cli_default) }}{% if task.effort %} · {{ task.effort }}{% endif %}{% endif %}{% if task.status == 'queued' and task.base %} · <code>{{ task.base }}</code>{% endif %}{% if task.status == 'cancelled' and task.finished_at %} · {{ t.cancelled_at }} {{ task.finished_at|when }}{% endif %}
+    {% if task.diff_stat %} · <span class="diff-chip"><span class="diff-ins">+{{ task.diff_stat.insertions }}</span> <span class="diff-del">-{{ task.diff_stat.deletions }}</span> · {{ task.diff_stat.files }} {{ t.files_changed }}</span>{% endif %}</p>
 
   <div class="task-actions">
     {% if task.pr_url %}<a class="btn" href="{{ task.pr_url }}">{{ t.open_pr_link }} ↗</a>
@@ -16,6 +17,17 @@
     {% if not pending and task.finished %}<a class="btn ghost" href="/tasks/new?followup={{ task.id|urlencode }}">{{ t.continue_task }}</a>{% endif %}
     {% if ranking_job %}<a class="btn ghost small" href="/ranking/{{ ranking_job }}#your-score">{{ t.rate_job }}</a>{% endif %}
   </div>
+
+  {% if task.diff_stat and task.diff_stat.paths %}
+  <details class="diff-files small">
+    <summary>{{ t.changed_files }} ({{ task.diff_stat.files }})</summary>
+    <ul class="diff-file-list">
+      {% for f in task.diff_stat.paths %}
+      <li><code>{{ f.path }}</code> <span class="diff-chip">{% if f.binary %}<span class="muted">bin</span>{% else %}<span class="diff-ins">+{{ f.ins }}</span> <span class="diff-del">-{{ f.del }}</span>{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
 
   {% if pending %}
   <div class="pending-item">

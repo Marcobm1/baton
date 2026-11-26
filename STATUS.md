@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "UX-2: Remodel Projects and Tasks views with git diff stats"
+next: "UX-3: Structured agent reports + local image artifacts gallery + Telegram photo"
 updated: 2026-11-26
 updated_by: gemini
 open_source: true
@@ -13,6 +13,7 @@ links:
 ---
 
 ## Done recently
+- 2026-11-26: UX-2 Projects & Tasks remodel (status filters + "Needs attention" tray + live repo activity on `/`, upgraded Deliveries cards with Markdown reports on `/p/{id}`, automatic `git diff --cached --numstat` capture persisted in SQLite `tasks.diff_stat` and rendered across `/`, `/p/{id}`, `/tasks`, `/tasks/{id}`).
 - 2026-11-26: UX-1 global UI decluttering (removed verbose help prose across all pages, relocated Baton self-update to `/machines`, replaced duplicated host cards on `/models` with a compact VRAM strip, deduplicated `/tasks/{id}` summary + unified top action bar, compact `/chat` permission pills + auto-collapsing active header, mobile tab-bar alert badge, fixed `ChecklistItem.display_title` owner tag slicing).
 - 2026-11-26: Hardening Phase 4 open-source cleanup (`BATON_OWNER_TAG`, `BATON_CHAT_SCRATCH`, `BATON_SCHEDULED_TASK` with injection guard; personal references scrubbed from code, docs, and tests).
 - 2026-11-25: Hardening Phases 1–3, isolated Docker sandbox, Agents chat Phase 2 (Claude Code + Codex + session resume), and Monitoring Phases M1–M3 (`/machines`, push agent, alert engine with hysteresis, Telegram + Webhook notifications for alerts & finished tasks). Archive in [docs/history.md](docs/history.md).
@@ -25,12 +26,7 @@ links:
 - [x] 2026-11-25 Monitoring for other computers and servers, and alerts (Phases M1–M3: `/machines`, `baton monitor-agent`, `AlertEngine`, Telegram + Webhook notifications for alerts & finished/failed tasks, [docs/machines.md](docs/machines.md))
 - [x] 2026-11-26 Hardening Phase 4: open-source release cleanup (`BATON_OWNER_TAG`, `BATON_CHAT_SCRATCH`, `BATON_SCHEDULED_TASK`, generic defaults and scrubbed docs/tests, [docs/hardening-roadmap.md](docs/hardening-roadmap.md))
 - [x] 2026-11-26 UX-1: Global UI decluttering and layout fixes (`tests/test_ux_cleanup.py`)
-- [ ] UX-2: Remodel Projects and Tasks views with git diff stats
-  Redesign `/projects` (status filters, "Needs attention" tray, crisp 4-fact cards)
-  and `/p/{id}` (`Tasks` / `Deliveries` / `Notes` tabs separated from raw STATUS.md lines),
-  and record automatic git diff stats (`files_changed`, `+ins / -del`) per finished task.
-  Verify with `pytest -q`, `ruff check baton tests`, and `node --check baton/static/*.js`.
-  Recommended: gemini, gemini-4-pro, medium
+- [x] 2026-11-26 UX-2: Remodel Projects and Tasks views with automatic git diff stats (`baton/worktree.py`, `baton/db.py`, `baton/routes/projects.py`, `tests/test_ux_projects.py`)
 - [ ] UX-3: Structured agent reports + local image artifacts gallery + Telegram photo
   Add structured report sections (`Summary`, `Changes`, `Checks`, `Next`, `Artifacts`),
   collect `.baton-artifacts/` images safely before git commit into `~/.baton/artifacts/<task_id>/`
@@ -58,7 +54,8 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
-- 2026-11-26 (gemini): Completed UX-1 global UI decluttering across all pages (relocated `#self-update` to `/machines`, compact VRAM strip on `/models`, unified `/tasks/{id}` action bar without duplicate summary, compact `/chat` permission pills + auto-collapsing active header, mobile tab-bar alert badge, fixed `ChecklistItem.display_title`, `tests/test_ux_cleanup.py`).
+- 2026-11-26 (gemini): Completed UX-2 Projects & Tasks remodel (status filters, "Needs attention" tray, live per-repo activity on `/`, upgraded Deliveries cards on `/p/{id}`, automatic `git diff --cached --numstat` capture + SQLite migration, `tests/test_ux_projects.py`).
+- 2026-11-26 (gemini): Completed UX-1 global UI decluttering across all pages (relocated `#self-update` to `/machines`, compact VRAM strip on `/models`, unified `/tasks/{id}` action bar without duplicate summary, compact `/chat` permission pills + auto-collapsing active header, mobile tab-bar alert badge, fixed `ChecklistItem.display_title`, `tests/test_ux_cleanup.py`). Suite: 254 passed (Linux + Windows CI).
 - 2026-11-26 (gemini): Completed Hardening Phase 4 open-source cleanup (`BATON_OWNER_TAG`, `BATON_CHAT_SCRATCH`, `BATON_SCHEDULED_TASK` with injection guard, generic defaults, scrubbed code/docs/tests, `tests/test_phase4.py`). Suite: 250 passed (Linux + Windows CI).
 - 2026-11-25 (gemini): Completed Monitoring Phase M3 (`baton/notify.py`): async Telegram Bot + generic Webhook/ntfy notifications for machine alerts (`notified_at` stamped) and finished/failed tasks (`runner.on_finished`), token masking on errors, CSRF-protected test button on `/machines`, `.env.example`, and `tests/test_notify.py`. Suite: 245 passed.
 - 2026-11-25 (gemini): Completed Monitoring Phase M2 (`baton/alerts.py`, `alerts` & `known_logins` tables, sidebar badge, Acknowledge UI). Suite: 242 passed (Linux + Windows CI).

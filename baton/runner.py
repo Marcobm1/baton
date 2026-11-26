@@ -82,6 +82,7 @@ from .worktree import (
     branch_published,
     discard_worktree,
     git_run,
+    parse_numstat,
 )
 
 
@@ -500,6 +501,9 @@ class Runner:
                 self._committing.add(task.id)  # only while committing, pushing, and opening the PR
             try:
                 self._write_git(task, repo_dir, "add", "-A", cwd=wt)
+                task.diff_stat = parse_numstat(
+                    self._git(wt, "diff", "--cached", "--numstat", check=False)
+                )
                 ident = []
                 if not self._git(wt, "config", "user.email", check=False):
                     ident = ["-c", f"user.name={self.git_name}", "-c", f"user.email={self.git_email}"]

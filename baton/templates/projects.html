@@ -5,7 +5,17 @@
 <section id="projects">
   <div class="page-head">
     <h2>{{ t.projects }} <small class="muted">({{ count }})</small></h2>
-    <a class="btn ghost" href="/?refresh=1">{{ t.refresh }}</a>
+    <div class="proj-head-actions">
+      {% if count %}
+      <nav class="chips" aria-label="{{ t.projects }}">
+        <a class="chip" href="/"{% if status_filter == 'all' %} aria-current="true"{% endif %}>{{ t.all_projects }} <span class="count">{{ count }}</span></a>
+        {% for key in ('active', 'planned', 'paused', 'done') if status_counts[key] %}
+        <a class="chip" href="/?status={{ key }}"{% if status_filter == key %} aria-current="true"{% endif %}>{{ t[key] }} <span class="count">{{ status_counts[key] }}</span></a>
+        {% endfor %}
+      </nav>
+      {% endif %}
+      <a class="btn ghost small" href="/?refresh=1{% if status_filter != 'all' %}&amp;status={{ status_filter }}{% endif %}">{{ t.refresh }}</a>
+    </div>
   </div>
   {% if no_token %}<p class="warn">{{ t.token_none }}</p>{% endif %}
   {% if errors %}
@@ -13,46 +23,74 @@
   {% endif %}
   {% if not count %}<p class="muted">{{ t.no_projects }}</p>{% endif %}
 
+  {% if attention %}
+  <section class="attn-box" aria-label="{{ t.needs_attention }}">
+    <p class="eyebrow attn-eyebrow">{{ t.needs_attention }} <span class="count">{{ attention|length }}</span></p>
+    <div class="attn-list">
+      {% for item in attention %}
+      <a class="attn-item attn-{{ item.kind }}" href="{{ item.href }}">
+        <span class="attn-tag">{{ t['attn_' ~ item.kind] }}{% if item.count > 1 %} ({{ item.count }}){% endif %}</span>
+        <strong>{{ item.project }}</strong>
+        <span class="attn-label">{{ item.label|truncate(72, True, '…') }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
   {% for key, items in groups.items() if items %}
-  <h3 class="group">{{ t[key] }}</h3>
+  {% if status_filter == 'all' %}<h3 class="group">{{ t[key] }}</h3>{% endif %}
   <div class="cards">
     {% for p in items %}
     {% set s = p.status %}
+    {% set rk = p.repo.casefold() %}
+    {% set live = running_tasks.get(rk) if running_tasks is defined else none %}
+    {% set last = latest_tasks.get(rk) if latest_tasks is defined else none %}
     <article class="card prio-{{ s.priority }}{% if p.blocked %} blocked{% endif %}">
       <div class="c-head">
         <a class="c-name" href="/p/{{ p.id }}" title="{{ t.open_project }}">{{ s.name }}</a>
-        <span class="badge prio">{{ t[s.priority] }}</span>
+        <span class="c-head-tags">
+          {% if p.stale %}<span class="stale" title="{{ t.stale }}">⚠</span>{% endif %}
+          <span class="badge prio">{{ t[s.priority] }}</span>
+        </span>
       </div>
       {% if p.blocked %}<p class="blocked-note small">🔒 {{ t.blocked_by }}: {{ p.blocked_by|join(', ') }}</p>{% endif %}
-      {% if s.sections.owner_actions %}<a class="badge" href="/p/{{ p.id }}#owner-actions">{{ t.your_turn }} ({{ s.sections.owner_actions|length }})</a>{% endif %}
-      {% if s.parent %}<p class="muted small">{{ t.subproject_of }} {{ s.parent }}</p>{% endif %}
+      {% if s.sections.owner_actions %}<a class="badge owner-badge" href="/p/{{ p.id }}#owner-actions">{{ t.your_turn }} ({{ s.sections.owner_actions|length }})</a>{% endif %}
+      {% if s.parent %}<p class="muted small c-sub">{{ t.subproject_of }} {{ s.parent }}</p>{% endif %}
       {% if s.summary %}<p class="c-summary">{{ s.summary }}</p>{% endif %}
-      {% if s.next_task %}<p class="c-next" title="{{ s.next_task }}"><span class="label">{{ t.next_task }}</span> {{ s.next_task|truncate(90, True, '…') }}</p>{% endif %}
+
+      {% if live %}
+      <a class="c-activity is-running small" href="/tasks/{{ live.id|urlencode }}">
+        <span class="act-dot" aria-hidden="true"></span>
+        <span>{{ t['st_' ~ live.status]|capitalize }}: {{ live.title|truncate(56, True, '…') }}</span>
+      </a>
+      {% elif last %}
+      <a class="c-activity st-{{ last.status }} small" href="/tasks/{{ last.id|urlencode }}">
+        <span>{{ '✓' if last.status == 'done' else '✗' if last.status == 'failed' else '·' }} {{ last.title|truncate(48, True, '…') }}</span>
+        {% if last.diff_stat %}<span class="diff-chip"><span class="diff-ins">+{{ last.diff_stat.insertions }}</span> <span class="diff-del">-{{ last.diff_stat.deletions }}</span></span>{% endif %}
+      </a>
+      {% endif %}
+
+      {% if s.next_task %}<p class="c-next" title="{{ s.next_task }}"><span class="label">{{ t.next_task }}</span> {{ s.next_task|truncate(86, True, '…') }}</p>{% endif %}
       {% if s.progress is not none %}
       <div class="progress-line">
         <div class="bar thin" title="{{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}"><span class="fill" style="width: {{ s.progress }}%"></span></div>
-        <span class="small">{{ s.progress|round|int }} %</span>
+        <span class="small muted progress-nums">{{ s.tasks_done }}/{{ s.tasks_total }} · {{ s.progress|round|int }}%</span>
       </div>
-      <p class="muted small">{{ s.tasks_left }} {{ t.pending }} · {{ s.tasks_done }}/{{ s.tasks_total }} {{ t.tasks }}</p>
       {% endif %}
-      <p class="c-meta small">
-        {% if p.stale %}<span class="stale" title="{{ t.stale }}">⚠</span>{% endif %}
-        {{ t.updated }} {{ s.updated or '?' }}{% if s.updated_by %} {{ t.by }} {{ s.updated_by }}{% endif %}
-        · <a href="{{ p.html_url }}">{{ p.repo }}{% if p.path != 'STATUS.md' %}/{{ p.path.rsplit('/', 1)[0] }}{% endif %}</a>
-        · {{ t.private if p.private else t.public }}
-        {% if s.open_source %}· <span class="badge os">{{ t.open_source }}</span>{% endif %}
-      </p>
       {% if s.problems %}<p class="warn small">{{ t.problems }}: {{ s.problems|join('; ') }}</p>{% endif %}
-      <div class="c-actions">
-        {% if p.repo in running %}<a class="pill running" href="/tasks">{{ t.task_running }}</a>{% endif %}
-        {% set d = s.sections.upcoming|first %}
-        {% if d %}
-        <a class="btn ghost small icon" href="/tasks/new?repo={{ p.repo|urlencode }}" title="{{ t.task_button }}" aria-label="{{ t.task_button }}">＋</a>
-        <a class="btn small" href="{{ m.draft_href(p, d.title, d.detail, d.recommended, d.repo) }}"
-           title="{{ d.title }}{% if d.recommended.agent %} · ★ {{ agents.get(d.recommended.agent, d.recommended.agent) }}{% endif %}">▶ {{ t.launch_next }}</a>
-        {% else %}
-        <a class="btn small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
-        {% endif %}
+      <div class="c-foot">
+        <a class="c-repo small muted" href="{{ p.html_url }}" title="{{ t.updated }} {{ s.updated or '?' }}{% if s.updated_by %} {{ t.by }} {{ s.updated_by }}{% endif %}">{{ p.repo }}{% if p.path != 'STATUS.md' %}/{{ p.path.rsplit('/', 1)[0].split('/')[-1] }}{% endif %}</a>
+        <div class="c-actions">
+          {% set d = s.sections.upcoming|first %}
+          {% if d %}
+          <a class="btn ghost small icon" href="/tasks/new?repo={{ p.repo|urlencode }}" title="{{ t.task_button }}" aria-label="{{ t.task_button }}">＋</a>
+          <a class="btn small" href="{{ m.draft_href(p, d.title, d.detail, d.recommended, d.repo) }}"
+             title="{{ d.title }}{% if d.recommended.agent %} · ★ {{ agents.get(d.recommended.agent, d.recommended.agent) }}{% endif %}">▶ {{ t.launch_next }}</a>
+          {% else %}
+          <a class="btn small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
+          {% endif %}
+        </div>
       </div>
     </article>
     {% endfor %}

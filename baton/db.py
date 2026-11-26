@@ -55,7 +55,8 @@ _SCHEMA_SQL = (
         merged INTEGER NOT NULL,
         priority TEXT NOT NULL,
         started_at REAL,
-        review_rating TEXT
+        review_rating TEXT,
+        diff_stat TEXT
     )""",
     "CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)",
@@ -148,7 +149,7 @@ _TASK_COLUMNS = (
     "status", "branch", "base", "worktree", "pr_url", "issue_url", "message",
     "finished_at", "open_pr", "model", "steps", "effort", "summary",
     "issue_number", "reviewer", "review", "reviewer_model", "reviewer_effort",
-    "merged", "priority", "started_at", "review_rating",
+    "merged", "priority", "started_at", "review_rating", "diff_stat",
 )
 
 _TASK_DEFAULTS = {
@@ -174,6 +175,7 @@ _TASK_DEFAULTS = {
     "priority": "normal",
     "started_at": None,
     "review_rating": None,
+    "diff_stat": None,
 }
 
 _TASK_REQUIRED = ("id", "repo", "title", "details", "agent", "where", "created_at")
@@ -222,6 +224,8 @@ def _row_from_legacy_dict(raw: dict) -> tuple | None:
     steps = merged["steps"] if isinstance(merged["steps"], list) else []
     rating = merged["review_rating"]
     rating_json = json.dumps(rating) if isinstance(rating, dict) else None
+    diff_stat = merged["diff_stat"]
+    diff_json = json.dumps(diff_stat) if isinstance(diff_stat, dict) else None
     return (
         str(merged["id"]),
         str(merged["repo"]),
@@ -252,7 +256,15 @@ def _row_from_legacy_dict(raw: dict) -> tuple | None:
         str(merged["priority"]),
         float(merged["started_at"]) if merged["started_at"] is not None else None,
         rating_json,
+        diff_json,
     )
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Apply idempotent additive column migrations on existing SQLite databases."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "diff_stat" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN diff_stat TEXT")
 
 
 def migrate_legacy_tasks(data_dir: Path, conn: sqlite3.Connection) -> int:
@@ -345,6 +357,7 @@ def _ensure_initialized(data_dir: Path, path: Path) -> None:
             with conn:
                 for stmt in _SCHEMA_SQL:
                     conn.execute(stmt)
+                _migrate_schema(conn)
                 migrate_legacy_ranking(data_dir, conn)
                 migrate_legacy_tasks(data_dir, conn)
         _schema_init_count += 1

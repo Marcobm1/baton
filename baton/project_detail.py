@@ -182,3 +182,21 @@ def finished_items(content: Sections, tasks: list[Task]) -> list[Finished]:
             when = datetime.fromtimestamp(task.finished_at).isoformat(" ") if task.finished_at else ""
             items.append(Finished(task.title, when, task))
     return sorted(items, key=lambda item: item.when, reverse=True)
+
+
+def summary_headline(text: str, limit: int = 160) -> str:
+    """Return a clean one-line preview from an agent summary (preferring `Summary:`)."""
+    if not text:
+        return ""
+    fallback = ""
+    for raw in text.splitlines():
+        line = re.sub(r"^[#>*\-\s]+", "", raw).strip()
+        if not line:
+            continue
+        if line.lower().startswith("summary:"):
+            head = line.split(":", 1)[1].strip()
+            if head:
+                return head[:limit - 1].rstrip() + "…" if len(head) > limit else head
+        if not fallback:
+            fallback = line
+    return fallback[:limit - 1].rstrip() + "…" if len(fallback) > limit else fallback

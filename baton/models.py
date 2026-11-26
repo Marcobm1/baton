@@ -62,22 +62,79 @@ BREAKAWAY_FROM_JOB = 0x01000000   # keep running when Baton's scheduled task res
 CHAT_ROLES = {"system", "user", "assistant"}
 CHAT_EFFORTS = {"none", "minimal", "low", "medium", "high"}
 CHAT_MAX_CHARS = 400_000
+CHAT_MAX_IMAGES = 4
+CHAT_MAX_IMAGE_BYTES = 4 * 1024 * 1024
+_DATA_IMAGE_RE = re.compile(r"^data:(image/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$", re.I)
+
+
+def validate_image_data_url(url: str) -> tuple[str, bytes, str]:
+    """Validate a `data:image/...;base64,...` raster image using magic bytes.
+
+    Returns `(mime, raw_bytes, canonical_data_url)` or raises `ValueError`.
+    Refuses SVG, HTML, remote URLs (SSRF), mismatched headers, and oversized images.
+    """
+    import base64
+    from .artifacts import detect_image_mime
+
+    if not isinstance(url, str):
+        raise ValueError("image must be a base64 data URL")
+    m = _DATA_IMAGE_RE.match(url.strip())
+    if not m:
+        raise ValueError("only PNG, JPEG, WebP, or GIF base64 data URLs are allowed")
+    declared = m.group(1).lower()
+    b64_clean = "".join(m.group(2).split())
+    if len(b64_clean) > (CHAT_MAX_IMAGE_BYTES * 4 // 3) + 16:
+        raise ValueError("image exceeds the 4 MiB limit")
+    try:
+        raw = base64.b64decode(b64_clean, validate=True)
+    except ValueError as exc:
+        raise ValueError("invalid base64 image payload") from exc
+    if not raw or len(raw) > CHAT_MAX_IMAGE_BYTES:
+        raise ValueError("image is empty or exceeds the 4 MiB limit")
+    actual = detect_image_mime(raw[:16])
+    if actual != declared:
+        raise ValueError("image content does not match declared format")
+    return actual, raw, f"data:{actual};base64,{b64_clean}"
 
 
 def chat_payload(body) -> dict:
-    """What the chat page may send to a model: plain text messages and a
-    reasoning effort. Sampling and everything else stay as models.json says."""
+    """What the chat page may send to a model: plain text (or validated vision
+    image parts for user messages) and a reasoning effort. Sampling and
+    everything else stay as models.json says."""
     if not isinstance(body, dict):
         raise ValueError("expected a JSON object")
     messages = body.get("messages")
     if not isinstance(messages, list) or not messages or len(messages) > 400:
         raise ValueError("\"messages\" must be a list of 1 to 400 messages")
-    clean, total = [], 0
+    clean, total, images_count = [], 0, 0
     for m in messages:
-        if not isinstance(m, dict) or m.get("role") not in CHAT_ROLES or not isinstance(m.get("content"), str):
+        if not isinstance(m, dict) or m.get("role") not in CHAT_ROLES:
             raise ValueError("each message needs a role (system, user, assistant) and text")
-        total += len(m["content"])
-        clean.append({"role": m["role"], "content": m["content"]})
+        role = m["role"]
+        content = m.get("content")
+        if isinstance(content, str):
+            total += len(content)
+            clean.append({"role": role, "content": content})
+        elif role == "user" and isinstance(content, list) and content:
+            parts = []
+            for part in content:
+                if not isinstance(part, dict):
+                    raise ValueError("invalid multimodal message part")
+                ptype = part.get("type")
+                if ptype == "text" and isinstance(part.get("text"), str):
+                    total += len(part["text"])
+                    parts.append({"type": "text", "text": part["text"]})
+                elif ptype == "image_url" and isinstance(part.get("image_url"), dict):
+                    images_count += 1
+                    if images_count > CHAT_MAX_IMAGES:
+                        raise ValueError(f"at most {CHAT_MAX_IMAGES} images per request")
+                    _, _, canonical = validate_image_data_url(part["image_url"].get("url", ""))
+                    parts.append({"type": "image_url", "image_url": {"url": canonical}})
+                else:
+                    raise ValueError("unsupported multimodal content part")
+            clean.append({"role": role, "content": parts})
+        else:
+            raise ValueError("each message needs a role (system, user, assistant) and text")
     if total > CHAT_MAX_CHARS:
         raise ValueError("the conversation is too long; start a new one")
     payload = {"messages": clean, "stream": True}

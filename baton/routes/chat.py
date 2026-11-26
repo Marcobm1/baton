@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import threading
 from pathlib import Path
 from typing import Literal
@@ -15,12 +16,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from ..agent_chat import CHAT_AGENTS, EFFORTS, MAX_PROMPT_CHARS, MODES, ChatError, is_abliterated
 from ..chat_history import VALID_AGENTS
-from ..models import ModelError, chat_payload
+from ..models import CHAT_MAX_IMAGES, ModelError, chat_payload, validate_image_data_url
 from ..sandbox import is_local_opencode_model
 from ..task_models import opencode_groups
 from .deps import CTX, AppContext
 
 router = APIRouter()
+
+_MIME_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}
 
 _AGENT_LABELS = {
     "gemini": "Gemini",
@@ -353,21 +356,52 @@ async def agents_info(chat_id: str, ctx: AppContext = CTX):
     return JSONResponse(_chat_payload(_get_chat(ctx, chat_id)))
 
 
+def _save_chat_images(data_dir: Path, chat_id: str, images: list) -> list[Path]:
+    if len(images) > CHAT_MAX_IMAGES:
+        raise ValueError(f"at most {CHAT_MAX_IMAGES} images per message")
+    validated = [validate_image_data_url(url) for url in images]
+    upload_dir = Path(data_dir) / "chat-uploads" / chat_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    existing = len(list(upload_dir.iterdir()))
+    saved: list[Path] = []
+    for idx, (mime, raw, _canon) in enumerate(validated, start=existing + 1):
+        ext = _MIME_EXT.get(mime, ".png")
+        target = upload_dir / f"img_{idx:02d}{ext}"
+        target.write_bytes(raw)
+        saved.append(target)
+    return saved
+
+
 @router.post("/api/agents/{chat_id}/prompt")
 async def agents_prompt(request: Request, chat_id: str, ctx: AppContext = CTX):
     ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
     chat = _get_chat(ctx, chat_id)
-    text = (await _json_body(request)).get("text")
-    if not isinstance(text, str) or not text.strip() or len(text) > MAX_PROMPT_CHARS:
+    body = await _json_body(request)
+    text = body.get("text")
+    raw_images = body.get("images") or []
+    if not isinstance(raw_images, list):
+        raise HTTPException(400, "images must be a list of base64 data URLs")
+    if not isinstance(text, str) or (not text.strip() and not raw_images) or len(text) > MAX_PROMPT_CHARS:
         raise HTTPException(400, f"Write a message of up to {MAX_PROMPT_CHARS} characters.")
     clean = text.strip()
+    attached_paths: list[Path] = []
+    if raw_images:
+        try:
+            attached_paths = await asyncio.to_thread(_save_chat_images, ctx.settings.data_dir, chat.id, raw_images)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+    prompt_text = clean
+    if attached_paths:
+        refs = "\n".join(f"[Attached image: {p}]" for p in attached_paths)
+        prompt_text = f"{clean}\n\n{refs}".strip()
     try:
-        chat.prompt(clean)
+        chat.prompt(prompt_text)
     except ChatError as exc:
         raise _agent_error(ctx, exc) from exc
     tid = getattr(chat, "_thread_id", "")
     if tid:
-        await asyncio.to_thread(ctx.chat_history.append_message, tid, "user", clean)
+        saved_note = clean or f"[{len(attached_paths)} image(s)]"
+        await asyncio.to_thread(ctx.chat_history.append_message, tid, "user", saved_note)
     return JSONResponse(_chat_payload(chat), status_code=202)
 
 
@@ -432,6 +466,7 @@ async def agents_close(request: Request, chat_id: str, ctx: AppContext = CTX):
     chat = _get_chat(ctx, chat_id)
     await asyncio.to_thread(_sync_agent_thread, ctx, chat, force_partial=True)
     await asyncio.to_thread(ctx.agent_chats.close, chat_id)
+    shutil.rmtree(ctx.settings.data_dir / "chat-uploads" / chat.id, ignore_errors=True)
     return JSONResponse({"ok": True})
 
 

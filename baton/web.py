@@ -33,6 +33,7 @@ from . import __version__, quotas, usage
 from .agent_chat import AgentChats
 from .alerts import AlertEngine
 from .auth import COOKIE_NAME, LoginRateLimiter, safe_next_path, verify_session_token
+from .chat_history import ChatHistory
 from .config import Settings
 from .github import Hub
 from .i18n import ordinal, strings
@@ -105,6 +106,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     )
     alerts = AlertEngine(settings.data_dir, on_opened=notifier.notify_alert)
     agent_chats = AgentChats(data_dir=settings.data_dir, sandbox_image=settings.sandbox_image)
+    chat_history = ChatHistory(settings.data_dir)
     ranking = store.ranking
 
     def quota_left(agent: str) -> float | None:
@@ -173,6 +175,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         alerts=alerts,
         notifier=notifier,
         agent_chats=agent_chats,
+        chat_history=chat_history,
         ranking=ranking,
         runner=runner,
         updater=updater,

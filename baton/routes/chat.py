@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Literal
 
@@ -13,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from ..agent_chat import CHAT_AGENTS, EFFORTS, MAX_PROMPT_CHARS, MODES, ChatError, is_abliterated
+from ..chat_history import VALID_AGENTS
 from ..models import ModelError, chat_payload
 from ..sandbox import is_local_opencode_model
 from ..task_models import opencode_groups
@@ -39,6 +41,72 @@ def _get_chat(ctx: AppContext, chat_id: str):
     return chat
 
 
+def _attach_thread(chat, thread_id: str) -> None:
+    chat._thread_id = thread_id
+    chat._persisted_seq = 0
+    chat._persist_lock = threading.Lock()
+
+
+def _chat_payload(chat) -> dict:
+    info = dict(chat.info())
+    tid = getattr(chat, "_thread_id", "")
+    if tid:
+        info["thread_id"] = tid
+    return info
+
+
+def _sync_agent_thread(ctx: AppContext, chat, *, force_partial: bool = False) -> None:
+    """Persist completed assistant turns from `chat.events` into SQLite once."""
+    tid = getattr(chat, "_thread_id", "")
+    lock = getattr(chat, "_persist_lock", None)
+    if not tid or lock is None:
+        return
+    with lock:
+        start = int(getattr(chat, "_persisted_seq", 0))
+        events = list(getattr(chat, "events", []))
+        if start >= len(events):
+            return
+        # Update resumable session_id if the CLI has reported one (Claude Code / Codex).
+        sid = str(getattr(chat, "session_id", "") or "")
+        if sid and chat.agent in ("claude-code", "codex"):
+            ctx.chat_history.update_session(tid, sid)
+
+        buf_text: list[str] = []
+        buf_thought: list[str] = []
+        last_persisted = start
+
+        for idx in range(start, len(events)):
+            ev = events[idx]
+            kind = ev.get("type")
+            if kind == "user":
+                # User turns are already saved on POST /prompt; advance marker.
+                last_persisted = idx + 1
+            elif kind == "text":
+                buf_text.append(str(ev.get("text") or ""))
+            elif kind == "thought":
+                buf_thought.append(str(ev.get("text") or ""))
+            elif kind in ("done", "error", "closed"):
+                content = "".join(buf_text).strip()
+                thought = "".join(buf_thought).strip()
+                if content or thought:
+                    ctx.chat_history.append_message(
+                        tid, "assistant", content, reasoning=thought,
+                        meta=str(ev.get("reason") or "") if kind == "done" else "",
+                    )
+                buf_text.clear()
+                buf_thought.clear()
+                last_persisted = idx + 1
+
+        if force_partial and (buf_text or buf_thought):
+            content = "".join(buf_text).strip()
+            thought = "".join(buf_thought).strip()
+            if content or thought:
+                ctx.chat_history.append_message(tid, "assistant", content, reasoning=thought)
+            last_persisted = len(events)
+
+        chat._persisted_seq = last_persisted
+
+
 async def _json_body(request: Request) -> dict:
     try:
         body = await request.json()
@@ -54,9 +122,20 @@ async def chat_page(
     request: Request,
     model: str = "",
     error: str = "",
-    agent: Literal["local", "opencode", "gemini", "claude-code", "codex"] = "local",
+    agent: Literal["local", "opencode", "gemini", "claude-code", "codex"] | None = None,
+    thread: str = "",
     ctx: AppContext = CTX,
 ):
+    active_thread = await asyncio.to_thread(ctx.chat_history.get_thread, thread) if thread else None
+    if agent is None:
+        if active_thread and active_thread["agent"] in VALID_AGENTS:
+            agent = active_thread["agent"]
+        else:
+            agent = "local"
+    if not model and active_thread and active_thread["agent"] == "local" and active_thread["model"]:
+        model = active_thread["model"]
+
+    threads = await asyncio.to_thread(ctx.chat_history.list_threads, limit=60)
     view = await asyncio.to_thread(ctx.models.overview, ctx.settings.lang)
     ids = [m["id"] for m in view["models"]]
     running = [m["id"] for m in view["models"] if m["status"] in ("running", "external")]
@@ -88,8 +167,98 @@ async def chat_page(
                 "sandbox_ready": False,
                 "sessions": sessions,
             }
-    return ctx.page(request, "chat.html", "chat", view=view, selected=selected, error=error[:300],
-                    agent=agent, oc=oc, efforts=EFFORTS)
+    return ctx.page(
+        request, "chat.html", "chat", view=view, selected=selected, error=error[:300],
+        agent=agent, oc=oc, efforts=EFFORTS, threads=threads, active_thread=active_thread,
+    )
+
+
+# ------------------------------------------------------- Persistent threads API
+
+@router.get("/api/chat-threads")
+async def chat_threads_list(q: str = "", limit: int = Query(60, ge=1, le=200), ctx: AppContext = CTX):
+    threads = await asyncio.to_thread(ctx.chat_history.list_threads, limit=limit, query=q)
+    return JSONResponse({"threads": threads})
+
+
+@router.post("/api/chat-threads")
+async def chat_threads_create(request: Request, ctx: AppContext = CTX):
+    ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
+    body = await _json_body(request)
+    agent = str(body.get("agent") or "local")
+    if agent not in VALID_AGENTS:
+        raise HTTPException(400, "Unknown agent")
+    thread = await asyncio.to_thread(
+        ctx.chat_history.create_thread,
+        agent=agent,
+        model=str(body.get("model") or ""),
+        effort=str(body.get("effort") or ""),
+        folder_key=str(body.get("folder_key") or ""),
+        folder_label=str(body.get("folder_label") or ""),
+        mode=str(body.get("mode") or "confirm"),
+        session_id=str(body.get("session_id") or ""),
+        title=str(body.get("title") or ""),
+    )
+    return JSONResponse(thread, status_code=201)
+
+
+@router.get("/api/chat-threads/{thread_id}")
+async def chat_threads_get(thread_id: str, ctx: AppContext = CTX):
+    thread = await asyncio.to_thread(ctx.chat_history.get_thread, thread_id)
+    if thread is None:
+        raise HTTPException(404, "Unknown thread")
+    return JSONResponse(thread)
+
+
+@router.post("/api/chat-threads/{thread_id}/messages")
+async def chat_threads_messages(request: Request, thread_id: str, ctx: AppContext = CTX):
+    ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
+    body = await _json_body(request)
+    if isinstance(body.get("replace"), list):
+        updated = await asyncio.to_thread(
+            ctx.chat_history.replace_messages,
+            thread_id,
+            body["replace"],
+            model=str(body["model"]) if "model" in body else None,
+            effort=str(body["effort"]) if "effort" in body else None,
+        )
+        if updated is None:
+            raise HTTPException(404, "Unknown thread")
+        return JSONResponse(updated)
+    role = str(body.get("role") or "")
+    content = str(body.get("content") or "")
+    reasoning = str(body.get("reasoning") or "")
+    meta = str(body.get("meta") or "")
+    if role not in ("user", "assistant", "system") or (not content.strip() and not reasoning.strip()):
+        raise HTTPException(400, "Valid role and content are required.")
+    msg = await asyncio.to_thread(
+        ctx.chat_history.append_message, thread_id, role, content, reasoning=reasoning, meta=meta
+    )
+    if msg is None:
+        raise HTTPException(404, "Unknown thread")
+    return JSONResponse(msg, status_code=201)
+
+
+@router.patch("/api/chat-threads/{thread_id}")
+async def chat_threads_rename(request: Request, thread_id: str, ctx: AppContext = CTX):
+    ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
+    body = await _json_body(request)
+    title = str(body.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "Title is required.")
+    ok = await asyncio.to_thread(ctx.chat_history.rename_thread, thread_id, title)
+    if not ok:
+        raise HTTPException(404, "Unknown thread")
+    return JSONResponse({"ok": True, "title": title[:120]})
+
+
+@router.delete("/api/chat-threads/{thread_id}")
+async def chat_threads_delete(request: Request, thread_id: str, ctx: AppContext = CTX):
+    ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
+    ok = await asyncio.to_thread(ctx.chat_history.delete_thread, thread_id)
+    if not ok:
+        raise HTTPException(404, "Unknown thread")
+    return JSONResponse({"ok": True})
 
 
 @router.get("/api/agents/sessions")
@@ -110,6 +279,7 @@ async def agents_create(request: Request, ctx: AppContext = CTX):
     agent, model = body.get("agent", "opencode"), str(body.get("model") or "")
     effort, mode = str(body.get("effort") or "default"), str(body.get("mode") or "confirm")
     resume = str(body.get("resume") or "").strip()
+    thread_id = str(body.get("thread_id") or "").strip()
     if agent not in CHAT_AGENTS:
         raise HTTPException(400, "Unknown agent")
     if mode not in MODES or effort not in EFFORTS:
@@ -156,12 +326,29 @@ async def agents_create(request: Request, ctx: AppContext = CTX):
             "ag_full_off", "ag_full_abliterated", "ag_full_local_only", "ag_full_hardlink"
         ) else (502 if exc.key == "ag_err_start" else 409)
         raise _agent_error(ctx, exc, status) from exc
-    return JSONResponse(chat.info())
+
+    existing = await asyncio.to_thread(ctx.chat_history.get_thread, thread_id) if thread_id else None
+    if existing and existing["agent"] == agent:
+        tid = existing["id"]
+    else:
+        created = await asyncio.to_thread(
+            ctx.chat_history.create_thread,
+            agent=agent,
+            model=model,
+            effort=effort,
+            folder_key=folder["key"],
+            folder_label=folder["label"],
+            mode=mode,
+            session_id=resume,
+        )
+        tid = created["id"]
+    _attach_thread(chat, tid)
+    return JSONResponse(_chat_payload(chat))
 
 
 @router.get("/api/agents/{chat_id}")
 async def agents_info(chat_id: str, ctx: AppContext = CTX):
-    return JSONResponse(_get_chat(ctx, chat_id).info())
+    return JSONResponse(_chat_payload(_get_chat(ctx, chat_id)))
 
 
 @router.post("/api/agents/{chat_id}/prompt")
@@ -171,11 +358,15 @@ async def agents_prompt(request: Request, chat_id: str, ctx: AppContext = CTX):
     text = (await _json_body(request)).get("text")
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_PROMPT_CHARS:
         raise HTTPException(400, f"Write a message of up to {MAX_PROMPT_CHARS} characters.")
+    clean = text.strip()
     try:
-        chat.prompt(text.strip())
+        chat.prompt(clean)
     except ChatError as exc:
         raise _agent_error(ctx, exc) from exc
-    return JSONResponse(chat.info(), status_code=202)
+    tid = getattr(chat, "_thread_id", "")
+    if tid:
+        await asyncio.to_thread(ctx.chat_history.append_message, tid, "user", clean)
+    return JSONResponse(_chat_payload(chat), status_code=202)
 
 
 @router.get("/api/agents/{chat_id}/events")
@@ -195,8 +386,11 @@ async def agents_events(request: Request, chat_id: str, after: int = Query(0, ge
             events, more = await asyncio.to_thread(chat.wait, position, 15)
             for event in events:
                 yield f"id: {event['seq']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+                if event.get("type") in ("done", "error", "closed"):
+                    await asyncio.to_thread(_sync_agent_thread, ctx, chat)
             position += len(events)
             if not more and position >= len(chat.events):
+                await asyncio.to_thread(_sync_agent_thread, ctx, chat)
                 yield "event: idle\ndata: {}\n\n"
                 return
             if not events:
@@ -224,14 +418,17 @@ async def agents_permission(request: Request, chat_id: str, ctx: AppContext = CT
 @router.post("/api/agents/{chat_id}/cancel")
 async def agents_cancel(request: Request, chat_id: str, ctx: AppContext = CTX):
     ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
-    await asyncio.to_thread(_get_chat(ctx, chat_id).cancel)
+    chat = _get_chat(ctx, chat_id)
+    await asyncio.to_thread(chat.cancel)
+    await asyncio.to_thread(_sync_agent_thread, ctx, chat, force_partial=True)
     return JSONResponse({"ok": True})
 
 
 @router.post("/api/agents/{chat_id}/close")
 async def agents_close(request: Request, chat_id: str, ctx: AppContext = CTX):
     ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
-    _get_chat(ctx, chat_id)
+    chat = _get_chat(ctx, chat_id)
+    await asyncio.to_thread(_sync_agent_thread, ctx, chat, force_partial=True)
     await asyncio.to_thread(ctx.agent_chats.close, chat_id)
     return JSONResponse({"ok": True})
 

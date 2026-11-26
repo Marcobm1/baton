@@ -14,6 +14,19 @@
         </select></label>
 {% endmacro %}
 {% block main %}
+<div class="chat-shell" data-chat-shell>
+  <aside class="chat-sidebar" aria-label="{{ t.chat_history }}">
+    <div class="chat-sidebar-head">
+      <button type="button" class="btn small chat-new-wide" data-sidebar-new>＋ {{ t.chat_new }}</button>
+      <input type="search" class="thread-search" data-thread-search placeholder="{{ t.chat_search }}" aria-label="{{ t.chat_search }}">
+    </div>
+    <div class="thread-list" data-thread-list>
+      {% if not threads %}<p class="muted small thread-empty">{{ t.chat_history_empty }}</p>{% endif %}
+    </div>
+  </aside>
+  <div class="chat-sidebar-backdrop" data-sidebar-backdrop></div>
+
+  <div class="chat-pane">
 {% if agent in ('opencode', 'gemini', 'claude-code', 'codex') %}
 {% set suffix = {'opencode': '', 'gemini': '_gemini', 'claude-code': '_claude', 'codex': '_codex'}[agent] %}
 {% set js = {
@@ -27,11 +40,17 @@
   'st_in_progress': t.ag_st_in_progress, 'st_completed': t.ag_st_completed, 'st_failed': t.ag_st_failed,
   'full_off': t.ag_full_off, 'full_help': t.ag_full_help, 'full_local_only': t.ag_full_local_only,
   'full_abliterated': t.ag_full_abliterated, 'full_badge': t.ag_full_badge,
+  'copy': t.chat_copy, 'copied': t.chat_copied,
+  'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled,
+  'rename': t.chat_rename, 'del': t.chat_delete, 'del_confirm': t.chat_delete_confirm,
   'lang': lang} %}
 <section class="chat" data-agents data-agent="{{ agent }}" data-csrf="{{ csrf }}"
          data-sandbox-ready="{{ '1' if oc.sandbox_ready else '0' }}">
   <div class="chat-head">
-    <h2>{{ t.chat_nav }}</h2>
+    <div class="chat-title-row">
+      <button type="button" class="btn ghost small sidebar-toggle" data-sidebar-toggle aria-expanded="false">☰ {{ t.chat_history }}</button>
+      <h2>{{ t.chat_nav }}</h2>
+    </div>
     <div class="chat-controls">
       {{ agent_select() }}
       {% if oc.available and oc.folders %}
@@ -90,12 +109,20 @@
   <p class="ag-full-warn small" role="alert" data-full-warn hidden>{{ t.ag_full_warn }}</p>
   <p class="warn small" data-payg-warn hidden>{{ t.oc_payg_warning }}</p>
   <div class="muted small ag-fixed" data-fixed hidden>
-    <span><span data-fixed-text></span> <span class="ag-full-badge" data-full-badge hidden>{{ t.ag_full_badge }}</span></span>
+    <span><button type="button" class="btn ghost small sidebar-toggle" data-sidebar-toggle aria-expanded="false">☰</button> <span data-fixed-text></span> <span class="ag-full-badge" data-full-badge hidden>{{ t.ag_full_badge }}</span></span>
     <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
   </div>
   <div class="chat-log" data-log aria-live="polite">
-    <p class="muted chat-empty" data-empty>{{ t['ag_empty' ~ suffix] }}</p>
+    <div class="chat-empty" data-empty>
+      <p class="muted">{{ t['ag_empty' ~ suffix] }}</p>
+      <div class="chat-suggests">
+        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_arch }}">{{ t.chat_sug_arch }}</button>
+        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_diff }}">{{ t.chat_sug_diff }}</button>
+        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_plan }}">{{ t.chat_sug_plan }}</button>
+      </div>
+    </div>
   </div>
+  <button type="button" class="scroll-bottom" data-scroll-bottom hidden aria-label="{{ t.chat_scroll_bottom }}">↓</button>
   <form class="chat-input" data-form>
     <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
     <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
@@ -103,17 +130,24 @@
   {% endif %}
 </section>
 <script id="agents-strings" type="application/json">{{ js|tojson }}</script>
+<script id="chat-bootstrap" type="application/json">{{ {'threads': threads, 'active_thread': active_thread}|tojson }}</script>
 <script src="/static/chat-common.js?v={{ css_v }}" defer></script>
 <script src="/static/agents-chat.js?v={{ css_v }}" defer></script>
 {% else %}
 {% set js = {
   'stop': t.chat_stop, 'send': t.chat_send, 'reasoning': t.chat_reasoning, 'thinking': t.chat_thinking,
   'writing': t.chat_writing, 'stopped': t.chat_stopped, 'error': t.chat_error, 'copy': t.chat_copy,
-  'copied': t.chat_copied, 'off': t.chat_off, 'loading': t.chat_loading, 'busy': t.chat_busy,
-  'start': t.m_start, 'lang': lang} %}
+  'copied': t.chat_copied, 'regenerate': t.chat_regenerate, 'edit': t.chat_edit,
+  'off': t.chat_off, 'loading': t.chat_loading, 'busy': t.chat_busy,
+  'start': t.m_start, 'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled,
+  'rename': t.chat_rename, 'del': t.chat_delete, 'del_confirm': t.chat_delete_confirm,
+  'lang': lang} %}
 <section class="chat" data-chat data-csrf="{{ csrf }}">
   <div class="chat-head">
-    <h2>{{ t.chat_nav }}</h2>
+    <div class="chat-title-row">
+      <button type="button" class="btn ghost small sidebar-toggle" data-sidebar-toggle aria-expanded="false">☰ {{ t.chat_history }}</button>
+      <h2>{{ t.chat_nav }}</h2>
+    </div>
     <div class="chat-controls">
       {{ agent_select() }}
       {% if view.models %}
@@ -157,8 +191,16 @@
     </form>
   </div>
   <div class="chat-log" data-log aria-live="polite">
-    <p class="muted chat-empty" data-empty>{{ t.chat_empty }}</p>
+    <div class="chat-empty" data-empty>
+      <p class="muted">{{ t.chat_empty }}</p>
+      <div class="chat-suggests">
+        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_explain }}">{{ t.chat_sug_explain }}</button>
+        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_review }}">{{ t.chat_sug_review }}</button>
+        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_ideas }}">{{ t.chat_sug_ideas }}</button>
+      </div>
+    </div>
   </div>
+  <button type="button" class="scroll-bottom" data-scroll-bottom hidden aria-label="{{ t.chat_scroll_bottom }}">↓</button>
   <form class="chat-input" data-form>
     <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
     <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
@@ -166,7 +208,10 @@
   {% endif %}
 </section>
 <script id="chat-strings" type="application/json">{{ js|tojson }}</script>
+<script id="chat-bootstrap" type="application/json">{{ {'threads': threads, 'active_thread': active_thread}|tojson }}</script>
 <script src="/static/chat-common.js?v={{ css_v }}" defer></script>
 <script src="/static/chat.js?v={{ css_v }}" defer></script>
 {% endif %}
+  </div>
+</div>
 {% endblock %}

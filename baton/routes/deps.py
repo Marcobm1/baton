@@ -20,6 +20,7 @@ from ..alerts import AlertEngine
 from ..auth import LoginRateLimiter
 from ..chat_history import ChatHistory
 from ..config import Settings
+from ..local_harness import LocalHarnessManager
 from ..machines import MachineStore
 from ..models import LocalModels
 from ..notify import Notifier
@@ -46,6 +47,7 @@ class AppContext:
     alerts: AlertEngine
     notifier: Notifier
     agent_chats: AgentChats
+    local_harness: LocalHarnessManager
     chat_history: ChatHistory
     ranking: Ranking
     runner: Any

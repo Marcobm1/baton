@@ -13,6 +13,7 @@ links:
 ---
 
 ## Done recently
+- 2026-11-26: Local model tool-calling harness in `/chat`: opt-in **Internet + tools** mode (off by default) with OpenAI-compatible multi-round tool loop (`baton/local_harness.py`), `web_search` (DuckDuckGo HTML or optional `BATON_SEARCH_URL` SearXNG JSON), SSRF-guarded `fetch_url`, `get_datetime`, AST `calculate`, optional allowlisted-folder file/command tools, and mandatory one-shot **Allow / Deny** confirmation on writes, commands, and `.env` reads (`docs/local-harness.md`, `tests/test_local_harness.py`).
 - 2026-11-26: Chat-3 overhaul: magic-byte validated raster image attachments & `Ctrl+V` paste for both local vision models and agent chats (auto-cleaned on close), selectable system prompt presets + custom system prompt, and subtle context-window usage meter in local chat (`baton/models.py`, `baton/routes/chat.py`, `tests/test_chat_vision_presets.py`).
 - 2026-11-26: Chat-2 overhaul: consecutive read/search tool grouping in `/chat` (`.ag-tool-group` keeping diffs, commands, and approvals prominent), bidirectional Chat ↔ Tasks bridge (**Convert to task →** via `/tasks/new?from_thread=...` + **Open in Chat** on `/tasks/{id}`), and delayed Telegram/Webhook alerts when an agent approval waits >30 s (`baton/agent_chat.py`, `baton/notify.py`, `tests/test_chat_phase2_ux.py`).
 - 2026-11-26: Chat-1 overhaul: SQLite persistent chat history (`chat_threads` + `chat_messages`), collapsible cross-device sidebar with live search/rename/delete, upgraded safe Markdown (GFM tables, code-block copy bar, blockquotes, checklists), sticky auto-scroll with `↓` jump button, copy/regenerate/edit actions, and prompt suggestion chips (`baton/chat_history.py`, `tests/test_chat_history.py`).
@@ -32,6 +33,7 @@ links:
 - [x] 2026-11-26 Chat-1: Persistent SQLite chat history sidebar, upgraded Markdown (tables + code copy), sticky auto-scroll, and regenerate/edit actions (`baton/chat_history.py`, `tests/test_chat_history.py`)
 - [x] 2026-11-26 Chat-2: Agent tool grouping + Chat-to-Task bridge + Telegram approval alerts (`baton/agent_chat.py`, `baton/notify.py`, `tests/test_chat_phase2_ux.py`)
 - [x] 2026-11-26 Chat-3: Chat image attachments (vision) + local system prompt presets + context usage meter (`baton/models.py`, `baton/routes/chat.py`, `tests/test_chat_vision_presets.py`)
+- [x] 2026-11-26 Local model tool-calling harness in `/chat`: opt-in Internet + utilities + allowlisted-folder file/command tools with mandatory Allow/Deny on writes, commands, and `.env` reads (`baton/local_harness.py`, `docs/local-harness.md`, `tests/test_local_harness.py`)
 - [ ] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify
   Allow/Deny on a harmless command, restart Baton or start a new chat, and resume the saved session.
@@ -44,6 +46,7 @@ links:
 - Confirm mode on the host runs approved commands as the host Windows user (Gemini Confirm covers commands only; Codex approved commands write even under `sandbox: "read-only"`).
 
 ## Decisions
+- 2026-11-26: Native local-model tool-calling harness (`baton/local_harness.py`, [docs/local-harness.md](docs/local-harness.md)): opt-in per conversation (Offline by default), built-in DuckDuckGo HTML search + optional `BATON_SEARCH_URL` SearXNG JSON, SSRF-guarded `fetch_url`, `get_datetime`, AST `calculate`, and optional allowlisted-folder tools (`list_files`, `read_file`, `search_files`, `write_file`, `run_command`). Writes, commands, and `.env` reads ALWAYS require one-shot CSRF-protected Allow/Deny confirmation (never unattended, including for abliterated models).
 - 2026-11-26: Three-phase Chat overhaul completed (Chat-1 SQLite history sidebar + upgraded Markdown + sticky scroll, Chat-2 tool grouping + Chat-to-Task bridge + Telegram approval pings, Chat-3 validated image attachments + system presets + context usage meter).
 - 2026-11-26: Three-phase UX overhaul completed (UX-1 global decluttering, UX-2 Projects & Tasks remodel + automatic git diff stats, UX-3 structured agent reports + local `.baton-artifacts/` image gallery + optional Telegram `sendPhoto`, [docs/project-detail.md](docs/project-detail.md)).
 - 2026-11-26: Hardening Phase 4 open-source cleanup: `(Owner)` is now the generic default for `BATON_OWNER_TAG` (plain names auto-wrapped), `BATON_CHAT_SCRATCH` defaults to empty on all OSes, and `BATON_SCHEDULED_TASK` defaults to `Baton` with strict allowlist validation against PowerShell injection ([docs/hardening-roadmap.md](docs/hardening-roadmap.md)).
@@ -52,6 +55,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-26 (gemini): Added opt-in local model tool-calling harness in `/chat` (`baton/local_harness.py`, `/api/chat/{model_id}/harness`, `/api/chat-harness/{run_id}/{permission,cancel}`, `BATON_SEARCH_URL`, `docs/local-harness.md`, `tests/test_local_harness.py`).
 - 2026-11-26 (gemini): Completed Chat-3 overhaul (magic-byte validated image attachments & `Ctrl+V` paste for local vision and agent chats with auto-cleanup on close, system prompt presets + custom system prompt, context usage meter in local chat, `tests/test_chat_vision_presets.py`).
 - 2026-11-26 (gemini): Completed Chat-2 overhaul (grouped read-only tool calls in `/chat`, **Convert to task →** & **Open in Chat** bridge via `from_thread`/`folder`, and delayed Telegram/Webhook alerts for unanswered chat approvals >30 s, `tests/test_chat_phase2_ux.py`).
 - 2026-11-26 (gemini): Completed Chat-1 overhaul (`baton/chat_history.py`, SQLite `chat_threads`/`chat_messages`, collapsible sidebar with search/rename/delete, GFM tables + code-block copy bar, sticky auto-scroll, copy/regenerate/edit actions, `tests/test_chat_history.py`).

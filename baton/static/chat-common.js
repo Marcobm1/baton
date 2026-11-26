@@ -403,9 +403,52 @@
     };
   }
 
+  // Shared LCS diff renderer used by Agents chat and local model tool harness.
+  function diffLines(oldText, newText) {
+    var a = (oldText || "").split("\n"), b = (newText || "").split("\n"), out = [];
+    if (oldText == null || oldText === "") return b.map(function (l) { return ["+", l]; });
+    if (a.length * b.length > 250000) {
+      return a.map(function (l) { return ["-", l]; }).concat(b.map(function (l) { return ["+", l]; }));
+    }
+    var n = a.length, m = b.length, L = [];
+    for (var i = 0; i <= n; i++) { L.push(new Uint32Array(m + 1)); }
+    for (i = n - 1; i >= 0; i--) for (var j = m - 1; j >= 0; j--) {
+      L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    }
+    i = 0; j = 0;
+    while (i < n && j < m) {
+      if (a[i] === b[j]) { out.push([" ", a[i]]); i++; j++; }
+      else if (L[i + 1][j] >= L[i][j + 1]) { out.push(["-", a[i++]]); }
+      else { out.push(["+", b[j++]]); }
+    }
+    while (i < n) out.push(["-", a[i++]]);
+    while (j < m) out.push(["+", b[j++]]);
+    return out;
+  }
+
+  function diffBlock(d) {
+    var wrap = document.createElement("div");
+    wrap.className = "ag-block";
+    var pathEl = document.createElement("span");
+    pathEl.className = "ag-path";
+    pathEl.textContent = d.path || "";
+    wrap.appendChild(pathEl);
+    var pre = document.createElement("pre");
+    pre.className = "ag-diff";
+    diffLines(d.old, d.new).slice(0, 2000).forEach(function (row) {
+      var line = document.createElement("span");
+      line.className = row[0] === "+" ? "add" : row[0] === "-" ? "del" : "";
+      line.textContent = row[0] + " " + row[1] + "\n";
+      pre.appendChild(line);
+    });
+    wrap.appendChild(pre);
+    return wrap;
+  }
+
   window.BatonChat = {
     esc: esc, md: md, createScroller: createScroller,
-    initSidebar: initSidebar, createAttachments: createAttachments
+    initSidebar: initSidebar, createAttachments: createAttachments,
+    diffBlock: diffBlock
   };
 
   // Agent switcher: the page is drawn for one agent; switching reloads it.

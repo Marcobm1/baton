@@ -221,3 +221,19 @@
 .ctx-meter.is-bad .ctx-fill { background: var(--bad); }
 .ctx-meter.is-bad { color: var(--bad); }
 
+/* Local model tool-calling harness bar, warning banner, and inline tool/permission cards. */
+.local-tools-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; }
+.lh-pill-on:has(input:checked) { color: var(--warn); }
+.lh-folder-wrap { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; max-width: 100%; }
+.lh-folder-wrap[hidden] { display: none; }
+.lh-folder-wrap select { font: inherit; font-size: .84rem; padding: .3rem .5rem; border-radius: var(--radius-sm);
+                         border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+                         max-width: min(17rem, 70vw); text-overflow: ellipsis; }
+.local-harness-warn { margin: 0; padding: .48rem .75rem; border: 1.5px solid var(--warn); border-radius: var(--radius-sm);
+                      background: color-mix(in srgb, var(--warn) 10%, var(--panel)); color: var(--ink); }
+.local-harness-warn.is-abliterated { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); }
+.local-harness-warn[hidden] { display: none; }
+.msg-tools { display: flex; flex-direction: column; gap: .45rem; margin-bottom: .55rem; }
+.msg-tools:empty { display: none; }
+
+

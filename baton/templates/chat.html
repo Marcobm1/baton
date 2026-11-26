@@ -155,6 +155,16 @@
   'off': t.chat_off, 'loading': t.chat_loading, 'busy': t.chat_busy,
   'start': t.m_start, 'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled,
   'rename': t.chat_rename, 'del': t.chat_delete, 'del_confirm': t.chat_delete_confirm,
+  'perm_title': t.ag_perm_title, 'allow': t.ag_allow, 'deny': t.ag_deny,
+  'expires': t.ag_perm_expires, 'allowed': t.ag_allowed, 'denied': t.ag_denied,
+  'timeout': t.ag_timeout, 'cancelled': t.ag_cancelled, 'expired': t.ag_expired,
+  'input': t.ag_input, 'output': t.ag_output, 'command': t.ag_command,
+  'st_pending': t.ag_st_pending, 'st_in_progress': t.ag_st_in_progress,
+  'st_completed': t.ag_st_completed, 'st_failed': t.ag_st_failed,
+  'lh_warn': t.lh_warn, 'lh_warn_folder': t.lh_warn_folder,
+  'lh_warn_abliterated': t.lh_warn_abliterated,
+  'lh_running_tools': t.lh_running_tools, 'lh_waiting_perm': t.lh_waiting_perm,
+  'lh_rounds': t.lh_rounds,
   'lang': lang} %}
 <section class="chat" data-chat data-csrf="{{ csrf }}">
   <div class="chat-head">
@@ -172,14 +182,14 @@
           <optgroup label="{{ g.label }}">
             {% for m in g.models %}
             <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
-                    {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
+                    {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}" data-abliterated="{{ '1' if m.abliterated else '0' }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
             {% endfor %}
           </optgroup>
           {% endfor %}
           {% else %}
           {% for m in view.models %}
           <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
-                  {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
+                  {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}" data-abliterated="{{ '1' if m.abliterated else '0' }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
           {% endfor %}
           {% endif %}
         </select></label>
@@ -206,6 +216,27 @@
   {% if not view.models %}
   <p class="muted">{{ t.m_no_config.format(path=view.config.path) }}</p>
   {% else %}
+  <div class="local-tools-bar">
+    <div class="ag-mode-pills" role="radiogroup" aria-label="{{ t.lh_mode }}">
+      <label class="ag-pill"><input type="radio" name="lh-mode" value="off" checked data-harness-mode><span>{{ t.lh_off }}</span></label>
+      <label class="ag-pill lh-pill-on"><input type="radio" name="lh-mode" value="on" data-harness-mode><span>{{ t.lh_on }}</span></label>
+    </div>
+    <label class="lh-folder-wrap" data-harness-folder-wrap hidden><span class="label">{{ t.ag_folder }}</span>
+      <select data-harness-folder>
+        <option value="">{{ t.lh_folder_none }}</option>
+        {% for f in local_folders %}
+        <option value="{{ f.key }}"{% if selected_folder and f.key.lower() == selected_folder.lower() %} selected{% endif %}>{{ f.label }}</option>
+        {% endfor %}
+      </select></label>
+    <details class="ag-mode-info">
+      <summary class="small muted" title="{{ t.lh_mode }}">?</summary>
+      <div class="ag-mode-info-body small muted">
+        <p>{{ t.lh_help_tools }}</p>
+        <p>{{ t.lh_help_safety }}</p>
+      </div>
+    </details>
+  </div>
+  <p class="local-harness-warn small" role="alert" data-harness-warn hidden></p>
   <textarea class="custom-sys small" data-custom-system rows="2" hidden placeholder="{{ t.chat_custom_sys_placeholder }}" aria-label="{{ t.chat_preset_custom }}"></textarea>
   <div class="warn chat-off" data-off hidden>
     <span data-off-text></span>

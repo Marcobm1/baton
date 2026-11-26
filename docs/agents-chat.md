@@ -193,26 +193,48 @@ Run the tool process and its descendants inside an OS boundary with the selected
 
 Verify isolation with two temporary sibling directories, one mounted as the workspace and one holding a marker. An approved command and a child process should each be able to edit the workspace and be denied access to the sibling, including through a junction. Repeat in Full mode. Disable tool execution if the boundary cannot be established.
 
-## Phase 2 notes: Claude Code and Codex (verified on Windows 2026-11-25)
+## Phase 2: Claude Code and Codex with interactive approvals & session resume (2026-11-25)
 
-Neither Claude Code nor Codex ships an ACP adapter on PATH. Verified live in
-`C:\IA\pruebas-opencode\baton-fase2`:
+Neither Claude Code nor Codex ships an ACP adapter on PATH. Both are now wired
+into `/chat?agent=claude-code` and `/chat?agent=codex` using the live protocols
+verified in `C:\IA\pruebas-opencode\baton-fase2`:
 
-- **Claude Code (`claude.exe` 2.1.331):** bidirectional JSONL over stdio using
-  `claude -p --input-format stream-json --output-format stream-json --verbose --permission-mode manual --permission-prompt-tool stdio --strict-mcp-config --setting-sources local --disallowedTools AskUserQuestion`.
-  Handshake via `control_request` (`initialize`) → `control_response`; interactive
-  approvals arrive as `control_request` (`can_use_tool`) and answer via
-  `control_response` (`allow` with `updatedInput` or `deny` with `message`).
-  Resume works across process restarts via `--resume <session_id>`. Never store
-  or log `account` or `credential_expires_at` fields.
-- **Codex (`codex-cli` 0.171.0):** `codex exec --json` has no interactive
-  approval channel (Full permissions only). Interactive Confirm mode uses
-  `codex app-server` (JSON-RPC 2.0 over stdio): `initialize` → `initialized` →
-  `thread/start` (`sandbox: "read-only"`, `approvalPolicy: "untrusted"`) →
-  `turn/start`, answering `item/commandExecution/requestApproval` and
-  `item/fileChange/requestApproval` with `decision: "accept"` or `"decline"`.
-  Resume uses `thread/resume` with `excludeTurns: true`. Caveat on Windows: an
-  approved command runs with write access as Marco's user even under
-  `sandbox: "read-only"`. Never store or log `account/*` or `planType`.
-
-Full mode should preapprove calls only inside an isolated boundary. Display a red warning and conversation badge, and reject Full on the server for abliterated models, including when selected via their OpenCode provider alias. Fake agents can verify the chat protocol and UI state. Host confinement and phone access require separate acceptance checks.
+- **Claude Code (`baton/chat_claude.py`, verified on `claude.exe` 2.1.331):**
+  - Launches `claude -p --input-format stream-json --output-format stream-json --verbose --permission-mode manual --permission-prompt-tool stdio --strict-mcp-config --setting-sources local --disallowedTools AskUserQuestion` (plus `--model`, `--effort`, and `--resume <session_id>`).
+  - Handshake via `control_request` (`initialize`) → `control_response`; fails
+    closed if Claude reports a bypass mode (`bypassPermissions`/`dontAsk`).
+  - Interactive approvals arrive as `control_request` (`can_use_tool`) and
+    answer via `control_response` (`allow` with `updatedInput` only, never
+    `updatedPermissions`, or `deny` with message). Cancel sends `interrupt`.
+  - Scrubs `account` and `credential_expires_at` (never stored, logged, or sent).
+- **Codex (`baton/chat_codex.py`, verified on `codex-cli` 0.171.0):**
+  - Launches native `codex.exe` via `find_codex()` as `codex app-server`
+    (JSON-RPC 2.0 over stdio; `codex exec --json` has no interactive approval
+    channel).
+  - Handshake: `initialize` → `initialized` → `thread/start` or `thread/resume`
+    (`excludeTurns: true`) with `sandbox: "read-only"` and
+    `approvalPolicy: "untrusted"`; turns use `turn/start` and `turn/interrupt`.
+  - Interactive approvals (`item/commandExecution/requestApproval`,
+    `item/fileChange/requestApproval`, `item/permissions/requestApproval`, and
+    legacy equivalents) answer with `decision: "accept"` (allow once, never
+    `acceptForSession`) or `"decline"` / `"cancel"`.
+  - Ignores all `account/*` notifications (`planType`, account info).
+  - **Windows caveat:** an approved Codex command runs with write access as
+    Marco's Windows user even under `sandbox: "read-only"`.
+- **Session resume across restarts (`baton/db.py`, `chat_sessions` table):**
+  - Baton saves minimal session metadata (`session_id`, `agent`, `folder_key`,
+    `folder_label`, `model`, `effort`, first-prompt `title`, `updated_at` — zero
+    credentials or raw transcripts) in `<data_dir>/baton.sqlite3` (capped at 50
+    per agent).
+  - `/chat?agent=claude-code` and `/chat?agent=codex` offer a **Session**
+    selector (`GET /api/agents/sessions`) to resume any saved session from
+    desktop or phone; `POST /api/agents` validates that `resume` belongs to a
+    saved session for that agent (fail closed).
+- **Permissions boundary:** **All permissions** stays refused (`403`) on the
+  server for Claude Code and Codex (only OpenCode local models run inside the
+  credential-free Docker sandbox).
+- **Tests (`tests/test_agents_phase2.py`, `tests/fake_claude_chat.py`, `tests/fake_codex_app_server.py`):**
+  verify CLI flags, free reads, allow/deny/timeout/cancel approvals, fail-closed
+  bypass rejection, environment & `account`/`credential_expires_at` scrubbing,
+  Full mode 403 refusal, auth on `/api/agents/sessions`, and session resume
+  across a simulated Baton restart.

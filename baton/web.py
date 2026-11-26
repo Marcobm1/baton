@@ -36,7 +36,7 @@ from .config import Settings
 from .github import Hub
 from .i18n import ordinal, strings
 from .models import LocalModels
-from .ping import Scheduler, find_agy
+from .ping import Scheduler, find_agy, find_claude, find_codex
 from .routes import AppContext, register_routes
 from .runner import (
     AGENTS as AGENTS,
@@ -171,6 +171,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         opencode_models_fn=lambda: opencode_models(),
         find_opencode_fn=lambda: find_opencode(),
         find_agy_fn=lambda: find_agy(),
+        find_claude_fn=lambda: find_claude(),
+        find_codex_fn=lambda: find_codex(),
     )
 
     async def update_loop():

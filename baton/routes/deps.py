@@ -54,6 +54,8 @@ class AppContext:
     opencode_models_fn: Callable[[], list[str]]
     find_opencode_fn: Callable[[], str | None]
     find_agy_fn: Callable[[], str | None]
+    find_claude_fn: Callable[[], str | None] = lambda: None
+    find_codex_fn: Callable[[], str | None] = lambda: None
     usage_cache: dict = field(default_factory=dict)
     usage_ttl: float = 300.0
     _usage_lock: threading.Lock = field(default_factory=threading.Lock)

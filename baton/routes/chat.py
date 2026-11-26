@@ -12,13 +12,19 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
-from ..agent_chat import EFFORTS, MAX_PROMPT_CHARS, MODES, ChatError, is_abliterated
+from ..agent_chat import CHAT_AGENTS, EFFORTS, MAX_PROMPT_CHARS, MODES, ChatError, is_abliterated
 from ..models import ModelError, chat_payload
 from ..sandbox import is_local_opencode_model
 from ..task_models import opencode_groups
 from .deps import CTX, AppContext
 
 router = APIRouter()
+
+_AGENT_LABELS = {
+    "gemini": "Gemini",
+    "claude-code": "Claude Code",
+    "codex": "Codex",
+}
 
 
 def _agent_error(ctx: AppContext, exc: ChatError, status: int = 409) -> HTTPException:
@@ -48,14 +54,14 @@ async def chat_page(
     request: Request,
     model: str = "",
     error: str = "",
-    agent: Literal["local", "opencode", "gemini"] = "local",
+    agent: Literal["local", "opencode", "gemini", "claude-code", "codex"] = "local",
     ctx: AppContext = CTX,
 ):
     view = await asyncio.to_thread(ctx.models.overview, ctx.settings.lang)
     ids = [m["id"] for m in view["models"]]
     running = [m["id"] for m in view["models"] if m["status"] in ("running", "external")]
     selected = model if model in ids else (running[0] if running else (ids[0] if ids else ""))
-    oc: dict = {"available": False, "groups": [], "folders": [], "sandbox_ready": False}
+    oc: dict = {"available": False, "groups": [], "folders": [], "sandbox_ready": False, "sessions": []}
     if agent == "opencode" and ctx.find_opencode_fn():
         oc_list, folders, sandbox_ready = await asyncio.gather(
             asyncio.to_thread(ctx.opencode_models_fn),
@@ -64,17 +70,35 @@ async def chat_page(
         )
         active_families = {m["family_key"] for m in view["models"] if m["uses_gpu"]}
         oc = {"available": True, "groups": opencode_groups(oc_list, ctx.t, active_families=active_families),
-              "folders": folders, "sandbox_ready": sandbox_ready}
-    elif agent == "gemini" and ctx.find_agy_fn():
-        gm = await asyncio.to_thread(ctx.catalog_fn, "gemini")
-        # One group; each model carries its own thinking levels (data-efforts).
-        oc = {"available": True, "folders": await asyncio.to_thread(ctx.chat_folders),
-              "groups": [{"provider": "gemini", "label": "Gemini", "included": False, "payg": False,
-                          "models": list(gm)}] if gm else [],
-              "efforts": {m: v["efforts"] for m, v in gm.items()},
-              "sandbox_ready": False}
+              "folders": folders, "sandbox_ready": sandbox_ready, "sessions": []}
+    elif agent in ("gemini", "claude-code", "codex"):
+        finder = {"gemini": ctx.find_agy_fn, "claude-code": ctx.find_claude_fn, "codex": ctx.find_codex_fn}[agent]
+        if finder():
+            cat, folders, sessions = await asyncio.gather(
+                asyncio.to_thread(ctx.catalog_fn, agent),
+                asyncio.to_thread(ctx.chat_folders),
+                asyncio.to_thread(ctx.agent_chats.sessions, agent),
+            )
+            oc = {
+                "available": True,
+                "folders": folders,
+                "groups": [{"provider": agent, "label": _AGENT_LABELS[agent], "included": False, "payg": False,
+                            "models": list(cat)}] if cat else [],
+                "efforts": {m: v["efforts"] for m, v in cat.items()},
+                "sandbox_ready": False,
+                "sessions": sessions,
+            }
     return ctx.page(request, "chat.html", "chat", view=view, selected=selected, error=error[:300],
                     agent=agent, oc=oc, efforts=EFFORTS)
+
+
+@router.get("/api/agents/sessions")
+async def agents_sessions(
+    agent: Literal["claude-code", "codex"],
+    ctx: AppContext = CTX,
+):
+    sessions = await asyncio.to_thread(ctx.agent_chats.sessions, agent)
+    return JSONResponse({"sessions": sessions})
 
 
 @router.post("/api/agents")
@@ -85,15 +109,23 @@ async def agents_create(request: Request, ctx: AppContext = CTX):
     body = await _json_body(request)
     agent, model = body.get("agent", "opencode"), str(body.get("model") or "")
     effort, mode = str(body.get("effort") or "default"), str(body.get("mode") or "confirm")
-    if agent not in ("opencode", "gemini"):
+    resume = str(body.get("resume") or "").strip()
+    if agent not in CHAT_AGENTS:
         raise HTTPException(400, "Unknown agent")
     if mode not in MODES or effort not in EFFORTS:
         raise HTTPException(400, "Unknown permission mode or reasoning effort")
-    if agent == "gemini":
-        if model not in await asyncio.to_thread(ctx.catalog_fn, "gemini"):
-            raise HTTPException(400, ctx.t["ag_err_model_gemini"])
+    if agent in ("gemini", "claude-code", "codex"):
+        err_key = {"gemini": "ag_err_model_gemini", "claude-code": "ag_err_model_claude", "codex": "ag_err_model_codex"}[agent]
+        if model not in await asyncio.to_thread(ctx.catalog_fn, agent):
+            raise HTTPException(400, ctx.t[err_key])
     elif model not in await asyncio.to_thread(ctx.opencode_models_fn):
         raise HTTPException(400, ctx.t["ag_err_model"])
+    if resume:
+        if agent not in ("claude-code", "codex"):
+            raise HTTPException(400, ctx.t["ag_err_resume"])
+        saved = await asyncio.to_thread(ctx.agent_chats.session, agent, resume)
+        if saved is None:
+            raise HTTPException(400, ctx.t["ag_err_resume"])
     local_models: list[dict] | None = None
     if mode == "full":
         # Abliterated models never get All permissions, even inside Docker.
@@ -112,11 +144,13 @@ async def agents_create(request: Request, ctx: AppContext = CTX):
     path = folder["path"]
     if folder["key"] == "scratch":
         path.mkdir(parents=True, exist_ok=True)
-    # The canonical folder (junctions and links resolved) is what OpenCode gets.
+    # The canonical folder (junctions and links resolved) is what the agent gets.
     path = Path(os.path.realpath(path))
     try:
-        chat = await asyncio.to_thread(ctx.agent_chats.create, path, folder["label"], model, effort, mode,
-                                       agent, local_models=local_models)
+        chat = await asyncio.to_thread(
+            ctx.agent_chats.create, path, folder["label"], model, effort, mode,
+            agent, local_models=local_models, folder_key=folder["key"], resume_id=resume,
+        )
     except ChatError as exc:
         status = 403 if exc.key in (
             "ag_full_off", "ag_full_abliterated", "ag_full_local_only", "ag_full_hardlink"

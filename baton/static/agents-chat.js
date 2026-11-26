@@ -11,7 +11,7 @@
   function $(s) { return root.querySelector(s); }
   var log = $("[data-log]"), empty = $("[data-empty]"), form = $("[data-form]"), text = $("[data-text]");
   var send = $("[data-send]"), modelSel = $("[data-oc-model]"), effortSel = $("[data-oc-effort]");
-  var folderSel = $("[data-oc-folder]"), payg = $("[data-payg-warn]"), fixed = $("[data-fixed]");
+  var folderSel = $("[data-oc-folder]"), resumeSel = $("[data-oc-resume]"), payg = $("[data-payg-warn]"), fixed = $("[data-fixed]");
   var fixedText = $("[data-fixed-text]"), fullBadge = $("[data-full-badge]");
   var fullWarn = $("[data-full-warn]"), fullNote = $("[data-full-note]");
   var confirmRadio = root.querySelector('[data-mode][value="confirm"]');
@@ -153,12 +153,29 @@
       savePrefs(); showPayg(); updateFullMode();
     });
   });
+  if (resumeSel) {
+    resumeSel.addEventListener("change", function () {
+      var o = resumeSel.options[resumeSel.selectedIndex];
+      if (!o || !o.value) return;
+      if (o.dataset.folder && folderSel.querySelector('option[value="' + CSS.escape(o.dataset.folder) + '"]')) {
+        folderSel.value = o.dataset.folder;
+      }
+      if (o.dataset.model && modelSel.querySelector('option[value="' + CSS.escape(o.dataset.model) + '"]')) {
+        modelSel.value = o.dataset.model;
+        setEfforts();
+      }
+      if (o.dataset.effort && effortSel.querySelector('option[value="' + CSS.escape(o.dataset.effort) + '"]')) {
+        effortSel.value = o.dataset.effort;
+      }
+      showPayg(); updateFullMode();
+    });
+  }
   root.querySelectorAll("[data-mode]").forEach(function (r) {
     r.addEventListener("change", updateFullMode);
   });
   function lock(info) {
-    // Model, effort, folder and mode are fixed on the server for the conversation.
-    [modelSel, effortSel, folderSel].forEach(function (s) { s.disabled = !!info; });
+    // Model, effort, folder, session and mode are fixed on the server for the conversation.
+    [modelSel, effortSel, folderSel, resumeSel].forEach(function (s) { if (s) s.disabled = !!info; });
     buttons.forEach(function (button) { button.disabled = !!info; });
     root.querySelectorAll("[data-mode]").forEach(function (r) {
       if (info) r.disabled = true;
@@ -179,6 +196,7 @@
     } else {
       if (fullBadge) fullBadge.hidden = true;
       if (confirmRadio) confirmRadio.checked = true;
+      if (resumeSel) resumeSel.value = "";
       if (!modelSel.value && groups.length) chooseCatalog(groups[0].dataset.catalogKey);
     }
     showPayg();
@@ -314,11 +332,15 @@
       current = null;
       note("muted small", T.plan + ": " + ev.entries.map(function (e) { return (e.status === "completed" ? "☑ " : "☐ ") + e.content; }).join(" · "));
     }
-    else if (ev.type === "notice") note("muted small", (T[ev.key] || ev.key).replace("{effort}", ev.effort || ""));
+    else if (ev.type === "notice") {
+      note("muted small", (T[ev.key] || ev.key).replace("{effort}", ev.effort || "").replace("{session}", ev.session || ""));
+    }
     else if (ev.type === "error") { current = null; note("warn", T.error + " " + ev.text); }
     else if (ev.type === "done") {
       current = null;
-      if (ev.reason !== "end_turn" && !(ev.reason === "cancelled" && refused)) note("muted small", ev.reason === "cancelled" ? T.stopped : T.done_reason.replace("{reason}", ev.reason));
+      if (ev.reason !== "end_turn" && ev.reason !== "completed" && !(ev.reason === "cancelled" && refused)) {
+        note("muted small", ev.reason === "cancelled" ? T.stopped : T.done_reason.replace("{reason}", ev.reason));
+      }
     }
     else if (ev.type === "closed") { closed(); }
     scrollDown();
@@ -361,8 +383,11 @@
       if (!chat) {
         var mode = root.querySelector("[data-mode]:checked");
         note("muted small ag-starting", T.starting);
-        chat = await api("/api/agents", { agent: agent, model: modelSel.value, effort: effortSel.value,
-                                          folder: folderSel.value, mode: mode ? mode.value : "confirm" });
+        chat = await api("/api/agents", {
+          agent: agent, model: modelSel.value, effort: effortSel.value,
+          folder: folderSel.value, mode: mode ? mode.value : "confirm",
+          resume: resumeSel ? resumeSel.value : "",
+        });
         var s = log.querySelector(".ag-starting"); if (s) s.remove();
         try { localStorage.setItem(STORE, JSON.stringify({ id: chat.id })); } catch (e) {}
         lock(chat);

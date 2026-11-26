@@ -314,6 +314,11 @@ STRINGS = {
         "al_ack": "Acknowledge", "al_ack_all": "Acknowledge all", "al_acked": "Acknowledged",
         "al_resolved": "Resolved",
         "al_sev_warn": "Warning", "al_sev_bad": "Critical",
+        "ntf_title": "Mobile notifications",
+        "ntf_active": "Active channels",
+        "ntf_tasks_on": "includes finished/failed tasks",
+        "ntf_test_btn": "Send test notification",
+        "ntf_off": "Not configured yet. Set BATON_TELEGRAM_BOT_TOKEN + BATON_TELEGRAM_CHAT_ID (or BATON_ALERT_WEBHOOK_URL) in .env and restart Baton.",
 
         # Chat page
         "chat_nav": "Chat", "chat_model": "Model", "chat_effort": "Reasoning",
@@ -702,6 +707,11 @@ STRINGS = {
         "al_ack": "Reconocer", "al_ack_all": "Reconocer todas", "al_acked": "Reconocida",
         "al_resolved": "Resuelta",
         "al_sev_warn": "Aviso", "al_sev_bad": "Crítica",
+        "ntf_title": "Notificaciones al móvil",
+        "ntf_active": "Canales activos",
+        "ntf_tasks_on": "incluye tareas terminadas o fallidas",
+        "ntf_test_btn": "Enviar aviso de prueba",
+        "ntf_off": "Sin configurar todavía. Añade BATON_TELEGRAM_BOT_TOKEN + BATON_TELEGRAM_CHAT_ID (o BATON_ALERT_WEBHOOK_URL) en .env y reinicia Baton.",
 
         # Página de chat
         "chat_nav": "Chat", "chat_model": "Modelo", "chat_effort": "Razonamiento",

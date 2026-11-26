@@ -44,11 +44,22 @@ health heartbeats from extra computers or servers (over Tailscale or HTTPS).
     every page, active alerts panel with **Acknowledge** / **Acknowledge all**
     (CSRF-protected), collapsible resolved history, and `GET /api/alerts`.
 
-## Upcoming: Phase M3 — Telegram & Webhook notifications
+## Phase M3: Telegram & Webhook notifications (2026-11-25)
 
-- Pluggable async notification sender via `.env` (**Telegram Bot** as primary
-  mobile channel + generic **Webhook / ntfy**), covering both **machine alerts**
-  (`AlertEngine.on_opened`) and **finished/failed Baton tasks**
-  (`runner.on_finished`), plus a **Send test alert** button. (A conversational
-  Telegram assistant using OpenCode models is planned as a separate project that
-  reads Baton's read-only APIs without sharing task-execution privileges.)
+- **Notifier (`baton/notify.py`):** pluggable async notification sender using
+  `httpx` (zero extra dependencies), configured via `.env`:
+  - **Telegram Bot:** `BATON_TELEGRAM_BOT_TOKEN` + `BATON_TELEGRAM_CHAT_ID`
+    (100% free, official, no templates or inbound webhook).
+  - **Generic Webhook / ntfy (optional):** `BATON_ALERT_WEBHOOK_URL` (sends JSON
+    payload + `Title` header).
+  - **Task completion toggle:** `BATON_NOTIFY_TASKS=1` (default) notifies on
+    `done` (merged or open PR) and `failed` tasks via `runner.on_finished`,
+    skipping `cancelled` tasks.
+- **Security:** all `BATON_*` notification variables are stripped from every
+  agent subprocess by `agent_env()`, and bot tokens / webhook URLs are always
+  masked before returning or logging any HTTP error.
+- **UI:** `/machines` shows configured channels and a CSRF-protected
+  **Send test notification** button (`POST /machines/notify/test`), and
+  successful alert deliveries stamp `alerts.notified_at` in `baton.sqlite3`.
+  (A conversational Telegram assistant using OpenCode models is tracked
+  separately in `Marcobm1/proyectos/projects/asistente-telegram/STATUS.md`.)

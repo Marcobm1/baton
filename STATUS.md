@@ -50,6 +50,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-26 (gemini): Fixed `_load_dotenv` so later duplicate keys in `.env` override earlier empty placeholders, surfaced loaded `.env` path / missing Telegram key hints on `/machines`, and added CSRF-protected manual **Restart Baton** button (`POST /machines/restart`, `SelfUpdate.restart_now`).
 - 2026-11-26 (gemini): Completed UX-3 structured agent reports + secure local `.baton-artifacts/` image gallery + Telegram `sendPhoto` (`baton/artifacts.py`, `baton/static/lightbox.js`, SQLite `tasks.artifacts`, `/api/tasks/{id}/artifacts/{filename}`, `tests/test_ux_artifacts.py`).
 - 2026-11-26 (gemini): Completed UX-2 Projects & Tasks remodel (status filters, "Needs attention" tray, live per-repo activity on `/`, upgraded Deliveries cards on `/p/{id}`, automatic `git diff --cached --numstat` capture + SQLite migration, `tests/test_ux_projects.py`).
 - 2026-11-26 (gemini): Completed UX-1 global UI decluttering across all pages (relocated `#self-update` to `/machines`, compact VRAM strip on `/models`, unified `/tasks/{id}` action bar without duplicate summary, compact `/chat` permission pills + auto-collapsing active header, mobile tab-bar alert badge, fixed `ChecklistItem.display_title`, `tests/test_ux_cleanup.py`). Suite: 254 passed (Linux + Windows CI).

@@ -9,10 +9,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-def _load_dotenv(path: Path, only: str | None = None) -> None:
-    """Minimal .env loader: KEY=VALUE lines; never overrides real env vars."""
+def _load_dotenv(path: Path, only: str | None = None) -> bool:
+    """Minimal .env loader: KEY=VALUE lines; later lines in .env win, real env vars never overridden."""
     if not path.is_file():
-        return
+        return False
+    entries: dict[str, str] = {}
     for raw in path.read_text(encoding="utf-8-sig").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -24,8 +25,11 @@ def _load_dotenv(path: Path, only: str | None = None) -> None:
         elif " #" in value:
             value = value.split(" #", 1)[0].rstrip()
         key = key.strip()
-        if only is None or key == only:
-            os.environ.setdefault(key, value)
+        if key and (only is None or key == only):
+            entries[key] = value
+    for key, value in entries.items():
+        os.environ.setdefault(key, value)
+    return True
 
 
 def configured_data_dir() -> Path:
@@ -105,12 +109,14 @@ class Settings:
     telegram_chat_id: str = ""
     alert_webhook_url: str = field(default="", repr=False)
     notify_tasks: bool = True
+    env_file: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
         from .project_detail import normalize_owner_tag
 
-        _load_dotenv(Path(os.environ.get("BATON_ENV_FILE", ".env")))
+        env_path = Path(os.environ.get("BATON_ENV_FILE", ".env"))
+        loaded_env = str(env_path.resolve()) if _load_dotenv(env_path) else ""
         token = os.environ.get("GITHUB_TOKEN", "").strip()
         source = "GITHUB_TOKEN" if token else "none"
         if not token and os.environ.get("BATON_USE_GH_CLI", "1") != "0":
@@ -160,4 +166,5 @@ class Settings:
             telegram_chat_id=os.environ.get("BATON_TELEGRAM_CHAT_ID", "").strip(),
             alert_webhook_url=os.environ.get("BATON_ALERT_WEBHOOK_URL", "").strip(),
             notify_tasks=os.environ.get("BATON_NOTIFY_TASKS", "1") != "0",
+            env_file=loaded_env,
         )

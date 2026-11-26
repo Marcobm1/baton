@@ -48,11 +48,13 @@ def _render_machines(
     created: dict | None = None,
     error: str = "",
     notify_result: dict | None = None,
+    restart_result: dict | None = None,
 ):
     return ctx.page(
         request, "machines.html", "machines",
         machines=cards, active_alerts=active, recent_alerts=recent,
         notifier=ctx.notifier, notify_result=notify_result,
+        restart_result=restart_result, env_file=ctx.settings.env_file,
         updater=ctx.updater,
         created=created, error=error,
     )
@@ -102,6 +104,28 @@ async def notify_test(
     return _render_machines(
         request, ctx, cards=cards, active=active, recent=recent,
         notify_result={"ok": ok, "msg": msg},
+    )
+
+
+@router.post("/machines/restart", response_class=HTMLResponse)
+async def machines_restart(
+    request: Request,
+    csrf: str = Form(""),
+    ctx: AppContext = CTX,
+):
+    ctx.check_post(request, csrf)
+    ok, code = await asyncio.to_thread(ctx.updater.restart_now)
+    msg = {
+        "restart": ctx.t["update_restart"],
+        "busy": ctx.t["restart_busy"],
+        "unavailable": ctx.t["restart_unavailable"],
+    }.get(code, code)
+    cards = await asyncio.to_thread(ctx.machines.list_machines)
+    active = await asyncio.to_thread(ctx.alerts.active_alerts)
+    recent = await asyncio.to_thread(ctx.alerts.recent_alerts)
+    return _render_machines(
+        request, ctx, cards=cards, active=active, recent=recent,
+        restart_result={"ok": ok, "msg": msg},
     )
 
 

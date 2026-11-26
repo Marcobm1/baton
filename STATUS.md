@@ -57,7 +57,8 @@ links:
 - [ ] UI-5: One chat component for local models and agents
   Merge the two branches of `templates/chat.html` into one composer and message renderer.
   Recommended: claude-code, opus, high
-- [ ] Fix Windows CI: `tests/test_models.py::test_thermal_guard_without_page_visits[False]` (KeyError 'one' on `main` since the harness commit)
+- [ ] Fix flaky Windows test `tests/test_models.py::test_thermal_guard_without_page_visits[False]`
+  KeyError 'one' failed the Windows job on `main` after the harness commit (#75) but passed on #76: find the race and make it deterministic.
   Recommended: claude-code, opus, medium
 - [ ] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify

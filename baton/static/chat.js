@@ -19,19 +19,57 @@
   var ctxMeter = root.querySelector("[data-ctx-meter]");
   var ctxText = root.querySelector("[data-ctx-text]");
   var ctxFill = root.querySelector("[data-ctx-fill]");
-  var messages = [], threadId = "", busy = null, lastUsedTokens = 0;
+  var harnessRadios = root.querySelectorAll("[data-harness-mode]");
+  var harnessFolderWrap = root.querySelector("[data-harness-folder-wrap]");
+  var harnessFolderSel = root.querySelector("[data-harness-folder]");
+  var harnessWarn = root.querySelector("[data-harness-warn]");
+  var messages = [], threadId = "", busy = null, activeRunId = "", lastUsedTokens = 0;
 
   var md = window.BatonChat.md;
+  var diffBlock = window.BatonChat.diffBlock;
   var scroller = window.BatonChat.createScroller(scrollBtn);
   var attachments = window.BatonChat.createAttachments(root, text);
 
   try { var eff = localStorage.getItem("baton-chat-effort"); if (eff && effortSel.querySelector('option[value="' + CSS.escape(eff) + '"]')) effortSel.value = eff; } catch (e) {}
+  if (harnessFolderSel) {
+    try {
+      var savedFolder = localStorage.getItem("baton-chat-harness-folder");
+      if (savedFolder && !harnessFolderSel.value && harnessFolderSel.querySelector('option[value="' + CSS.escape(savedFolder) + '"]')) {
+        harnessFolderSel.value = savedFolder;
+      }
+    } catch (e) {}
+  }
   if (presetSel) {
     try {
       var savedPreset = localStorage.getItem("baton-chat-preset") || "";
       if (presetSel.querySelector('option[value="' + CSS.escape(savedPreset) + '"]')) presetSel.value = savedPreset;
       if (customSys) customSys.value = localStorage.getItem("baton-chat-custom-sys") || "";
     } catch (e) {}
+  }
+  function harnessOn() {
+    var onRadio = root.querySelector('[data-harness-mode][value="on"]');
+    return !!(onRadio && onRadio.checked);
+  }
+  function syncHarnessUi() {
+    var on = harnessOn();
+    if (harnessFolderWrap) harnessFolderWrap.hidden = !on;
+    if (!harnessWarn) return;
+    if (!on) {
+      harnessWarn.hidden = true;
+      harnessWarn.classList.remove("is-abliterated");
+      return;
+    }
+    var folderOpt = harnessFolderSel && harnessFolderSel.options[harnessFolderSel.selectedIndex];
+    var hasFolder = !!(harnessFolderSel && harnessFolderSel.value);
+    var msg = hasFolder
+      ? (T.lh_warn_folder || "").replace("{folder}", folderOpt ? folderOpt.textContent : harnessFolderSel.value)
+      : (T.lh_warn || "");
+    var o = option();
+    var ablit = !!(o && o.dataset.abliterated === "1");
+    if (ablit && T.lh_warn_abliterated) msg += " " + T.lh_warn_abliterated;
+    harnessWarn.textContent = msg;
+    harnessWarn.classList.toggle("is-abliterated", ablit);
+    harnessWarn.hidden = !msg;
   }
   function syncPresetUi() {
     if (customSys && presetSel) customSys.hidden = presetSel.value !== "custom";
@@ -42,6 +80,7 @@
     return (T.presets && T.presets[presetSel.value]) || "";
   }
   syncPresetUi();
+  syncHarnessUi();
 
   function formatTok(n) {
     return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k" : String(n);
@@ -115,9 +154,18 @@
     }).catch(function () {});
   }
 
+  function abortActive() {
+    if (activeRunId) {
+      var rid = activeRunId;
+      activeRunId = "";
+      api("/api/chat-harness/" + encodeURIComponent(rid) + "/cancel", "POST", {}).catch(function () {});
+    }
+    if (busy) busy.abort();
+  }
+
   function loadThread(id) {
     if (!id) return;
-    if (busy) busy.abort();
+    abortActive();
     fetch("/api/chat-threads/" + encodeURIComponent(id), { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (th) {
@@ -142,13 +190,14 @@
     sidebar.setActive(threadId);
     renderAll();
     showState();
+    syncHarnessUi();
     updateContextMeter();
     history.replaceState(null, "", "/chat?agent=local&thread=" + encodeURIComponent(threadId));
     scroller.follow(true);
   }
 
   function startNew() {
-    if (busy) busy.abort();
+    abortActive();
     threadId = "";
     lastUsedTokens = 0;
     attachments.clear();
@@ -178,12 +227,92 @@
     onDeletedActive: startNew
   });
 
-  // ----------------------------------------------------------- messages
+  // ----------------------------------------------------------- messages & tools
+  function mkEl(tag, cls, txt) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (txt != null) node.textContent = txt;
+    return node;
+  }
+
+  function toolBlock(label, body, cls) {
+    var d = mkEl("div", "ag-block");
+    d.appendChild(mkEl("span", "label", label));
+    d.appendChild(mkEl("pre", cls || "", body));
+    return d;
+  }
+
+  function populateToolCard(card, ev) {
+    card.innerHTML = "";
+    var sum = mkEl("summary");
+    sum.appendChild(mkEl("span", "ag-kind", ev.kind || "tool"));
+    sum.appendChild(mkEl("span", "ag-title", ev.title || ev.name || ev.id));
+    sum.appendChild(mkEl("span", "ag-status ag-" + (ev.status || "pending"), T["st_" + ev.status] || ev.status || ""));
+    card.appendChild(sum);
+    if (ev.input) card.appendChild(toolBlock(T.input || "Arguments", ev.input));
+    (ev.diffs || []).forEach(function (d) { card.appendChild(diffBlock(d)); });
+    if (ev.output) card.appendChild(toolBlock(T.output || "Result", ev.output));
+  }
+
+  function renderToolEvent(container, toolMap, toolList, ev) {
+    var card = toolMap[ev.id];
+    if (!card) {
+      card = toolMap[ev.id] = mkEl("details", "ag-tool");
+      container.appendChild(card);
+    }
+    populateToolCard(card, ev);
+    var idx = toolList.findIndex(function (x) { return x.id === ev.id; });
+    if (idx >= 0) toolList[idx] = ev;
+    else toolList.push(ev);
+  }
+
+  function settlePermCard(permMap, id, outcome, detail) {
+    var box = permMap[id];
+    if (!box) return;
+    var row = box.querySelector(".ag-perm-actions");
+    if (row) row.remove();
+    box.classList.add("ag-perm-" + outcome);
+    var label = {
+      allowed: T.allowed, denied: T.denied, timeout: T.timeout,
+      cancelled: T.cancelled, expired: T.expired
+    }[outcome] || ((T.error || "Error:") + " " + (detail || ""));
+    if (!box.querySelector(".ag-outcome")) box.appendChild(mkEl("p", "ag-outcome", label));
+  }
+
+  function renderPermEvent(container, permMap, runId, ev) {
+    var box = permMap[ev.id] = mkEl("div", "ag-perm");
+    box.appendChild(mkEl("strong", "", (T.perm_title || "Asks for permission") + ": " + (ev.title || ev.kind)));
+    if (ev.command) box.appendChild(toolBlock(T.command || "Command", ev.command, "ag-cmd"));
+    (ev.diffs || []).forEach(function (d) { box.appendChild(diffBlock(d)); });
+    if (!ev.command && !(ev.diffs || []).length && ev.input) box.appendChild(toolBlock(T.input || "Arguments", ev.input));
+    if ((ev.locations || []).length) box.appendChild(mkEl("p", "muted small", ev.locations.join("\n")));
+    var row = mkEl("div", "ag-perm-actions");
+    var yes = mkEl("button", "btn small", T.allow || "Allow");
+    var no = mkEl("button", "btn small danger", T.deny || "Deny");
+    yes.type = no.type = "button";
+    [[yes, true], [no, false]].forEach(function (pair) {
+      pair[0].addEventListener("click", function () {
+        yes.disabled = no.disabled = true;
+        api("/api/chat-harness/" + encodeURIComponent(runId) + "/permission", "POST", { id: ev.id, allow: pair[1] })
+          .catch(function (err) { settlePermCard(permMap, ev.id, "expired", err.message); });
+      });
+    });
+    row.appendChild(yes);
+    row.appendChild(no);
+    if (ev.expires) {
+      var when = new Date(ev.expires * 1000).toLocaleTimeString(T.lang, { hour: "2-digit", minute: "2-digit" });
+      row.appendChild(mkEl("span", "muted small", (T.expires || "").replace("{time}", when)));
+    }
+    box.appendChild(row);
+    container.appendChild(box);
+  }
+
   function bubble(role, idx) {
     var el = document.createElement("article");
     el.className = "msg msg-" + role;
     if (role === "assistant") {
       el.innerHTML = '<details class="msg-think" hidden><summary></summary><div class="msg-think-text"></div></details>' +
+                     '<div class="msg-tools"></div>' +
                      '<div class="msg-body"></div><p class="msg-meta muted small"><span></span></p>';
       el.querySelector("summary").textContent = T.reasoning;
     } else {
@@ -228,7 +357,7 @@
     var meta = el.querySelector(".msg-meta");
     meta.querySelector("span").textContent = m.meta || "";
     meta.querySelectorAll("button").forEach(function (b) { b.remove(); });
-    var streaming = m.meta === T.thinking || m.meta === T.writing;
+    var streaming = m.meta === T.thinking || m.meta === T.writing || m.meta === T.lh_running_tools || m.meta === T.lh_waiting_perm;
     if (!streaming && m.content) {
       var copy = document.createElement("button");
       copy.type = "button";
@@ -263,6 +392,14 @@
     messages.forEach(function (m, idx) {
       var el = bubble(m.role, idx);
       if (m.role === "assistant") {
+        if (m.tools && m.tools.length) {
+          var toolsBox = el.querySelector(".msg-tools");
+          m.tools.forEach(function (ev) {
+            var card = mkEl("details", "ag-tool");
+            populateToolCard(card, ev);
+            toolsBox.appendChild(card);
+          });
+        }
         fill(el, m, idx === messages.length - 1);
       } else {
         if (m.images && m.images.length) attachments.renderThumbs(el.querySelector(".msg-body"), m.images);
@@ -305,10 +442,12 @@
           if (o) {
             o.dataset.status = m.status;
             o.dataset.ctx = m.ctx || 0;
+            o.dataset.abliterated = m.abliterated ? "1" : "0";
             o.textContent = (m.uses_gpu ? "● " : "") + (o.dataset.name || m.name);
           }
         });
         showState();
+        syncHarnessUi();
       })
       .catch(function () {});
   }
@@ -316,6 +455,8 @@
     send.textContent = on ? T.stop : T.send;
     if (on) send.setAttribute("data-busy", ""); else send.removeAttribute("data-busy");
     modelSel.disabled = on;
+    harnessRadios.forEach(function (r) { r.disabled = on; });
+    if (harnessFolderSel) harnessFolderSel.disabled = on;
     showState();
   }
 
@@ -337,7 +478,126 @@
   }
 
   // --------------------------------------------------------------- send
+  async function streamHarnessReply(restoreOnFail) {
+    var m = { role: "assistant", content: "", reasoning: "", meta: T.thinking, tools: [] };
+    var el = bubble("assistant");
+    var toolsBox = el.querySelector(".msg-tools");
+    var toolMap = {}, permMap = {};
+    fill(el, m, false);
+    scroller.follow(true);
+    busy = new AbortController();
+    activeRunId = "";
+    setBusy(true);
+    var timings = null, rounds = 1, failed = false, queued = false, done = false;
+
+    function schedulePaint() {
+      if (queued || done) return;
+      queued = true;
+      requestAnimationFrame(function () {
+        queued = false;
+        if (done) return;
+        fill(el, m, false);
+        scroller.follow(false);
+      });
+    }
+
+    try {
+      var r = await fetch("/api/chat/" + encodeURIComponent(modelSel.value) + "/harness", {
+        method: "POST", signal: busy.signal,
+        headers: { "Content-Type": "application/json", "X-Baton-CSRF": csrf },
+        body: JSON.stringify({
+          messages: buildPayloadMessages(),
+          reasoning_effort: effortSel.value,
+          folder: harnessFolderSel ? harnessFolderSel.value : ""
+        })
+      });
+      if (!r.ok) {
+        var detail = "";
+        try { detail = (await r.json()).detail; } catch (e) {}
+        throw new Error(detail || "HTTP " + r.status);
+      }
+      var reader = r.body.getReader(), dec = new TextDecoder(), buf = "", problem = "";
+      for (;;) {
+        var part = await reader.read();
+        if (part.done) break;
+        buf += dec.decode(part.value, { stream: true });
+        var events = buf.split("\n\n");
+        buf = events.pop();
+        events.forEach(function (ev) {
+          ev.split("\n").forEach(function (line) {
+            if (line.indexOf("data:") !== 0) return;
+            var data = line.slice(5).trim(), j;
+            if (!data || data === "[DONE]") return;
+            try { j = JSON.parse(data); } catch (e) { return; }
+            if (j.type === "run" && j.run_id) {
+              activeRunId = j.run_id;
+            } else if (j.type === "thought") {
+              m.reasoning += j.text || "";
+              m.meta = T.thinking;
+              schedulePaint();
+            } else if (j.type === "text") {
+              m.content += j.text || "";
+              m.meta = T.writing;
+              schedulePaint();
+            } else if (j.type === "tool") {
+              renderToolEvent(toolsBox, toolMap, m.tools, j);
+              m.meta = j.status === "in_progress" ? (T.lh_running_tools || T.thinking) : T.thinking;
+              schedulePaint();
+            } else if (j.type === "permission") {
+              renderPermEvent(toolsBox, permMap, j.run_id || activeRunId, j);
+              m.meta = T.lh_waiting_perm || T.thinking;
+              fill(el, m, false);
+              scroller.follow(true);
+            } else if (j.type === "permission_done") {
+              settlePermCard(permMap, j.id, j.outcome);
+              m.meta = T.lh_running_tools || T.thinking;
+              schedulePaint();
+            } else if (j.type === "notice" && j.text) {
+              toolsBox.appendChild(mkEl("p", "ag-note muted small", j.text));
+              scroller.follow(false);
+            } else if (j.type === "done") {
+              if (j.timings) timings = j.timings;
+              if (j.rounds) rounds = j.rounds;
+            } else if (j.type === "error") {
+              problem = j.message || "Harness error";
+            }
+          });
+        });
+        if (problem) throw new Error(problem);
+      }
+      if (timings) {
+        var usedN = (timings.prompt_n || 0) + (timings.predicted_n || 0);
+        if (usedN > 0) lastUsedTokens = usedN;
+      }
+      var metaParts = [];
+      if (rounds > 1 && T.lh_rounds) metaParts.push(T.lh_rounds.replace("{n}", String(rounds)));
+      if (timings) metaParts.push(number(timings.predicted_n, 0) + " tokens · " + number(timings.predicted_per_second, 1) + " tok/s");
+      m.meta = metaParts.join(" · ");
+    } catch (e) {
+      if (e.name === "AbortError") { m.meta = T.stopped; }
+      else { failed = true; m.meta = T.error + " " + e.message; }
+    } finally {
+      done = true;
+      busy = null;
+      activeRunId = "";
+      if (m.content || m.reasoning || (m.tools && m.tools.length)) {
+        messages.push(m);
+      } else if (failed && restoreOnFail != null) {
+        messages.pop();
+        text.value = restoreOnFail;
+        autosize();
+      }
+      setBusy(false);
+      renderAll();
+      updateContextMeter();
+      persistThread();
+      scroller.follow(false);
+      text.focus();
+    }
+  }
+
   async function streamReply(restoreOnFail) {
+    if (harnessOn()) return streamHarnessReply(restoreOnFail);
     var m = { role: "assistant", content: "", reasoning: "", meta: T.thinking };
     var el = bubble("assistant");
     fill(el, m, false);
@@ -438,15 +698,25 @@
   });
   form.addEventListener("submit", function (e) {
     e.preventDefault();
-    if (busy) busy.abort(); else ask();
+    if (busy) abortActive(); else ask();
   });
   modelSel.addEventListener("change", function () {
     showState();
+    syncHarnessUi();
     if (!threadId) history.replaceState(null, "", "/chat?model=" + encodeURIComponent(modelSel.value));
   });
   effortSel.addEventListener("change", function () {
     try { localStorage.setItem("baton-chat-effort", effortSel.value); } catch (e) {}
   });
+  harnessRadios.forEach(function (r) {
+    r.addEventListener("change", syncHarnessUi);
+  });
+  if (harnessFolderSel) {
+    harnessFolderSel.addEventListener("change", function () {
+      syncHarnessUi();
+      try { localStorage.setItem("baton-chat-harness-folder", harnessFolderSel.value); } catch (e) {}
+    });
+  }
   if (presetSel) {
     presetSel.addEventListener("change", function () {
       syncPresetUi();
@@ -469,6 +739,7 @@
   } else {
     renderAll();
     showState();
+    syncHarnessUi();
   }
   setInterval(function () { if (!document.hidden) refresh(); }, 4000);
 })();

@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from ..agent_chat import CHAT_AGENTS, EFFORTS, MAX_PROMPT_CHARS, MODES, ChatError, is_abliterated
 from ..chat_history import VALID_AGENTS
+from ..local_harness import ToolError, run_harness_stream
 from ..models import CHAT_MAX_IMAGES, ModelError, chat_payload, validate_image_data_url
 from ..sandbox import is_local_opencode_model
 from ..task_models import opencode_groups
@@ -171,10 +172,11 @@ async def chat_page(
                 "sandbox_ready": False,
                 "sessions": sessions,
             }
+    local_folders = await asyncio.to_thread(ctx.chat_folders) if agent == "local" else []
     return ctx.page(
         request, "chat.html", "chat", view=view, selected=selected, error=error[:300],
         agent=agent, oc=oc, efforts=EFFORTS, threads=threads, active_thread=active_thread,
-        selected_folder=folder,
+        selected_folder=folder, local_folders=local_folders,
     )
 
 
@@ -503,3 +505,88 @@ async def chat_api(request: Request, model_id: str, ctx: AppContext = CTX):
 
     return StreamingResponse(relay(), status_code=upstream.status_code, media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.post("/api/chat/{model_id}/harness")
+async def chat_harness_api(request: Request, model_id: str, ctx: AppContext = CTX):
+    """Run an opt-in tool-calling harness turn against a local llama-server model.
+
+    Streams reasoning, answer text, tool calls, and interactive Allow/Deny
+    permission requests over SSE. Workspace tools are enabled only when `folder`
+    matches an allowlisted key from `ctx.chat_folders()`.
+    """
+    ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
+    body = await _json_body(request)
+    try:
+        payload = chat_payload(body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    try:
+        port, model_name, abliterated = await asyncio.to_thread(ctx.models.chat_model_info, model_id)
+    except ModelError as exc:
+        raise HTTPException(404 if exc.key == "m_err_unknown" else 409, exc.text(ctx.t)) from exc
+
+    folder_key = str(body.get("folder") or "").strip()
+    workspace: Path | None = None
+    folder_label = ""
+    if folder_key:
+        folders = {f["key"]: f for f in await asyncio.to_thread(ctx.chat_folders)}
+        folder = folders.get(folder_key)
+        if folder is None:
+            raise HTTPException(400, ctx.t["ag_err_folder"])
+        path = folder["path"]
+        if folder["key"] == "scratch":
+            path.mkdir(parents=True, exist_ok=True)
+        workspace = Path(os.path.realpath(path))
+        folder_label = folder["label"]
+
+    try:
+        run = ctx.local_harness.create(
+            model_id=model_id,
+            model_name=model_name,
+            abliterated=abliterated,
+            workspace=workspace,
+            folder_label=folder_label,
+        )
+    except ToolError as exc:
+        raise HTTPException(429, str(exc)) from exc
+
+    stream = run_harness_stream(
+        port=port,
+        payload=payload,
+        run=run,
+        manager=ctx.local_harness,
+        is_disconnected=request.is_disconnected,
+    )
+    return StreamingResponse(
+        stream,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/api/chat-harness/{run_id}/permission")
+async def chat_harness_permission(request: Request, run_id: str, ctx: AppContext = CTX):
+    """Allow or deny one pending tool permission for a local harness run (one-shot)."""
+    ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
+    run = ctx.local_harness.get(run_id)
+    if run is None:
+        raise HTTPException(404, ctx.t["ag_expired"])
+    body = await _json_body(request)
+    allow = body.get("allow")
+    if not isinstance(allow, bool):
+        raise HTTPException(400, "allow must be true or false")
+    if not await asyncio.to_thread(run.answer, str(body.get("id") or ""), allow):
+        raise HTTPException(404, ctx.t["ag_expired"])
+    return JSONResponse({"ok": True})
+
+
+@router.post("/api/chat-harness/{run_id}/cancel")
+async def chat_harness_cancel(request: Request, run_id: str, ctx: AppContext = CTX):
+    """Cancel an active local harness run (unblocks permissions and stops any command)."""
+    ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
+    run = ctx.local_harness.get(run_id)
+    if run is not None:
+        await asyncio.to_thread(run.cancel)
+    return JSONResponse({"ok": True})
+

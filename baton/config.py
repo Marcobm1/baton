@@ -109,6 +109,9 @@ class Settings:
     telegram_chat_id: str = ""
     alert_webhook_url: str = field(default="", repr=False)
     notify_tasks: bool = True
+    # Optional SearXNG-compatible JSON search URL for local chat harness
+    # (empty = built-in DuckDuckGo HTML search).
+    search_url: str = ""
     env_file: str = ""
 
     @classmethod
@@ -166,5 +169,6 @@ class Settings:
             telegram_chat_id=os.environ.get("BATON_TELEGRAM_CHAT_ID", "").strip(),
             alert_webhook_url=os.environ.get("BATON_ALERT_WEBHOOK_URL", "").strip(),
             notify_tasks=os.environ.get("BATON_NOTIFY_TASKS", "1") != "0",
+            search_url=os.environ.get("BATON_SEARCH_URL", "").strip(),
             env_file=loaded_env,
         )

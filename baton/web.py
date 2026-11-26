@@ -37,6 +37,7 @@ from .chat_history import ChatHistory
 from .config import Settings
 from .github import Hub
 from .i18n import ordinal, strings
+from .local_harness import LocalHarnessManager
 from .machines import MachineStore
 from .models import LocalModels
 from .notify import Notifier
@@ -110,6 +111,10 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         sandbox_image=settings.sandbox_image,
         on_permission_wait=notifier.notify_permission,
     )
+    local_harness = LocalHarnessManager(
+        on_permission_wait=notifier.notify_permission,
+        search_url=settings.search_url,
+    )
     chat_history = ChatHistory(settings.data_dir)
     ranking = store.ranking
 
@@ -179,6 +184,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         alerts=alerts,
         notifier=notifier,
         agent_chats=agent_chats,
+        local_harness=local_harness,
         chat_history=chat_history,
         ranking=ranking,
         runner=runner,
@@ -287,6 +293,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
             with contextlib.suppress(asyncio.CancelledError):
                 await loop_task
         await asyncio.to_thread(agent_chats.close_all)   # no OpenCode left behind
+        await asyncio.to_thread(local_harness.close_all)
         runner.on_finished = notifier.notify_task
         if update_task:
             update_task.cancel()
@@ -297,6 +304,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                   lifespan=lifespan)
     app.state.ctx = ctx
     app.state.agent_chats = agent_chats
+    app.state.local_harness = local_harness
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
     @app.middleware("http")

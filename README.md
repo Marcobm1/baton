@@ -450,7 +450,12 @@ the model currently in use is placed in the first position. It updates every 5
 seconds. List your models in `~/.baton/models.json`; Baton only ever runs what
 that file says, always bound to `127.0.0.1`.
 The **Chat** page talks to them from any device (Baton relays and streams the answer;
-the model stays on `127.0.0.1`). See [docs/models.md](docs/models.md).
+the model stays on `127.0.0.1`). Chats stay completely **Offline** by default;
+switching **Tools** to **Internet + tools** enables Baton's native tool-calling
+harness (`web_search`, SSRF-guarded `fetch_url`, `get_datetime`, safe AST
+`calculate`, plus optional allowlisted-folder file tools and `run_command`),
+with mandatory one-shot **Allow / Deny** confirmation on writes, commands, and
+`.env` reads. See [docs/models.md](docs/models.md) and [docs/local-harness.md](docs/local-harness.md).
 
 ### Agents chat (OpenCode and Gemini)
 
@@ -502,6 +507,7 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_LOCAL_PATHS` | — | `owner/repo=path;...` when a clone isn't found automatically. |
 | `BATON_CHAT_SCRATCH` | — | Optional scratch folder offered by the Agents chat next to your clones (empty = clones only). |
 | `BATON_SANDBOX_IMAGE` | `baton-opencode-sandbox:latest` | Docker image for isolated Agents chat ("All permissions" mode with local models). |
+| `BATON_SEARCH_URL` | — | Optional SearXNG-compatible JSON search URL for the local chat harness (empty = built-in DuckDuckGo HTML search). |
 | `BATON_LOCAL_MODEL` | — | Model for the Local AI agent (e.g. an Ollama model name). |
 | `BATON_TASK_TIMEOUT_MINUTES` | `60` | Stop a local task after this long. |
 | `BATON_GIT_NAME` / `BATON_GIT_EMAIL` | Baton | Commit identity when the clone has none. |

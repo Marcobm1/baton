@@ -665,6 +665,11 @@ class LocalModels:
 
     def chat_port(self, model_id: str) -> int:
         """Port of a model that is answering (started by Baton or not), for the chat."""
+        port, _, _ = self.chat_model_info(model_id)
+        return port
+
+    def chat_model_info(self, model_id: str) -> tuple[int, str, bool]:
+        """Return ``(port, name, abliterated)`` for a running local model."""
         cfg = load_config(self.data_dir)
         model = next((m for m in cfg.models if m.id == model_id), None)
         if model is None:
@@ -675,7 +680,9 @@ class LocalModels:
         other = None if proc else _listener(model.port)
         if not (proc or (other and _is_llama_server(other))) or _health(model.port) != "ok":
             raise ModelError("m_err_not_running", name=model.name)
-        return model.port
+        file_name = Path(model.file).name
+        abliterated = bool(_ABLITERATED_RE.search(f"{model.id} {model.name} {file_name}"))
+        return model.port, model.name, abliterated
 
     # ------------------------------------------------------- start / stop
     def start(self, model_id: str) -> None:

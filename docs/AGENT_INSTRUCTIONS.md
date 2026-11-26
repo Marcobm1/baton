@@ -24,7 +24,8 @@ dashboard and other AI agents read it to know what to do next.
     (`claude-code`, `codex`, `chatgpt`, `human`, ...), `next` = the next
     concrete step. Change `status` or `priority` only when the owner decides it;
   - tick finished tasks (`- [x]`) and add new ones (`- [ ]`) under "Next";
-    prefix actions only Marco can take with `(Marco)`. Look up links in
+    prefix actions only the owner can take with `(Owner)` (or the repository's
+    configured `BATON_OWNER_TAG`). Look up links in
     `tasks.json` or on GitHub. For an ongoing project, make the first unchecked
     agent task something an agent can complete independently.
     Give it a short title and indent its description by two spaces. Describe

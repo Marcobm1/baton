@@ -126,18 +126,18 @@ def test_alert_engine_notifies_and_stamps_notified_at_and_task_hook(tmp_path):
     # Task completion notification: done (merged) + failed notify, cancelled does NOT.
     done.clear()
     task_done = Task(
-        "t1", "Marcobm1/baton", "Add Telegram alerts", "", "gemini", "local", time.time(),
+        "t1", "owner/baton", "Add Telegram alerts", "", "gemini", "local", time.time(),
         status="done", model="gemini-3.8-flash", merged=True,
-        summary="Added Telegram alerts cleanly.", pr_url="https://github.com/Marcobm1/baton/pull/66",
+        summary="Added Telegram alerts cleanly.", pr_url="https://github.com/owner/baton/pull/66",
     )
     notifier.notify_task(task_done)
     assert done.wait(5.0)
     txt = calls[-1]["json"]["text"]
-    assert "Fusionada" in txt and "Marcobm1/baton" in txt
-    assert "https://github.com/Marcobm1/baton/pull/66" in txt
+    assert "Fusionada" in txt and "owner/baton" in txt
+    assert "https://github.com/owner/baton/pull/66" in txt
 
     before = len(calls)
-    task_cancelled = Task("t2", "Marcobm1/baton", "Cancelled", "", "codex", "local", time.time(), status="cancelled")
+    task_cancelled = Task("t2", "owner/baton", "Cancelled", "", "codex", "local", time.time(), status="cancelled")
     notifier.notify_task(task_cancelled)
     time.sleep(0.1)
     assert len(calls) == before

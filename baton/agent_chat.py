@@ -8,7 +8,7 @@ requests that wait until Baton answers. No port is opened, and the user's text
 only ever travels as a JSON string inside a protocol message, never through a
 shell.
 
-Phase 1 (docs/agents-chat.md): the security boundary is Marco's approval.
+Phase 1 (docs/agents-chat.md): the security boundary is the owner's approval.
 OpenCode runs with Baton's own `baton-chat` agent: reads inside the folder run
 freely; every write, edit, command or access outside the folder becomes a
 permission request shown in the chat. "Full permissions" is refused on the

@@ -3,7 +3,7 @@
 The Chat page has an **Agent** selector. *Local model* is the original chat: Baton
 relays and streams a local `llama-server` model's answer (no tools). *OpenCode*
 is the Agents chat: OpenCode works in one folder with its tools, and Baton shows
-every tool call and asks Marco before anything changes.
+every tool call and asks the owner before anything changes.
 
 In the OpenCode chat, the catalog buttons filter the model picker by provider.
 Go appears first on a fresh browser. Pay-as-you-go models have a separate
@@ -13,7 +13,7 @@ along with the saved model and locks both when a conversation starts.
 
 ## Phase 1: OpenCode over ACP, Confirm mode (2026-11-25)
 
-**Security boundary in this phase: Marco's approval.** There is no OS isolation
+**Security boundary in this phase: owner approval.** There is no OS isolation
 yet. Reads inside the chosen folder run freely; everything else waits for
 **Allow / Deny** in the chat. "All permissions" is visible but disabled until the
 isolated container exists.
@@ -40,8 +40,8 @@ isolated container exists.
   `baton-chat` mode is missing or OpenCode keeps another value, the conversation
   is refused (fail closed). None of these can change later.
 - **Folder per conversation:** a local clone Baton knows (`BATON_LOCAL_ROOT`,
-  `BATON_LOCAL_PATHS`) or the scratch folder `BATON_CHAT_SCRATCH`
-  (`C:\IA\pruebas-opencode` by default on Windows, created on first use).
+  `BATON_LOCAL_PATHS`) or the optional scratch folder `BATON_CHAT_SCRATCH`
+  (empty by default; created on first use when set).
 - **Permissions (`baton-chat` agent, OpenCode 2.x rules, last match wins):**
   deny everything; allow `read`, `glob`, `grep`, `list`; ask for `read` of
   `*.env` / `*.env.*`, `edit` (also writes and patches), `shell` and
@@ -85,8 +85,8 @@ isolated container exists.
   from another conversation refused, CSRF, timeout → deny, Stop, All permissions
   refused (also abliterated), fixed folder/model/effort, no secrets in the
   agent's environment, refusal to start without Baton's rules.
-- 2026-11-25 on Marco's PC with OpenCode 2.4.1 and `local-inkling/inkling-2-mini`
-  in `C:\IA\pruebas-opencode\baton-fase1`: the read tool ran without asking,
+- 2026-11-25 on Windows with OpenCode 2.4.1 and a local model in a scratch
+  folder: the read tool ran without asking,
   an allowed write created the file, a denied write did not, reading
   `C:\Windows\win.ini` asked first (denied), a `cat` command asked first. The
   same through the web API with a separate Baton instance: the exact `printf ...`
@@ -94,7 +94,7 @@ isolated container exists.
 
 ### Limits of this phase
 
-- **No OS isolation.** An *allowed* command runs as Marco's Windows user and can
+- **No OS isolation.** An *allowed* command runs as the host Windows user and can
   read or write anything that user can, including outside the folder. Read the
   command before allowing it; prefer the scratch folder for experiments.
 - Reads inside the folder go to the model's provider without asking. With a
@@ -121,7 +121,7 @@ never with `--dangerously-skip-permissions`) and speaks the same ACP.
 - **Permissions: agy's own "Default" mode, not Baton's rules.** agy offers the
   modes `default`, `accept-edits`, `auto` and `plan`; Baton sets `default`
   (fail closed: the conversation is refused if agy keeps another one). Checked
-  with agy 1.5.17 on Marco's PC:
+  with agy 1.5.17 on Windows:
   - a terminal command (`echo hola-baton`) sent `session/request_permission`
     with `allow_once` / `reject_once`; denying it stopped the command;
   - a file write inside the folder (`b.txt`) ran **without asking**, and
@@ -196,8 +196,8 @@ Verify isolation with two temporary sibling directories, one mounted as the work
 ## Phase 2: Claude Code and Codex with interactive approvals & session resume (2026-11-25)
 
 Neither Claude Code nor Codex ships an ACP adapter on PATH. Both are now wired
-into `/chat?agent=claude-code` and `/chat?agent=codex` using the live protocols
-verified in `C:\IA\pruebas-opencode\baton-fase2`:
+into `/chat?agent=claude-code` and `/chat?agent=codex` using their verified
+interactive protocols:
 
 - **Claude Code (`baton/chat_claude.py`, verified on `claude.exe` 2.1.331):**
   - Launches `claude -p --input-format stream-json --output-format stream-json --verbose --permission-mode manual --permission-prompt-tool stdio --strict-mcp-config --setting-sources local --disallowedTools AskUserQuestion` (plus `--model`, `--effort`, and `--resume <session_id>`).
@@ -220,7 +220,7 @@ verified in `C:\IA\pruebas-opencode\baton-fase2`:
     `acceptForSession`) or `"decline"` / `"cancel"`.
   - Ignores all `account/*` notifications (`planType`, account info).
   - **Windows caveat:** an approved Codex command runs with write access as
-    Marco's Windows user even under `sandbox: "read-only"`.
+    the host Windows user even under `sandbox: "read-only"`.
 - **Session resume across restarts (`baton/db.py`, `chat_sessions` table):**
   - Baton saves minimal session metadata (`session_id`, `agent`, `folder_key`,
     `folder_label`, `model`, `effort`, first-prompt `title`, `updated_at` — zero

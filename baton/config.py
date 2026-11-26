@@ -83,8 +83,12 @@ class Settings:
     # local-AI work before merging (empty = the CLI's own default).
     review_claude_model: str = "opus"
     review_claude_effort: str = "medium"
+    # Checklist prefix for owner-only actions in STATUS.md (e.g. "(Owner)").
+    owner_tag: str = "(Owner)"
     # Scratch folder offered by the Agents chat next to the local repositories.
-    chat_scratch: str = r"C:\IA\pruebas-opencode" if os.name == "nt" else ""
+    chat_scratch: str = ""
+    # Windows Task Scheduler name restarted after native self-updates.
+    scheduled_task: str = "Baton"
     claude_home: Path = Path.home() / ".claude"
     opencode_db: Path = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
     # Optional, typed by you in .env. Used only to read your OpenCode Go usage
@@ -104,6 +108,8 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        from .project_detail import normalize_owner_tag
+
         _load_dotenv(Path(os.environ.get("BATON_ENV_FILE", ".env")))
         token = os.environ.get("GITHUB_TOKEN", "").strip()
         source = "GITHUB_TOKEN" if token else "none"
@@ -141,8 +147,9 @@ class Settings:
             max_parallel=max(1, int(os.environ.get("BATON_MAX_PARALLEL", "3") or 3)),
             review_claude_model=os.environ.get("BATON_REVIEW_CLAUDE_MODEL", "opus").strip(),
             review_claude_effort=os.environ.get("BATON_REVIEW_CLAUDE_EFFORT", "medium").strip().lower(),
-            chat_scratch=os.environ.get("BATON_CHAT_SCRATCH",
-                                        r"C:\IA\pruebas-opencode" if os.name == "nt" else "").strip(),
+            owner_tag=normalize_owner_tag(os.environ.get("BATON_OWNER_TAG", "")),
+            chat_scratch=os.environ.get("BATON_CHAT_SCRATCH", "").strip(),
+            scheduled_task=os.environ.get("BATON_SCHEDULED_TASK", "Baton").strip() or "Baton",
             claude_home=Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"),
             opencode_db=Path(os.environ.get("BATON_OPENCODE_DB")
                              or Path.home() / ".local" / "share" / "opencode" / "opencode.db"),

@@ -40,7 +40,7 @@ def test_machine_store_hashes_tokens_tracks_online_offline_and_samples(tmp_path)
         "disk_pct": 61.0, "disk_free_gb": 180.0, "disk_total_gb": 500.0,
         "gpu": {"name": "RTX", "util_pct": 12.0, "temp_c": 41.0, "vram_used_gb": 1.2, "vram_total_gb": 16.0},
         "net": {"rx_bps": 10240.0, "tx_bps": 2048.0},
-        "logins": [{"user": "marco", "host": "100.64.0.2", "started": t0 - 60}],
+        "logins": [{"user": "alice", "host": "100.64.0.2", "started": t0 - 60}],
     }, now=t0)
     cards_on = {m["id"]: m for m in store.list_machines(now=t0 + 30.0, refresh_local=False)}
     assert cards_on[mid]["status"] == "online"

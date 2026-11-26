@@ -30,8 +30,8 @@ def make_repo(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_remote_repo_parsing():
-    assert _remote_repo("https://github.com/Marcobm1/Cairn.git") == "marcobm1/cairn"
-    assert _remote_repo("git@github.com:Marcobm1/baton.git\n") == "marcobm1/baton"
+    assert _remote_repo("https://github.com/Owner/Demo.git") == "owner/demo"
+    assert _remote_repo("git@github.com:Owner/baton.git\n") == "owner/baton"
     assert _remote_repo("https://example.com/x/y") == ""
 
 

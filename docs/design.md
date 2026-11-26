@@ -1,6 +1,6 @@
 # Design system (2026-11-24)
 
-Marco asked for a control-panel look (light grey page, white rounded cards,
+Designed for a control-panel look (light grey page, white rounded cards,
 pill tabs, small monospace labels, thin bars, status dots) with a light and a
 dark theme that are easy to switch. The reference was a personal dashboard; we
 took the style, not its name or logo.

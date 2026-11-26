@@ -61,5 +61,5 @@ health heartbeats from extra computers or servers (over Tailscale or HTTPS).
 - **UI:** `/machines` shows configured channels and a CSRF-protected
   **Send test notification** button (`POST /machines/notify/test`), and
   successful alert deliveries stamp `alerts.notified_at` in `baton.sqlite3`.
-  (A conversational Telegram assistant using OpenCode models is tracked
-  separately in `Marcobm1/proyectos/projects/asistente-telegram/STATUS.md`.)
+  (A conversational Telegram assistant using OpenCode models is intentionally
+  kept as a separate project so it stays isolated from Baton's credentials.)

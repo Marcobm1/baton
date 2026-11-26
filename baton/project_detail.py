@@ -40,8 +40,21 @@ def recommendation(detail: str) -> tuple[dict, str]:
             "effort": parts[2].casefold() if len(parts) > 2 else ""}, rest
 
 
+DEFAULT_OWNER_TAG = "(Owner)"
+
+
+def normalize_owner_tag(tag: str | None) -> str:
+    """Normalize BATON_OWNER_TAG into a checklist prefix (default '(Owner)')."""
+    clean = (tag or "").strip()
+    if not clean:
+        return DEFAULT_OWNER_TAG
+    if clean.startswith(("(", "[")) or clean.endswith(":"):
+        return clean
+    return f"({clean})"
+
+
 # A line naming the repository where the task is done, when it is not the
-# project's own:  Repo: Marcobm1/proyectos
+# project's own:  Repo: owner/hub
 _repo_line = re.compile(r"^\s*(?:repo|repositorio)\s*:\s*([\w.-]+/[\w.-]+)\s*$", re.I | re.M)
 
 
@@ -62,10 +75,11 @@ class ChecklistItem:
     recommended: dict = field(default_factory=dict)
     line: int = 0
     repo: str = ""          # where the task is done, if not in the project's repository
+    owner_tag: str = DEFAULT_OWNER_TAG
 
     @property
     def owner_action(self) -> bool:
-        return self.title.startswith("(Marco)")
+        return bool(self.owner_tag) and self.title.startswith(self.owner_tag)
 
     def __post_init__(self):
         if not self.recommended:
@@ -100,7 +114,8 @@ _marker = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s*")
 _checkbox = re.compile(r"^\[([ xX])\]\s+(.+)")
 
 
-def sections(body: str) -> Sections:
+def sections(body: str, *, owner_tag: str = DEFAULT_OWNER_TAG) -> Sections:
+    tag = normalize_owner_tag(owner_tag)
     result = Sections()
     lines = body.expandtabs(4).splitlines()
     tokens = _markdown.parse("\n".join(lines))
@@ -128,7 +143,8 @@ def sections(body: str) -> Sections:
                         break
                     detail.append(line)
                 result.checklist.append(ChecklistItem(
-                    box[2].strip(), box[1].lower() == "x", dedent("\n".join(detail)).strip(), line=start))
+                    box[2].strip(), box[1].lower() == "x", dedent("\n".join(detail)).strip(),
+                    line=start, owner_tag=tag))
         elif section in ("done recently", "blockers", "decisions", "log"):
             entry = " ".join([first, *(line.strip() for line in lines[start + 1:end])]).strip()
             if entry and not (section == "blockers" and entry.casefold().rstrip(".") == "none"):

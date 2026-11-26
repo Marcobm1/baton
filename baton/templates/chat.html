@@ -41,6 +41,7 @@
   'full_off': t.ag_full_off, 'full_help': t.ag_full_help, 'full_local_only': t.ag_full_local_only,
   'full_abliterated': t.ag_full_abliterated, 'full_badge': t.ag_full_badge,
   'copy': t.chat_copy, 'copied': t.chat_copied,
+  'grp_read': t.ag_grp_read, 'grp_search': t.ag_grp_search, 'grp_steps': t.ag_grp_steps,
   'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled,
   'rename': t.chat_rename, 'del': t.chat_delete, 'del_confirm': t.chat_delete_confirm,
   'lang': lang} %}
@@ -71,7 +72,7 @@
         </select></label>
       <label><span class="label">{{ t.ag_folder }}</span>
         <select data-oc-folder>
-          {% for f in oc.folders %}<option value="{{ f.key }}">{{ f.label }}</option>{% endfor %}
+          {% for f in oc.folders %}<option value="{{ f.key }}"{% if selected_folder and f.key.lower() == selected_folder.lower() %} selected{% endif %}>{{ f.label }}</option>{% endfor %}
         </select></label>
       {% if oc.sessions %}
       <label><span class="label">{{ t.ag_resume }}</span>
@@ -82,6 +83,7 @@
           {% endfor %}
         </select></label>
       {% endif %}
+      <a class="btn ghost small" data-to-task hidden href="/tasks/new">{{ t.chat_to_task }} →</a>
       <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
       {% endif %}
     </div>
@@ -110,7 +112,10 @@
   <p class="warn small" data-payg-warn hidden>{{ t.oc_payg_warning }}</p>
   <div class="muted small ag-fixed" data-fixed hidden>
     <span><button type="button" class="btn ghost small sidebar-toggle" data-sidebar-toggle aria-expanded="false">☰</button> <span data-fixed-text></span> <span class="ag-full-badge" data-full-badge hidden>{{ t.ag_full_badge }}</span></span>
-    <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
+    <span class="ag-fixed-actions">
+      <a class="btn ghost small" data-to-task hidden href="/tasks/new">{{ t.chat_to_task }} →</a>
+      <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
+    </span>
   </div>
   <div class="chat-log" data-log aria-live="polite">
     <div class="chat-empty" data-empty>
@@ -130,7 +135,7 @@
   {% endif %}
 </section>
 <script id="agents-strings" type="application/json">{{ js|tojson }}</script>
-<script id="chat-bootstrap" type="application/json">{{ {'threads': threads, 'active_thread': active_thread}|tojson }}</script>
+<script id="chat-bootstrap" type="application/json">{{ {'threads': threads, 'active_thread': active_thread, 'selected_folder': selected_folder}|tojson }}</script>
 <script src="/static/chat-common.js?v={{ css_v }}" defer></script>
 <script src="/static/agents-chat.js?v={{ css_v }}" defer></script>
 {% else %}
@@ -175,6 +180,7 @@
           <option value="{{ e }}" {% if e == 'low' %}selected{% endif %}>{{ t['chat_effort_' ~ e] }}</option>
           {% endfor %}
         </select></label>
+      <a class="btn ghost small" data-to-task hidden href="/tasks/new">{{ t.chat_to_task }} →</a>
       <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
       {% endif %}
     </div>

@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Stre
 from .. import ranking_view, task_defaults
 from ..agents import AGENTS, SUMMARY_REQUEST, extract_summary, next_task_request
 from ..artifacts import parse_structured_report, resolve_artifact_path
+from ..chat_history import thread_task_draft
 from ..github import GitHubError
 from ..i18n import strings
 from ..task_models import opencode_groups
@@ -67,6 +68,7 @@ async def task_new(
     model: str = "",
     effort: str = "",
     followup: str = "",
+    from_thread: str = "",
     ctx: AppContext = CTX,
 ):
     original = None
@@ -79,6 +81,18 @@ async def task_new(
         title = f"{ctx.t['followup']}: {original.title}"[:200]
         details = ctx.followup_context(original)
         details_limit += len(details)
+    elif from_thread:
+        th = await asyncio.to_thread(ctx.chat_history.get_thread, from_thread)
+        if th is None:
+            raise HTTPException(404, "Unknown chat thread")
+        draft = thread_task_draft(th, lang=ctx.settings.lang)
+        repo = repo or draft["repo"]
+        title = title or draft["title"]
+        details = details or draft["details"]
+        agent = agent or draft["agent"]
+        model = model or draft["model"]
+        effort = effort or draft["effort"]
+        details_limit = max(details_limit, len(details) + 1000)
     projects, _ = await ctx.hub.load()
     repos = sorted({p.repo for p in projects})
     local = {r: bool(ctx.runner.repos.get(r)) for r in repos}

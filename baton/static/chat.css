@@ -154,7 +154,13 @@
 .ag-fixed { margin: 0; display: flex; justify-content: space-between; align-items: center; gap: .6rem; flex-wrap: wrap;
             padding: .45rem .75rem; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .ag-fixed[hidden] { display: none; }
+.ag-fixed-actions { display: inline-flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .ag-note { margin: 0; }
+.ag-tool-group { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel);
+                 padding: .35rem .7rem; font-size: .86rem; }
+.ag-tool-group > summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+                           gap: .5rem; color: var(--muted); font-weight: 550; }
+.ag-tool-group-list { display: flex; flex-direction: column; gap: .35rem; margin-top: .45rem; }
 .ag-tool { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2);
            padding: .35rem .7rem; font-size: .88rem; }
 .ag-tool summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: baseline; }

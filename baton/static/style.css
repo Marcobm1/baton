@@ -66,6 +66,9 @@
 
 /* ------------------------------------------------------------------ base */
 * { box-sizing: border-box; }
+/* The hidden attribute always wins. Without this, any class that sets
+   display (.btn is inline-flex) silently shows an element the JS hid. */
+[hidden] { display: none !important; }
 html { background: var(--bg); min-height: 100%; }
 body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
        font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
@@ -199,10 +202,15 @@ h3.group::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .blocked-note { margin: .3rem 0; padding: .3rem .55rem; border-radius: 6px; color: var(--bad); font-weight: 600;
   background: color-mix(in srgb, var(--bad) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--bad) 35%, var(--line)); }
 
-/* Buttons */
-.btn, button { display: inline-flex; align-items: center; gap: .35rem; background: var(--accent); color: var(--on-accent) !important;
+/* Buttons. A bare <button> gets the primary look, but its colour is a plain
+   default so any class on the button (.suggest-chip, .thread-act, ...) can
+   set its own. Only .btn forces the colour, because it is also used on links,
+   which would otherwise take the link colour. Never put !important on a bare
+   element selector: it beats every class and hides text (see docs/design.md). */
+.btn, button { display: inline-flex; align-items: center; gap: .35rem; background: var(--accent); color: var(--on-accent);
   border: 1px solid transparent; border-radius: var(--radius-sm); padding: .5rem .95rem; cursor: pointer;
   text-decoration: none; font: 600 .88rem var(--sans); line-height: 1.2; }
+.btn { color: var(--on-accent) !important; }
 .btn:hover, button:hover { filter: brightness(1.06); }
 .btn.ghost { background: var(--panel); color: var(--ink) !important; border-color: var(--line); }
 .btn.ghost:hover { background: var(--panel-2); filter: none; }

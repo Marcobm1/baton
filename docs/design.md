@@ -64,3 +64,18 @@ that both dark blocks match, and the contrast below.
   CDNs: icons are inline SVG drawn for Baton.
 - `prefers-reduced-motion` turns transitions off; focus is a visible 2 px
   outline in both themes.
+- Buttons: a bare `<button>` gets the primary look with a *plain* colour, so
+  any class on it (chips, icon buttons, links styled as buttons) can set its
+  own. Only `.btn` forces its colour with `!important`, because it is also
+  used on `<a>`. Never put `!important` on a bare element selector: until
+  2026-11-26 `button { color: … !important }` made the `/chat` suggestion
+  chips, the attach button and Sign out invisible (dark text on dark).
+- `[hidden] { display: none !important; }` is global: the JS hides things
+  with `el.hidden = true`, and a class that sets `display` (like `.btn`) must
+  not undo that. `tests/test_design.py` checks both rules.
+
+## Planned (decided 2026-11-26)
+
+The reference look is the Claude Code desktop app, and the dark theme moves
+from blue-grey to near-black across the whole app (task UI-1 in `STATUS.md`).
+The contrast and "both dark blocks match" tests stay as they are.

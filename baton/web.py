@@ -35,6 +35,7 @@ from .auth import COOKIE_NAME, LoginRateLimiter, safe_next_path, verify_session_
 from .config import Settings
 from .github import Hub
 from .i18n import ordinal, strings
+from .machines import MachineStore
 from .models import LocalModels
 from .ping import Scheduler, find_agy, find_claude, find_codex
 from .routes import AppContext, register_routes
@@ -91,6 +92,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     )
     store = TaskStore(settings.data_dir)
     models = LocalModels(settings.data_dir)
+    machines = MachineStore(settings.data_dir)
     agent_chats = AgentChats(data_dir=settings.data_dir, sandbox_image=settings.sandbox_image)
     ranking = store.ranking
 
@@ -154,6 +156,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         scheduler=scheduler,
         store=store,
         models=models,
+        machines=machines,
         agent_chats=agent_chats,
         ranking=ranking,
         runner=runner,
@@ -184,8 +187,9 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                     await asyncio.wait_for(update_requested.wait(), 300)
 
     def _quota_tick():
-        # Refresh token usage from disk logs in the background so /quotas never blocks.
+        # Refresh token usage and local machine metrics in the background.
         ctx.refresh_usage()
+        machines.refresh_local()
         if scheduler.enabled:
             scheduler.tick()
         # OpenCode Go's usage endpoint and agy's /usage are free to ask: keep
@@ -271,6 +275,9 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         if (path == "/healthz" or path.startswith("/static/")) and request.method in ("GET", "HEAD"):
             return await call_next(request)
         if path == "/login" and request.method in ("GET", "HEAD", "POST"):
+            return await call_next(request)
+        # Machine heartbeats authenticate strictly with their own per-machine Bearer token.
+        if path == "/api/machines/heartbeat" and request.method == "POST":
             return await call_next(request)
         if verify_session_token(request.cookies.get(COOKIE_NAME), access_key):
             return await call_next(request)

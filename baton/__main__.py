@@ -193,6 +193,14 @@ def cmd_statusline(args) -> int:
     return main()
 
 
+def cmd_monitor_agent(args) -> int:
+    from .monitor_agent import run_agent
+
+    url = args.url or os.environ.get("BATON_URL", "")
+    token = args.token or os.environ.get("BATON_AGENT_TOKEN", "")
+    return run_agent(url, token, interval=args.interval, once=args.once)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="baton", description="A shared project hub for you and your AI agents.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -248,6 +256,13 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("statusline", help="Claude Code status line command (records quota)")
     p.set_defaults(fn=cmd_statusline)
+
+    p = sub.add_parser("monitor-agent", help="send read-only host metrics heartbeats to Baton")
+    p.add_argument("--url", default="", help="Baton base URL (or BATON_URL)")
+    p.add_argument("--token", default="", help="per-machine token (or BATON_AGENT_TOKEN)")
+    p.add_argument("--interval", type=float, default=30.0, help="seconds between heartbeats (default 30)")
+    p.add_argument("--once", action="store_true", help="send one heartbeat and exit")
+    p.set_defaults(fn=cmd_monitor_agent)
 
     args = ap.parse_args(argv)
     return args.fn(args)

@@ -290,6 +290,26 @@ STRINGS = {
         "m_err_start": "It could not start: {error}",
         "m_stop_confirm": "Stop this model? Anything it is answering will be cut off.",
 
+        # Machines page
+        "machines_nav": "Machines",
+        "mach_title": "Machines",
+        "mach_sub": "Live status for this computer and any extra computers or servers reporting to Baton.",
+        "mach_this_pc": "This PC",
+        "mach_online": "Online", "mach_offline": "Offline", "mach_pending": "Waiting for agent",
+        "mach_cpu": "CPU", "mach_ram": "RAM", "mach_disk": "Disk", "mach_gpu": "GPU",
+        "mach_net": "Network", "mach_logins": "Sessions", "mach_uptime": "Uptime",
+        "mach_last_seen": "Last heartbeat",
+        "mach_add_title": "Add another computer or server",
+        "mach_add_help": "Creates a dedicated read-only token for one machine (never uses BATON_ACCESS_KEY).",
+        "mach_add_name": "Name", "mach_add_placeholder": "e.g. Home Server, Laptop, VPS",
+        "mach_add_btn": "Add machine",
+        "mach_remove": "Remove",
+        "mach_remove_confirm": "Remove this machine and revoke its agent token?",
+        "mach_token_title": "Agent token created for {name}",
+        "mach_token_once": "Copy this token now — Baton only stores its SHA-256 hash and will not show it again.",
+        "mach_token_cmd": "Run on that machine:",
+        "mach_none_remote": "No remote machines added yet. Your PC above is already being monitored automatically.",
+
         # Chat page
         "chat_nav": "Chat", "chat_model": "Model", "chat_effort": "Reasoning",
         "chat_effort_none": "None", "chat_effort_low": "Low", "chat_effort_medium": "Medium", "chat_effort_high": "High",
@@ -652,6 +672,26 @@ STRINGS = {
         "m_err_not_ours": "El programa del puerto {port} no es llama-server, así que Baton no lo para.",
         "m_err_start": "No se pudo arrancar: {error}",
         "m_stop_confirm": "¿Parar este modelo? Se cortará lo que esté respondiendo.",
+
+        # Página de máquinas
+        "machines_nav": "Máquinas",
+        "mach_title": "Máquinas",
+        "mach_sub": "Estado en vivo de este ordenador y de cualquier otro equipo o servidor que reporte a Baton.",
+        "mach_this_pc": "Este PC",
+        "mach_online": "En línea", "mach_offline": "Desconectada", "mach_pending": "Esperando agente",
+        "mach_cpu": "CPU", "mach_ram": "RAM", "mach_disk": "Disco", "mach_gpu": "GPU",
+        "mach_net": "Red", "mach_logins": "Sesiones", "mach_uptime": "Encendido",
+        "mach_last_seen": "Último latido",
+        "mach_add_title": "Añadir otro ordenador o servidor",
+        "mach_add_help": "Crea un token propio de solo lectura para una máquina (nunca usa BATON_ACCESS_KEY).",
+        "mach_add_name": "Nombre", "mach_add_placeholder": "p. ej. Servidor casa, Portátil, VPS",
+        "mach_add_btn": "Añadir máquina",
+        "mach_remove": "Quitar",
+        "mach_remove_confirm": "¿Quitar esta máquina y revocar su token de agente?",
+        "mach_token_title": "Token de agente creado para {name}",
+        "mach_token_once": "Copia este token ahora — Baton solo guarda su hash SHA-256 y no lo volverá a mostrar.",
+        "mach_token_cmd": "Ejecuta en esa máquina:",
+        "mach_none_remote": "Todavía no hay máquinas remotas añadidas. Tu PC de arriba ya se monitoriza automáticamente.",
 
         # Página de chat
         "chat_nav": "Chat", "chat_model": "Modelo", "chat_effort": "Razonamiento",

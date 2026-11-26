@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}{{ t.machines_nav }} · {{ title }}{% endblock %}
+{% block refresh %}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/machines.css?v={{ css_v }}">{% endblock %}
+{% block main %}
+<section data-machines>
+  <h1>{{ t.mach_title }}</h1>
+  <p class="muted">{{ t.mach_sub }}</p>
+
+  {% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
+
+  {% if created %}
+  <div class="mach-token" role="status">
+    <strong>{{ t.mach_token_title.format(name=created.name) }}</strong>
+    <p class="small">{{ t.mach_token_once }}</p>
+    <pre><code>{{ created.token }}</code></pre>
+    <p class="small muted">{{ t.mach_token_cmd }}</p>
+    <pre><code>baton monitor-agent --url &lt;BATON_URL&gt; --token {{ created.token }}</code></pre>
+  </div>
+  {% endif %}
+
+  <div class="mach-grid" data-mach-grid>
+    {% for m in machines %}
+    {% set x = m.metrics or {} %}
+    {% set gpu = x.get('gpu') %}
+    {% set net = x.get('net') or {} %}
+    {% set logins = x.get('logins') or [] %}
+    <article class="mach-card{% if m.status == 'offline' %} is-offline{% endif %}" data-machine-id="{{ m.id }}">
+      <div class="mach-head">
+        <div>
+          <h2 class="mach-name">{{ m.name }}{% if m.local %}<span class="mach-tag">{{ t.mach_this_pc }}</span>{% endif %}</h2>
+          <p class="mach-os" data-field="os">{{ m.os_info or '—' }}</p>
+        </div>
+        <span class="mach-badge st-{{ m.status }}" data-field="status">
+          {{ t['mach_' ~ m.status] }}
+        </span>
+      </div>
+
+      <dl class="mach-stats">
+        <div class="mach-stat">
+          <dt>{{ t.mach_cpu }}</dt>
+          <dd data-field="cpu">{% if x.get('cpu_pct') is not none %}{{ '%.0f'|format(x.cpu_pct) }}%{% if x.get('cpu_temp_c') is not none %} · {{ '%.0f'|format(x.cpu_temp_c) }} °C{% endif %}{% else %}—{% endif %}</dd>
+        </div>
+        <div class="mach-stat">
+          <dt>{{ t.mach_ram }}</dt>
+          <dd data-field="ram">{% if x.get('ram_pct') is not none %}{{ '%.0f'|format(x.ram_pct) }}% ({{ '%.1f'|format(x.get('ram_used_gb') or 0) }}/{{ '%.1f'|format(x.get('ram_total_gb') or 0) }} GiB){% else %}—{% endif %}</dd>
+        </div>
+        <div class="mach-stat">
+          <dt>{{ t.mach_disk }}</dt>
+          <dd data-field="disk">{% if x.get('disk_pct') is not none %}{{ '%.0f'|format(x.disk_pct) }}% ({{ '%.0f'|format(x.get('disk_free_gb') or 0) }} GiB free){% else %}—{% endif %}</dd>
+        </div>
+        <div class="mach-stat">
+          <dt>{{ t.mach_gpu }}</dt>
+          <dd data-field="gpu">{% if gpu %}{{ '%.0f'|format(gpu.get('util_pct') or 0) }}%{% if gpu.get('temp_c') is not none %} · {{ '%.0f'|format(gpu.temp_c) }} °C{% endif %}{% if gpu.get('vram_total_gb') %} · {{ '%.1f'|format(gpu.get('vram_used_gb') or 0) }}/{{ '%.1f'|format(gpu.vram_total_gb) }} GiB{% endif %}{% else %}—{% endif %}</dd>
+        </div>
+        <div class="mach-stat">
+          <dt>{{ t.mach_net }}</dt>
+          <dd data-field="net">{% if net %}↓ {{ '%.1f'|format((net.get('rx_bps') or 0) / 1024) }} · ↑ {{ '%.1f'|format((net.get('tx_bps') or 0) / 1024) }} KiB/s{% else %}—{% endif %}</dd>
+        </div>
+        <div class="mach-stat">
+          <dt>{{ t.mach_logins }}</dt>
+          <dd data-field="logins">{{ logins|length }}</dd>
+        </div>
+      </dl>
+
+      <div class="mach-foot">
+        <span data-field="seen">{% if m.last_seen %}{{ t.mach_last_seen }}: {{ m.last_seen|when }}{% else %}{{ t.mach_pending }}{% endif %}</span>
+        {% if not m.local %}
+        <form method="post" action="/machines/{{ m.id }}/delete" onsubmit="return confirm({{ t.mach_remove_confirm|tojson }})">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="btn ghost small danger">{{ t.mach_remove }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+
+  {% if machines|length <= 1 %}
+  <p class="muted small">{{ t.mach_none_remote }}</p>
+  {% endif %}
+
+  <section class="mach-add">
+    <h3>{{ t.mach_add_title }}</h3>
+    <p class="muted small">{{ t.mach_add_help }}</p>
+    <form method="post" action="/machines/add" class="mach-add-row">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>
+        <span class="label">{{ t.mach_add_name }}</span>
+        <input type="text" name="name" maxlength="60" required placeholder="{{ t.mach_add_placeholder }}">
+      </label>
+      <button type="submit" class="btn">{{ t.mach_add_btn }}</button>
+    </form>
+  </section>
+</section>
+<script id="mach-strings" type="application/json">{{ {'online': t.mach_online, 'offline': t.mach_offline, 'pending': t.mach_pending, 'last_seen': t.mach_last_seen}|tojson }}</script>
+<script src="/static/machines.js?v={{ css_v }}" defer></script>
+{% endblock %}

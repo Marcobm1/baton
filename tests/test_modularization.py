@@ -26,7 +26,7 @@ def test_runner_and_web_modular_exports():
     assert callable(review_merge.finish_pr)
     assert callable(review_merge.wait_for_tests)
     assert callable(review_merge.run_review)
-    assert len(routes.ROUTERS) == 8
+    assert len(routes.ROUTERS) == 9
 
 
 def test_create_app_instances_have_isolated_context(tmp_path):

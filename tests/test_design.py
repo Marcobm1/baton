@@ -49,7 +49,7 @@ def test_theme_switch_on_every_page(tmp_path, monkeypatch, lang):
 def test_colours_live_only_in_the_token_blocks():
     rest = CSS[CSS.index(":root {\n  --sans"):]          # everything after the tokens
     assert not HEX.findall(rest) and "rgb(" not in rest
-    for name in ("quotas.css", "models.css", "chat.css"):
+    for name in ("quotas.css", "models.css", "machines.css", "chat.css"):
         assert not HEX.findall((STATIC / name).read_text(encoding="utf-8")), name
 
 

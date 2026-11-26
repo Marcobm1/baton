@@ -97,6 +97,30 @@ _SCHEMA_SQL = (
         PRIMARY KEY(agent, session_id)
     )""",
     "CREATE INDEX IF NOT EXISTS idx_chat_sessions_agent_updated ON chat_sessions(agent, updated_at DESC)",
+    """CREATE TABLE IF NOT EXISTS machines (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        token_hash TEXT NOT NULL,
+        os_info TEXT NOT NULL,
+        last_seen REAL NOT NULL,
+        metrics_json TEXT NOT NULL,
+        thresholds_json TEXT NOT NULL,
+        created_at REAL NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS machine_samples (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        machine_id TEXT NOT NULL,
+        ts REAL NOT NULL,
+        cpu_pct REAL,
+        ram_pct REAL,
+        disk_pct REAL,
+        gpu_pct REAL,
+        gpu_temp_c REAL,
+        net_rx_bps REAL,
+        net_tx_bps REAL,
+        logins_count INTEGER
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_machine_samples_machine_ts ON machine_samples(machine_id, ts DESC)",
 )
 
 _TASK_COLUMNS = (

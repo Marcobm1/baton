@@ -74,9 +74,34 @@
   {% if task.status not in ['queued', 'running'] and (task.summary or report_error or (task.issue_number and not task.finished_at)) %}
   <section class="task-summary" aria-labelledby="summary-title">
     <h3 id="summary-title">{{ t.task_summary }}</h3>
-    {% if task.summary %}<div class="md">{{ task.summary|md|safe }}</div>
+    {% if structured %}
+    <div class="structured-report">
+      {% for sec_key in ('summary', 'changes', 'checks', 'next') if structured.get(sec_key) %}
+      <div class="rep-block rep-{{ sec_key }}">
+        <span class="label">{{ t['rep_' ~ sec_key] }}</span>
+        <div class="md">{{ structured[sec_key]|md|safe }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% elif task.summary %}<div class="md">{{ task.summary|md|safe }}</div>
     {% elif report_error %}<p>{{ t.summary_error }}</p>
     {% elif task.issue_number and not task.finished_at %}<p>{{ t.summary_wait }}</p>{% endif %}
+  </section>
+  {% endif %}
+  {% if task.artifacts %}
+  <section class="task-artifacts" aria-labelledby="artifacts-title">
+    <h3 id="artifacts-title">{{ t.artifacts_title }} <small class="muted">({{ task.artifacts|length }})</small></h3>
+    <div class="artifact-grid">
+      {% for art in task.artifacts %}
+      {% set url = '/api/tasks/' ~ (task.id|urlencode) ~ '/artifacts/' ~ (art.name|urlencode) %}
+      <figure class="artifact-card">
+        <a href="{{ url }}" data-lightbox-src="{{ url }}" data-lightbox-cap="{{ art.caption or art.name }}">
+          <img src="{{ url }}" alt="{{ art.caption or art.name }}" loading="lazy">
+        </a>
+        {% if art.caption %}<figcaption class="small muted">{{ art.caption }}</figcaption>{% endif %}
+      </figure>
+      {% endfor %}
+    </div>
   </section>
   {% endif %}
   {% if task.reviewer %}
@@ -102,6 +127,16 @@
     {% if task.where == 'local' %}<h3>{{ t.log }}</h3>{% if log or task.status == 'running' %}<pre id="task-log" class="log">{{ log or t.no_log }}</pre>{% else %}<p>{{ t.no_log }}</p>{% endif %}{% endif %}
   </details>
 </article>
+{% if task.artifacts %}
+<dialog id="artifact-lightbox" class="lightbox">
+  <div class="lightbox-body">
+    <button type="button" class="btn ghost small lightbox-close" data-lb-close>{{ t.close_label }} ✕</button>
+    <img data-lb-img alt="">
+    <p class="small muted" data-lb-cap hidden></p>
+  </div>
+</dialog>
+<script src="/static/lightbox.js?v={{ css_v }}" defer></script>
+{% endif %}
 {% if task.status in ['queued', 'running'] %}
 <script src="/static/task-live.js?v={{ css_v }}" defer></script>
 {% endif %}

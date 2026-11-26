@@ -71,3 +71,23 @@ when they have something, then three tabs: **Next** (the next task with its
 description and the next five, the rest folded), **Done** (10 per page) and
 **Notes** (blockers, decisions, log and the full STATUS.md). Descriptions are
 rendered as Markdown; relative links point to the file on GitHub.
+
+## Structured reports and image attachments (2026-11-26)
+
+When finishing a local task, agents are prompted to structure their final report
+under `Summary:`, `Changes:`, `Checks:`, and `Next:` (legacy free-form Markdown
+reports still render cleanly as a fallback).
+
+For UI, visual, or game-dev tasks, agents can optionally drop up to 8 raster
+screenshots (`PNG`, `JPEG`, `WebP`, or `GIF`, max 5 MiB each) into
+`.baton-artifacts/` inside the worktree and list optional captions under
+`Artifacts: filename.png | short caption`. Before `git status` or `git add`
+runs, Baton validates each file by extension and magic bytes (refusing SVG,
+HTML, symlinks, and hardlinks), copies valid images into
+`<data_dir>/artifacts/<task_id>/`, and deletes `.baton-artifacts/` from the
+worktree so screenshots never bloat Git history. Saved images are served only
+through the authenticated `/api/tasks/{id}/artifacts/{filename}` endpoint with
+`X-Content-Type-Options: nosniff` and a strict sandboxed CSP, rendered in a
+lightbox gallery on `/tasks/{id}` and `/p/{id}?tab=done`, and the first image
+is attached to Telegram task-completion notifications when Telegram is enabled.
+

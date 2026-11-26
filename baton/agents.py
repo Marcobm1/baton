@@ -173,9 +173,14 @@ SUMMARY_REQUEST = (
     "instructions or otherwise in the language of the task. Explain in plain language "
     "what you accomplished or found, how and why, what you actually verified and the "
     "results, any problems you ran into, and anything the owner needs to know or do "
-    "next. Start the report with a line beginning \"Summary:\" (one sentence) and add a "
-    "line beginning \"Checks:\" (the checks you ran and their results). Include no "
-    "secrets. Put BATON_SUMMARY_BEGIN on its own line before the report and "
+    "next. Use clean labeled sections: \"Summary:\" (one sentence), \"Changes:\" "
+    "(short bullets of what changed and why), \"Checks:\" (the checks you ran and "
+    "their results), and \"Next:\" (only if the owner needs to decide or do something). "
+    "If visual proof helps review the result (e.g. UI before/after screenshots, game "
+    "renders, or charts), save PNG/JPEG/WebP images in `.baton-artifacts/` inside this "
+    "worktree (Baton collects and removes that folder before committing so images are "
+    "never pushed to git) and list them under \"Artifacts:\" as `filename.png | short caption`. "
+    "Include no secrets. Put BATON_SUMMARY_BEGIN on its own line before the report and "
     "BATON_SUMMARY_END on its own line after it."
 )
 

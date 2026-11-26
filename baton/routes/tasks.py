@@ -10,10 +10,11 @@ from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 
 from .. import ranking_view, task_defaults
 from ..agents import AGENTS, SUMMARY_REQUEST, extract_summary, next_task_request
+from ..artifacts import parse_structured_report, resolve_artifact_path
 from ..github import GitHubError
 from ..i18n import strings
 from ..task_models import opencode_groups
@@ -157,9 +158,30 @@ async def task_detail(request: Request, task_id: str, ctx: AppContext = CTX):
     rendered_log = format_task_log(task.agent, log)
     return ctx.page(
         request, "task.html", "tasks", task=task, report=task_report(task, log), pending=pending,
+        structured=parse_structured_report(task.summary),
         log="\n".join(rendered_log.splitlines()[-200:]), can_cancel=ctx.runner.can_cancel(task.id),
         report_error=report_error, ranking_job=ctx.store.record_task(task),
         queue=ctx.runner.queue_info().get(task.id), priorities=PRIORITIES,
+    )
+
+
+@router.get("/api/tasks/{task_id}/artifacts/{filename}")
+async def task_artifact(task_id: str, filename: str, ctx: AppContext = CTX):
+    """Serve a validated local raster image artifact for a task (authenticated via middleware)."""
+    if not ctx.store.get(task_id):
+        raise HTTPException(404, "Unknown task")
+    resolved = resolve_artifact_path(ctx.store.dir, task_id, filename)
+    if resolved is None:
+        raise HTTPException(404, "Unknown artifact")
+    path, mime = resolved
+    return FileResponse(
+        path,
+        media_type=mime,
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; img-src 'self'; sandbox",
+            "Cache-Control": "private, max-age=3600",
+        },
     )
 
 

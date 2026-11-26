@@ -85,6 +85,18 @@ _SCHEMA_SQL = (
         merged INTEGER NOT NULL,
         report TEXT NOT NULL
     )""",
+    """CREATE TABLE IF NOT EXISTS chat_sessions (
+        session_id TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        folder_key TEXT NOT NULL,
+        folder_label TEXT NOT NULL,
+        model TEXT NOT NULL,
+        effort TEXT NOT NULL,
+        title TEXT NOT NULL,
+        updated_at REAL NOT NULL,
+        PRIMARY KEY(agent, session_id)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_chat_sessions_agent_updated ON chat_sessions(agent, updated_at DESC)",
 )
 
 _TASK_COLUMNS = (
@@ -308,3 +320,74 @@ def connect(data_dir: Path):
         conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
         conn.execute("PRAGMA foreign_keys = ON")
         yield conn
+
+
+def save_chat_session(
+    data_dir: Path,
+    *,
+    session_id: str,
+    agent: str,
+    folder_key: str,
+    folder_label: str,
+    model: str,
+    effort: str,
+    title: str,
+    updated_at: float | None = None,
+    keep: int = 50,
+) -> None:
+    """Persist minimal chat session metadata for resume (never stores credentials or transcripts)."""
+    import time as _time
+
+    if not session_id or not agent:
+        return
+    ts = _time.time() if updated_at is None else float(updated_at)
+    clean_title = " ".join((title or "").split())[:100]
+    with connect(data_dir) as conn:
+        conn.execute(
+            "INSERT INTO chat_sessions "
+            "(session_id, agent, folder_key, folder_label, model, effort, title, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(agent, session_id) DO UPDATE SET "
+            "folder_key=excluded.folder_key, folder_label=excluded.folder_label, "
+            "model=excluded.model, effort=excluded.effort, "
+            "title=CASE WHEN excluded.title != '' THEN excluded.title ELSE chat_sessions.title END, "
+            "updated_at=excluded.updated_at",
+            (session_id, agent, folder_key, folder_label, model, effort, clean_title, ts),
+        )
+        conn.execute(
+            "DELETE FROM chat_sessions WHERE agent = ? AND session_id NOT IN "
+            "(SELECT session_id FROM chat_sessions WHERE agent = ? ORDER BY updated_at DESC LIMIT ?)",
+            (agent, agent, keep),
+        )
+
+
+def list_chat_sessions(data_dir: Path, agent: str, *, limit: int = 15) -> list[dict]:
+    """List recent saved chat sessions for `agent`, newest first."""
+    with connect(data_dir) as conn:
+        rows = conn.execute(
+            "SELECT session_id, agent, folder_key, folder_label, model, effort, title, updated_at "
+            "FROM chat_sessions WHERE agent = ? ORDER BY updated_at DESC LIMIT ?",
+            (agent, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_chat_session(data_dir: Path, agent: str, session_id: str) -> dict | None:
+    """Return one saved chat session by `(agent, session_id)`, or None."""
+    with connect(data_dir) as conn:
+        row = conn.execute(
+            "SELECT session_id, agent, folder_key, folder_label, model, effort, title, updated_at "
+            "FROM chat_sessions WHERE agent = ? AND session_id = ?",
+            (agent, session_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_chat_session(data_dir: Path, agent: str, session_id: str) -> bool:
+    """Delete one saved chat session record."""
+    with connect(data_dir) as conn:
+        cur = conn.execute(
+            "DELETE FROM chat_sessions WHERE agent = ? AND session_id = ?",
+            (agent, session_id),
+        )
+    return cur.rowcount > 0

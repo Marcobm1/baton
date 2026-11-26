@@ -565,12 +565,17 @@ class AgentChat:
             self.answer(pid, False, why)
 
 
+CHAT_AGENTS = ("opencode", "gemini", "claude-code", "codex")
+
+
 class AgentChats:
-    """The open conversations (in memory: a Baton restart ends them)."""
+    """The open conversations (in memory: a Baton restart ends them; Claude/Codex sessions can resume)."""
 
     def __init__(self, command: Callable[[], list[str] | None] = opencode_command,
                  permission_timeout: float = PERMISSION_TIMEOUT,
                  gemini_command: Callable[[], list[str] | None] = agy_command,
+                 claude_command: Callable[[str, str, str], list[str] | None] | None = None,
+                 codex_command: Callable[[], list[str] | None] | None = None,
                  data_dir: Path | None = None,
                  idle_seconds: float = IDLE_SECONDS,
                  turn_timeout: float = TURN_TIMEOUT,
@@ -579,14 +584,16 @@ class AgentChats:
                  sandbox_command: Callable[[Path, str, str], list[str] | None] | None = None):
         self.command = command                  # OpenCode
         self.gemini_command = gemini_command
-        self.data_dir = data_dir                # where Gemini token counts go
+        self.claude_command = claude_command
+        self.codex_command = codex_command
+        self.data_dir = data_dir                # where Gemini tokens & resumable chat sessions live
         self.permission_timeout = permission_timeout
         self.idle_seconds = idle_seconds
         self.turn_timeout = turn_timeout
         self.reap_interval = reap_interval
         self.sandbox_image = sandbox_image
         self.sandbox_command = sandbox_command  # optional override for fake ACP sandbox tests
-        self._chats: dict[str, AgentChat] = {}
+        self._chats: dict[str, Any] = {}
         self._lock = threading.Lock()
         self._stop_reaper = threading.Event()
         self._reaper: threading.Thread | None = None
@@ -596,6 +603,35 @@ class AgentChats:
         if self.sandbox_command is not None:
             return True
         return docker_available(self.sandbox_image)
+
+    def sessions(self, agent: str, *, limit: int = 15) -> list[dict]:
+        """Recent resumable sessions saved for `agent` in baton.sqlite3."""
+        if self.data_dir is None or agent not in ("claude-code", "codex"):
+            return []
+        from . import db
+        return db.list_chat_sessions(self.data_dir, agent, limit=limit)
+
+    def session(self, agent: str, session_id: str) -> dict | None:
+        if self.data_dir is None or not session_id or agent not in ("claude-code", "codex"):
+            return None
+        from . import db
+        return db.get_chat_session(self.data_dir, agent, session_id)
+
+    def _save_session(self, agent: str, folder_key: str, folder_label: str,
+                      model: str, effort: str, session_id: str, title: str) -> None:
+        if self.data_dir is None or not session_id:
+            return
+        from . import db
+        db.save_chat_session(
+            self.data_dir,
+            session_id=session_id,
+            agent=agent,
+            folder_key=folder_key,
+            folder_label=folder_label,
+            model=model,
+            effort=effort,
+            title=title,
+        )
 
     def _ensure_reaper(self) -> None:
         if self.reap_interval <= 0:
@@ -614,7 +650,7 @@ class AgentChats:
                 if not self._chats:
                     return
 
-    def get(self, chat_id: str) -> AgentChat | None:
+    def get(self, chat_id: str) -> Any | None:
         with self._lock:
             return self._chats.get(chat_id)
 
@@ -648,10 +684,57 @@ class AgentChats:
 
     def create(self, folder: Path, folder_label: str, model: str, effort: str,
                mode: str = "confirm", agent: str = "opencode", *,
-               local_models: list[dict] | None = None) -> AgentChat:
-        if agent not in PROFILES:
+               local_models: list[dict] | None = None,
+               folder_key: str = "",
+               resume_id: str = "") -> Any:
+        if agent not in CHAT_AGENTS:
             raise ChatError("ag_unavailable")
         chat_id = secrets.token_urlsafe(12)
+
+        if agent in ("claude-code", "codex"):
+            if mode != "confirm":
+                raise ChatError("ag_full_off")
+            self._reap()
+            env = agent_env()
+
+            def _on_session(sid: str, title: str) -> None:
+                self._save_session(agent, folder_key, folder_label, model, effort, sid, title)
+
+            if agent == "claude-code":
+                from .chat_claude import ClaudeChat, claude_chat_command
+                cmd_fn = self.claude_command or (lambda m, e, r: claude_chat_command(m, e, r))
+                command = cmd_fn(model, effort, resume_id)
+                if not command:
+                    raise ChatError("ag_unavailable_claude")
+                chat: Any = ClaudeChat(
+                    id=chat_id, folder=folder, folder_label=folder_label,
+                    model=model, effort=effort, mode=mode, agent=agent,
+                    folder_key=folder_key, resume_id=resume_id, on_session=_on_session,
+                    permission_timeout=self.permission_timeout, turn_timeout=self.turn_timeout,
+                )
+            else:
+                from .chat_codex import CodexChat, codex_chat_command
+                cmd_fn = self.codex_command or codex_chat_command
+                command = cmd_fn()
+                if not command:
+                    raise ChatError("ag_unavailable_codex")
+                chat = CodexChat(
+                    id=chat_id, folder=folder, folder_label=folder_label,
+                    model=model, effort=effort, mode=mode, agent=agent,
+                    folder_key=folder_key, resume_id=resume_id, on_session=_on_session,
+                    permission_timeout=self.permission_timeout, turn_timeout=self.turn_timeout,
+                )
+            try:
+                chat.start(command, env)
+            except (AcpError, OSError) as exc:
+                chat.close()
+                raise ChatError("ag_err_start", str(exc)[:500]) from exc
+            chat.last_active = time.time()
+            with self._lock:
+                self._chats[chat.id] = chat
+            self._ensure_reaper()
+            return chat
+
         session_cwd = ""
         container_name = ""
         isolated = False

@@ -9,19 +9,21 @@
           <option value="local" {% if agent == 'local' %}selected{% endif %}>{{ t.ag_local }}</option>
           <option value="opencode" {% if agent == 'opencode' %}selected{% endif %}>{{ t.ag_opencode }}</option>
           <option value="gemini" {% if agent == 'gemini' %}selected{% endif %}>{{ t.ag_gemini }}</option>
+          <option value="claude-code" {% if agent == 'claude-code' %}selected{% endif %}>{{ t.ag_claude }}</option>
+          <option value="codex" {% if agent == 'codex' %}selected{% endif %}>{{ t.ag_codex }}</option>
         </select></label>
 {% endmacro %}
 {% block main %}
-{% if agent in ('opencode', 'gemini') %}
-{% set gemini = agent == 'gemini' %}
+{% if agent in ('opencode', 'gemini', 'claude-code', 'codex') %}
+{% set suffix = {'opencode': '', 'gemini': '_gemini', 'claude-code': '_claude', 'codex': '_codex'}[agent] %}
 {% set js = {
   'stop': t.chat_stop, 'send': t.chat_send, 'reasoning': t.chat_reasoning, 'thinking': t.chat_thinking,
-  'error': t.chat_error, 'starting': t.ag_starting, 'fixed': t.ag_fixed, 'perm_title': t.ag_perm_title,
+  'error': t.chat_error, 'starting': t['ag_starting' ~ suffix], 'fixed': t.ag_fixed, 'perm_title': t.ag_perm_title,
   'allow': t.ag_allow, 'deny': t.ag_deny, 'expires': t.ag_perm_expires, 'allowed': t.ag_allowed,
   'denied': t.ag_denied, 'timeout': t.ag_timeout, 'cancelled': t.ag_cancelled, 'expired': t.ag_expired,
   'input': t.ag_input, 'output': t.ag_output, 'command': t.ag_command, 'plan': t.ag_plan,
   'done_reason': t.ag_done_reason, 'closed': t.ag_closed, 'stopped': t.chat_stopped,
-  'ag_effort_missing': t.ag_effort_missing, 'st_pending': t.ag_st_pending,
+  'ag_effort_missing': t.ag_effort_missing, 'ag_resumed': t.ag_resumed, 'st_pending': t.ag_st_pending,
   'st_in_progress': t.ag_st_in_progress, 'st_completed': t.ag_st_completed, 'st_failed': t.ag_st_failed,
   'full_off': t.ag_full_off, 'full_help': t.ag_full_help, 'full_local_only': t.ag_full_local_only,
   'full_abliterated': t.ag_full_abliterated, 'full_badge': t.ag_full_badge,
@@ -52,21 +54,30 @@
         <select data-oc-folder>
           {% for f in oc.folders %}<option value="{{ f.key }}">{{ f.label }}</option>{% endfor %}
         </select></label>
+      {% if oc.sessions %}
+      <label><span class="label">{{ t.ag_resume }}</span>
+        <select data-oc-resume>
+          <option value="">{{ t.ag_resume_new }}</option>
+          {% for s in oc.sessions %}
+          <option value="{{ s.session_id }}" data-folder="{{ s.folder_key }}" data-model="{{ s.model }}" data-effort="{{ s.effort }}">{{ (s.title or s.session_id[:12]) ~ ' · ' ~ s.folder_label }}</option>
+          {% endfor %}
+        </select></label>
+      {% endif %}
       <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
       {% endif %}
     </div>
   </div>
   {% if not oc.available %}
-  <p class="warn">{{ t.ag_unavailable_gemini if gemini else t.ag_unavailable }}</p>
-  {% elif gemini and not oc.groups %}
-  <p class="warn">{{ t.ag_no_models_gemini }}</p>
+  <p class="warn">{{ t['ag_unavailable' ~ suffix] }}</p>
+  {% elif agent != 'opencode' and not oc.groups %}
+  <p class="warn">{{ t['ag_no_models' ~ suffix] }}</p>
   {% elif not oc.folders %}
   <p class="warn">{{ t.ag_no_folders }}</p>
   {% else %}
   <fieldset class="ag-mode">
     <legend class="label">{{ t.ag_mode }}</legend>
     <label><input type="radio" name="ag-mode" value="confirm" checked data-mode>
-      <span><strong>{{ t.ag_confirm }}</strong> <span class="muted small">{{ t.ag_confirm_help_gemini if gemini else t.ag_confirm_help }}</span></span></label>
+      <span><strong>{{ t.ag_confirm }}</strong> <span class="muted small">{{ t['ag_confirm_help' ~ suffix] }}</span></span></label>
     <label class="ag-full{% if oc.sandbox_ready %} ag-full-ready{% endif %}"><input type="radio" name="ag-mode" value="full"{% if not oc.sandbox_ready %} disabled{% endif %} data-mode>
       <span><strong>{{ t.ag_full }}</strong> <span class="small" data-full-note>{{ t.ag_full_help if oc.sandbox_ready else t.ag_full_off }}</span></span></label>
   </fieldset>
@@ -74,7 +85,7 @@
   <p class="warn small" data-payg-warn hidden>{{ t.oc_payg_warning }}</p>
   <p class="muted small ag-fixed" data-fixed hidden><span data-fixed-text></span> <span class="ag-full-badge" data-full-badge hidden>{{ t.ag_full_badge }}</span></p>
   <div class="chat-log" data-log aria-live="polite">
-    <p class="muted chat-empty" data-empty>{{ t.ag_empty_gemini if gemini else t.ag_empty }}</p>
+    <p class="muted chat-empty" data-empty>{{ t['ag_empty' ~ suffix] }}</p>
   </div>
   <form class="chat-input" data-form>
     <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>

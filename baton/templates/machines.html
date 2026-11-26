@@ -9,6 +9,37 @@
 
   {% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
 
+  {% if active_alerts %}
+  {% set has_bad = active_alerts|selectattr('severity', 'equalto', 'bad')|list|length > 0 %}
+  <section class="alerts-box{% if has_bad %} has-bad{% endif %}" role="region" aria-label="{{ t.al_active_title }}">
+    <div class="alerts-head">
+      <h2>{{ t.al_active_title }} ({{ active_alerts|length }})</h2>
+      {% if active_alerts|length > 1 %}
+      <form method="post" action="/machines/alerts/ack-all">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" class="btn ghost small">{{ t.al_ack_all }}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% for a in active_alerts %}
+    <div class="alert-row{% if a.acked_at %} is-acked{% endif %}" data-alert-id="{{ a.id }}">
+      <div class="alert-main">
+        <span class="alert-sev sev-{{ a.severity }}">{{ t['al_sev_' ~ a.severity] }}</span>
+        <strong>{{ a.machine_name }}</strong>
+        <span>{{ a.message }}</span>
+        <span class="alert-meta">{{ a.opened_at|when }}{% if a.acked_at %} · {{ t.al_acked }}{% endif %}</span>
+      </div>
+      {% if not a.acked_at %}
+      <form method="post" action="/machines/alerts/{{ a.id }}/ack">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" class="btn ghost small">{{ t.al_ack }}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
   {% if created %}
   <div class="mach-token" role="status">
     <strong>{{ t.mach_token_title.format(name=created.name) }}</strong>
@@ -78,6 +109,24 @@
 
   {% if machines|length <= 1 %}
   <p class="muted small">{{ t.mach_none_remote }}</p>
+  {% endif %}
+
+  {% if recent_alerts %}
+  <details class="alerts-history">
+    <summary>{{ t.al_history_title }} ({{ recent_alerts|length }})</summary>
+    <div class="alerts-history-list">
+      {% for a in recent_alerts %}
+      <div class="alert-row is-acked">
+        <div class="alert-main">
+          <span class="alert-sev sev-{{ a.severity }}">{{ t['al_sev_' ~ a.severity] }}</span>
+          <strong>{{ a.machine_name }}</strong>
+          <span>{{ a.message }}</span>
+          <span class="alert-meta">{{ a.opened_at|when }} · {{ t.al_resolved }}: {{ a.resolved_at|when }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
   {% endif %}
 
   <section class="mach-add">

@@ -24,12 +24,31 @@ health heartbeats from extra computers or servers (over Tailscale or HTTPS).
   heartbeats / `Waiting for agent`), refreshing live every 5 seconds via
   `/api/machines`.
 
-## Upcoming phases
+## Phase M2: Alert engine & history (2026-11-25)
 
-- **Phase M2 — Alert engine & history:** threshold + anomaly rules (offline,
-  high GPU/CPU temperature, low RAM/disk, unexpected GPU load, sustained network
-  spike, unusual login sessions) with hysteresis and cooldowns to avoid spam,
-  plus sidebar badge and Acknowledge button.
-- **Phase M3 — Mobile push notifications:** pluggable async senders via `.env`
-  (WhatsApp via CallMeBot, Telegram Bot, and generic Webhook / ntfy) + "Send
-  test alert" button.
+- **SQLite tables (`baton/db.py`):** `alerts` (active, resolved, acknowledged,
+  plus `notified_at` ready for Phase M3) and `known_logins` (per-machine
+  baseline of `user@host` sessions).
+- **Anti-spam rules (`baton/alerts.py`):**
+  - **2-strike confirmation** on metric thresholds so brief spikes never noise.
+  - **Hysteresis** (separate open vs clear values: GPU temp 80/85 °C open, <75 °C
+    clear; CPU temp 85/95 °C open, <80 °C clear; RAM 90/96% open, <85% clear;
+    disk 92/97% open, <88% clear; unusual GPU ≥70% when no Baton model is active,
+    <40% clear; sustained network spike ≥25 MiB/s and ≥5× recent median).
+  - **Cooldown (5 min)** after resolution prevents rapid flapping.
+  - **Immediate rules:** `offline` (auto-resolves on return) and `login_unusual`
+    (seeds existing logins silently on first run, alerts immediately on any new
+    `user@host`, and stays open until acknowledged).
+- **UI & API (`baton/routes/machines.py`, `base.html`, `machines.html`):**
+  - Sidebar badge on **Machines** showing unacknowledged active alerts across
+    every page, active alerts panel with **Acknowledge** / **Acknowledge all**
+    (CSRF-protected), collapsible resolved history, and `GET /api/alerts`.
+
+## Upcoming: Phase M3 — Telegram & Webhook notifications
+
+- Pluggable async notification sender via `.env` (**Telegram Bot** as primary
+  mobile channel + generic **Webhook / ntfy**), covering both **machine alerts**
+  (`AlertEngine.on_opened`) and **finished/failed Baton tasks**
+  (`runner.on_finished`), plus a **Send test alert** button. (A conversational
+  Telegram assistant using OpenCode models is planned as a separate project that
+  reads Baton's read-only APIs without sharing task-execution privileges.)

@@ -1,4 +1,4 @@
-"""Machines monitoring routes (/machines, /api/machines, /api/machines/heartbeat)."""
+"""Machines monitoring & alerts routes (/machines, /api/machines, /api/alerts, /api/machines/heartbeat)."""
 
 from __future__ import annotations
 
@@ -22,10 +22,32 @@ def _bearer_token(request: Request) -> str:
     return token.strip()
 
 
+def _local_gpu_busy(ctx: AppContext) -> bool:
+    try:
+        view = ctx.models.overview(ctx.settings.lang)
+        return any(m.get("uses_gpu") for m in view.get("models") or [])
+    except Exception:
+        return False
+
+
+def _evaluate(ctx: AppContext, cards: list[dict]) -> None:
+    ctx.alerts.evaluate(
+        cards,
+        local_gpu_busy=_local_gpu_busy(ctx),
+        recent_samples_fn=lambda mid: ctx.machines.recent_samples(mid, hours=24.0, limit=120),
+    )
+
+
 @router.get("/machines", response_class=HTMLResponse)
 async def machines_page(request: Request, ctx: AppContext = CTX):
     cards = await asyncio.to_thread(ctx.machines.list_machines)
-    return ctx.page(request, "machines.html", "machines", machines=cards, created=None, error="")
+    await asyncio.to_thread(_evaluate, ctx, cards)
+    active = await asyncio.to_thread(ctx.alerts.active_alerts)
+    recent = await asyncio.to_thread(ctx.alerts.recent_alerts)
+    return ctx.page(
+        request, "machines.html", "machines",
+        machines=cards, active_alerts=active, recent_alerts=recent, created=None, error="",
+    )
 
 
 @router.post("/machines/add", response_class=HTMLResponse)
@@ -44,7 +66,12 @@ async def machines_add(
         created = None
         error = str(exc)
     cards = await asyncio.to_thread(ctx.machines.list_machines)
-    return ctx.page(request, "machines.html", "machines", machines=cards, created=created, error=error)
+    active = await asyncio.to_thread(ctx.alerts.active_alerts)
+    recent = await asyncio.to_thread(ctx.alerts.recent_alerts)
+    return ctx.page(
+        request, "machines.html", "machines",
+        machines=cards, active_alerts=active, recent_alerts=recent, created=created, error=error,
+    )
 
 
 @router.post("/machines/{machine_id}/delete")
@@ -59,10 +86,44 @@ async def machines_delete(
     return RedirectResponse("/machines", status_code=303)
 
 
+@router.post("/machines/alerts/{alert_id}/ack")
+async def alert_ack(
+    request: Request,
+    alert_id: int,
+    csrf: str = Form(""),
+    ctx: AppContext = CTX,
+):
+    ctx.check_post(request, csrf)
+    await asyncio.to_thread(ctx.alerts.acknowledge, alert_id)
+    return RedirectResponse("/machines", status_code=303)
+
+
+@router.post("/machines/alerts/ack-all")
+async def alerts_ack_all(
+    request: Request,
+    csrf: str = Form(""),
+    ctx: AppContext = CTX,
+):
+    ctx.check_post(request, csrf)
+    await asyncio.to_thread(ctx.alerts.acknowledge_all)
+    return RedirectResponse("/machines", status_code=303)
+
+
 @router.get("/api/machines")
 async def machines_api(ctx: AppContext = CTX):
     cards = await asyncio.to_thread(ctx.machines.list_machines)
-    return JSONResponse({"machines": cards})
+    await asyncio.to_thread(_evaluate, ctx, cards)
+    active = await asyncio.to_thread(ctx.alerts.active_alerts)
+    unacked = await asyncio.to_thread(ctx.alerts.active_count)
+    return JSONResponse({"machines": cards, "alerts": active, "unacked": unacked})
+
+
+@router.get("/api/alerts")
+async def alerts_api(ctx: AppContext = CTX):
+    active = await asyncio.to_thread(ctx.alerts.active_alerts)
+    recent = await asyncio.to_thread(ctx.alerts.recent_alerts)
+    unacked = await asyncio.to_thread(ctx.alerts.active_count)
+    return JSONResponse({"active": active, "recent": recent, "unacked": unacked})
 
 
 @router.post("/api/machines/heartbeat")
@@ -87,4 +148,6 @@ async def machines_heartbeat(request: Request, ctx: AppContext = CTX):
         raise HTTPException(400, str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(401, "Machine no longer registered.") from exc
+    cards = await asyncio.to_thread(ctx.machines.list_machines, refresh_local=False)
+    await asyncio.to_thread(_evaluate, ctx, cards)
     return JSONResponse({"ok": True, "machine_id": machine["id"]})

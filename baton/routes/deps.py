@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 
 from .. import quotas, usage
 from ..agent_chat import AgentChats
+from ..alerts import AlertEngine
 from ..auth import LoginRateLimiter
 from ..config import Settings
 from ..machines import MachineStore
@@ -40,6 +41,7 @@ class AppContext:
     store: TaskStore
     models: LocalModels
     machines: MachineStore
+    alerts: AlertEngine
     agent_chats: AgentChats
     ranking: Ranking
     runner: Any

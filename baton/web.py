@@ -31,6 +31,7 @@ from markdown_it import MarkdownIt
 
 from . import __version__, quotas, usage
 from .agent_chat import AgentChats
+from .alerts import AlertEngine
 from .auth import COOKIE_NAME, LoginRateLimiter, safe_next_path, verify_session_token
 from .config import Settings
 from .github import Hub
@@ -93,6 +94,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     store = TaskStore(settings.data_dir)
     models = LocalModels(settings.data_dir)
     machines = MachineStore(settings.data_dir)
+    alerts = AlertEngine(settings.data_dir)
     agent_chats = AgentChats(data_dir=settings.data_dir, sandbox_image=settings.sandbox_image)
     ranking = store.ranking
 
@@ -134,7 +136,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     templates.env.globals.update(
         t=t, title=settings.title, version=__version__, lang=settings.lang, csrf=csrf_token,
-        agents=AGENTS, auth_enabled=auth_enabled,
+        agents=AGENTS, auth_enabled=auth_enabled, active_alerts_count=alerts.active_count,
         # Changes whenever any stylesheet or script changes, so browsers (and
         # phones, which cache hard) never keep an old copy after an update.
         css_v=hashlib.sha256(b"".join(
@@ -157,6 +159,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         store=store,
         models=models,
         machines=machines,
+        alerts=alerts,
         agent_chats=agent_chats,
         ranking=ranking,
         runner=runner,
@@ -187,9 +190,18 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                     await asyncio.wait_for(update_requested.wait(), 300)
 
     def _quota_tick():
-        # Refresh token usage and local machine metrics in the background.
+        # Refresh token usage, local machine metrics, and evaluate alerts in the background.
         ctx.refresh_usage()
-        machines.refresh_local()
+        cards = machines.list_machines(refresh_local=True)
+        try:
+            gpu_busy = any(m.get("uses_gpu") for m in models.overview(settings.lang).get("models") or [])
+        except Exception:
+            gpu_busy = False
+        alerts.evaluate(
+            cards,
+            local_gpu_busy=gpu_busy,
+            recent_samples_fn=lambda mid: machines.recent_samples(mid, hours=24.0, limit=120),
+        )
         if scheduler.enabled:
             scheduler.tick()
         # OpenCode Go's usage endpoint and agy's /usage are free to ask: keep

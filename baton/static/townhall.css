@@ -194,6 +194,16 @@
 .th-pill.is-running { color: var(--warn); }
 .th-pill.is-failed, .th-pill.is-cancelled { color: var(--bad); }
 
+.th-live-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  margin-bottom: .65rem;
+}
+.th-live-head h2 { margin: 0; }
+
 .th-live {
   font: .82rem/1.55 var(--mono);
   background: var(--panel-2);

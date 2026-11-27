@@ -242,11 +242,50 @@
   // --------------------------------------------------- 2. Live SSE viewer
   var box = document.getElementById("th-live-log");
   if (!box) return;
-  var url = box.getAttribute("data-events-url");
-  if (!url || typeof EventSource === "undefined") return;
+  var baseUrl = box.getAttribute("data-events-url");
+  if (!baseUrl || typeof EventSource === "undefined") return;
+  var statusUrl = box.getAttribute("data-status-url") || "";
+  var statusEl = document.getElementById("th-live-status");
+  var liveI18nEl = document.getElementById("th-live-i18n");
+  var L = {};
+  try { L = JSON.parse((liveI18nEl && liveI18nEl.textContent) || "{}"); } catch (_e) {}
 
-  var es = new EventSource(url);
+  var es = null;
   var lines = [];
+  var lastSeq = 0;
+  var reconnectDelay = 1000;
+  var reconnectTimer = null;
+  var finished = false;
+  var reconnecting = false;
+  // Map participant_id -> { name, startedAt } for currently active turns.
+  var activeTurns = {};
+
+  function setStatus(text, cls) {
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.className = "th-pill " + (cls || "is-running");
+  }
+
+  function renderActiveStatus() {
+    if (finished || reconnecting) return;
+    var ids = Object.keys(activeTurns);
+    if (!ids.length) {
+      setStatus(L.connected || "Connected · waiting for next step", "is-running");
+      return;
+    }
+    var now = Date.now();
+    var minStart = now;
+    var names = ids.map(function (id) {
+      var t = activeTurns[id];
+      if (t.startedAt < minStart) minStart = t.startedAt;
+      return t.name;
+    });
+    var secs = Math.max(0, Math.floor((now - minStart) / 1000));
+    var prefix = L.thinking || "Thinking";
+    setStatus(prefix + " (" + secs + "s): " + names.join(", "), "is-running");
+  }
+
+  var tickTimer = window.setInterval(renderActiveStatus, 1000);
 
   function formatEvent(ev) {
     var p = ev.payload || {};
@@ -254,38 +293,124 @@
       return "-> Started (" + (p.mode || "council") + (p.workspace_isolated ? ", isolated worktree" : "") + ")";
     }
     if (ev.type === "phase_started") {
-      return "-> Phase: " + (p.phase || "") + " (round " + (p.round_num || 0) + ")";
+      var extra = p.moderator_id ? " · moderator: " + p.moderator_id : "";
+      return "-> Phase: " + (p.phase || "") + " (round " + (p.round_num || 0) + extra + ")";
     }
     if (ev.type === "guest_selected") {
       return "-> Consensus guest (" + (p.method || "") + "): " + (p.chosen_model || "");
     }
+    if (ev.type === "guest_fallback") {
+      return "-> Guest fallback: " + (p.failed_model || "?") + " failed -> switched to " + (p.fallback_model || "?");
+    }
+    if (ev.type === "turn_started") {
+      return null;
+    }
     if (ev.type === "turn_completed") {
-      var st = p.ok ? "ok" : ("error: " + (p.error || "failed"));
+      var dur = typeof p.duration_seconds === "number" ? " (" + p.duration_seconds.toFixed(1) + "s)" : "";
+      var st = p.ok ? ("ok" + dur) : ("error" + dur + ": " + (p.error || "failed"));
       return "   [" + (p.participant_name || p.participant_id || "?") + "] " + st;
     }
     if (ev.type === "budget_reached") {
       return "-> Time budget reached; moving to synthesis";
     }
+    if (ev.type === "session_failed" && p.error) {
+      return "-> Session failed: " + p.error;
+    }
     return "-> " + ev.type;
   }
 
-  es.onmessage = function (e) {
-    var ev;
-    try {
-      ev = JSON.parse(e.data);
-    } catch (_err) {
+  function finishAndReload() {
+    if (finished) return;
+    finished = true;
+    if (reconnectTimer) { window.clearTimeout(reconnectTimer); reconnectTimer = null; }
+    if (tickTimer) { window.clearInterval(tickTimer); tickTimer = null; }
+    if (es) { es.close(); es = null; }
+    window.location.reload();
+  }
+
+  function checkSessionDone(onStillRunning) {
+    if (!statusUrl || typeof fetch === "undefined") {
+      if (onStillRunning) onStillRunning();
       return;
     }
-    lines.push(formatEvent(ev));
-    box.textContent = lines.join("\n");
-    box.scrollTop = box.scrollHeight;
-    if (ev.type === "session_completed" || ev.type === "session_cancelled" || ev.type === "session_failed") {
-      es.close();
-      window.location.reload();
-    }
-  };
+    fetch(statusUrl, { credentials: "same-origin", cache: "no-store" })
+      .then(function (resp) { return resp.ok ? resp.json() : null; })
+      .then(function (data) {
+        if (data && data.status && data.status !== "running") {
+          finishAndReload();
+          return;
+        }
+        if (onStillRunning) onStillRunning();
+      })
+      .catch(function () {
+        if (onStillRunning) onStillRunning();
+      });
+  }
 
-  es.onerror = function () {
-    es.close();
-  };
+  function connect() {
+    if (finished) return;
+    var sep = baseUrl.indexOf("?") >= 0 ? "&" : "?";
+    var streamUrl = lastSeq > 0 ? (baseUrl + sep + "after=" + encodeURIComponent(String(lastSeq))) : baseUrl;
+    es = new EventSource(streamUrl);
+
+    es.onopen = function () {
+      reconnectDelay = 1000;
+      reconnecting = false;
+      renderActiveStatus();
+    };
+
+    es.onmessage = function (e) {
+      if (e.lastEventId) {
+        var parsedId = parseInt(e.lastEventId, 10);
+        if (!isNaN(parsedId) && parsedId > lastSeq) lastSeq = parsedId;
+      }
+      var ev;
+      try {
+        ev = JSON.parse(e.data);
+      } catch (_err) {
+        return;
+      }
+      var p = ev.payload || {};
+      if (ev.type === "turn_started") {
+        var pid = p.participant_id || p.participant_name || "?";
+        activeTurns[pid] = {
+          name: p.participant_name || pid,
+          startedAt: Date.now(),
+        };
+        renderActiveStatus();
+      } else if (ev.type === "turn_completed") {
+        var cid = p.participant_id || p.participant_name || "?";
+        delete activeTurns[cid];
+        renderActiveStatus();
+      } else if (ev.type === "phase_started") {
+        activeTurns = {};
+        renderActiveStatus();
+      }
+
+      var line = formatEvent(ev);
+      if (line !== null) {
+        lines.push(line);
+        box.textContent = lines.join("\n");
+        box.scrollTop = box.scrollHeight;
+      }
+      if (ev.type === "session_completed" || ev.type === "session_cancelled" || ev.type === "session_failed") {
+        finishAndReload();
+      }
+    };
+
+    es.onerror = function () {
+      if (finished) return;
+      if (es) { es.close(); es = null; }
+      reconnecting = true;
+      setStatus(L.reconnecting || "Reconnecting…", "is-running");
+      var delay = reconnectDelay;
+      reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+      reconnectTimer = window.setTimeout(function () {
+        reconnectTimer = null;
+        checkSessionDone(connect);
+      }, delay);
+    };
+  }
+
+  connect();
 })();

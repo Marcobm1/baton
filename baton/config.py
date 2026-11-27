@@ -118,6 +118,9 @@ class Settings:
     search_url: str = ""
     brave_api_key: str = field(default="", repr=False)
     tavily_api_key: str = field(default="", repr=False)
+    # Optional comma-separated OpenCode model IDs excluded from Town Hall consensus guest voting
+    # (e.g. region-restricted OpenCode Go models such as opencode-go/deepseek-v4-pro).
+    townhall_guest_exclude: list[str] = field(default_factory=list)
     env_file: str = ""
 
     @classmethod
@@ -179,5 +182,6 @@ class Settings:
             search_url=os.environ.get("BATON_SEARCH_URL", "").strip(),
             brave_api_key=os.environ.get("BATON_BRAVE_API_KEY", "").strip(),
             tavily_api_key=os.environ.get("BATON_TAVILY_API_KEY", "").strip(),
+            townhall_guest_exclude=[x.lower() for x in _csv("BATON_TOWNHALL_GUEST_EXCLUDE")],
             env_file=loaded_env,
         )

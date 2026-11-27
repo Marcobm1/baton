@@ -153,7 +153,7 @@ def test_thermal_guard_without_page_visits(tmp_path, fake_server, monkeypatch, h
         with TestClient(create_app(Settings(data_dir=tmp_path, self_update=False))):
             readings[1]["temp"] = 86
             deadline = time.monotonic() + 10
-            while lm._state()["one"].get("pid") and time.monotonic() < deadline:
+            while lm._state().get("one", {}).get("pid") and time.monotonic() < deadline:
                 time.sleep(0.05)
             assert lm.overview()["models"][0]["status"] == "stopped"
             with pytest.raises(models.ModelError, match="m_err_temperature"):
@@ -164,8 +164,26 @@ def test_thermal_guard_without_page_visits(tmp_path, fake_server, monkeypatch, h
         readings[1]["temp"] = 85
         assert not lm.check_temperature()
     finally:
-        if lm._proc(lm._state()["one"]):
+        if lm._proc(lm._state().get("one", {})):
             lm.stop("one")
+
+
+def test_state_retries_transient_permission_error(tmp_path, monkeypatch):
+    lm = models.LocalModels(tmp_path)
+    lm._save({"one": {"pid": 1234}})
+    orig_read = models.Path.read_text
+    calls = {"n": 0}
+
+    def flaky_read(self, *args, **kwargs):
+        if self == lm.state_path and calls["n"] < 2:
+            calls["n"] += 1
+            raise PermissionError("simulated Windows os.replace sharing violation")
+        return orig_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(models.Path, "read_text", flaky_read)
+    monkeypatch.setattr(models.time, "sleep", lambda _: None)
+    assert lm._state() == {"one": {"pid": 1234}}
+    assert calls["n"] == 2
 
 
 def test_port_used_by_another_program(tmp_path, monkeypatch):

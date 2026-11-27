@@ -58,9 +58,11 @@ links:
 - [ ] UI-5: One chat component for local models and agents
   Merge the two branches of `templates/chat.html` into one composer and message renderer.
   Recommended: claude-code, opus, high
-- [ ] Fix flaky Windows test `tests/test_models.py::test_thermal_guard_without_page_visits[False]`
-  KeyError 'one' failed the Windows job on `main` after the harness commit (#75) but passed on #76: find the race and make it deterministic.
-  Recommended: claude-code, opus, medium
+- [x] 2026-11-26 Fix flaky Windows test `tests/test_models.py::test_thermal_guard_without_page_visits[False]` (`LocalModels._state()` now retries transient Windows `PermissionError` during `os.replace`, and `_save()` uses a PID/thread-scoped temp file)
+- [ ] (Marco) Start local SearXNG in Docker and configure `BATON_SEARCH_URL` in `.env`
+  Run `docker compose -f docker/searxng/docker-compose.yml up -d` in the Baton folder, add
+  `BATON_SEARCH_URL=http://127.0.0.1:8888/search?format=json&q={query}` to `.env`, restart
+  Baton from `/machines`, and test `web_search` with a local model in `/chat`.
 - [ ] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify
   Allow/Deny on a harmless command, restart Baton or start a new chat, and resume the saved session.
@@ -83,6 +85,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-26 (gemini): Fixed Windows NTFS sharing-violation race in `LocalModels._state()` / `_save()` (deterministic retry test in `tests/test_models.py`) and added `(Marco)` reminder to start local SearXNG in Docker.
 - 2026-11-26 (gemini): Hardened local chat harness (Blocks 1–4): streaming `<tool_call>` sanitizer + Qwen3.8 XML/JSON fallback parser, explicit synthesis closing prompt, honest DDG anti-bot detection + `docker/searxng/` + Brave/Tavily support, tool-output context compaction + live timings, and `.ag-tool-group` collapsing (`tests/test_local_harness.py`).
 - 2026-11-26 (claude-code): UI-0 CSS fix for invisible buttons and `[hidden]`; added UI-1…UI-5 plan (Claude Code look) and the Windows CI fix to Next.
 - 2026-11-26 (gemini): Added opt-in local model tool-calling harness in `/chat` (`baton/local_harness.py`, `/api/chat/{model_id}/harness`, `/api/chat-harness/{run_id}/{permission,cancel}`, `BATON_SEARCH_URL`, `docs/local-harness.md`, `tests/test_local_harness.py`).

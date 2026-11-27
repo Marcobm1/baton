@@ -411,31 +411,46 @@ class LocalModels:
         return self.data_dir / "models" / f"{model_id}.log"
 
     def _state(self) -> dict:
-        try:
-            text = self.state_path.read_text(encoding="utf-8")
-            self._last_saved_json = text
-            data = json.loads(text)
-            return data if isinstance(data, dict) else {}
-        except (OSError, ValueError):
-            return {}
+        # Windows/NTFS can briefly raise PermissionError while another instance
+        # swaps models-state.json with os.replace(); retry before falling back.
+        for attempt in range(5):
+            try:
+                text = self.state_path.read_text(encoding="utf-8")
+                self._last_saved_json = text
+                data = json.loads(text)
+                return data if isinstance(data, dict) else {}
+            except PermissionError:
+                if attempt == 4:
+                    return {}
+                time.sleep(0.05)
+            except (OSError, ValueError):
+                return {}
+        return {}
 
     def _save(self, state: dict) -> None:
         text = json.dumps(state, indent=1)
         if text == self._last_saved_json and self.state_path.is_file():
             return
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        tmp = self.state_path.with_suffix(".tmp")
+        tmp = self.state_path.with_name(f".{self.state_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
         tmp.write_text(text, encoding="utf-8")
         # Windows antivirus/indexers can briefly hold a handle during os.replace.
-        for attempt in range(5):
+        try:
+            for attempt in range(5):
+                try:
+                    os.replace(tmp, self.state_path)
+                    self._last_saved_json = text
+                    return
+                except PermissionError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.05)
+        except Exception:
             try:
-                os.replace(tmp, self.state_path)
-                self._last_saved_json = text
-                return
-            except PermissionError:
-                if attempt == 4:
-                    raise
-                time.sleep(0.05)
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     @staticmethod
     def _proc(entry: dict) -> psutil.Process | None:

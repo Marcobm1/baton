@@ -108,3 +108,85 @@ def test_hidden_attribute_always_wins():
     # `el.hidden = true` did nothing on buttons (e.g. "Convert to task" showed
     # on an empty chat).
     assert "[hidden] { display: none !important; }" in CSS
+
+
+def test_git_branch_helper_handles_repo_worktree_detached_and_plain(tmp_path):
+    from baton.routes.deps import _git_branch
+
+    # Plain directory -> ""
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert _git_branch(plain) == ""
+
+    # Standard repository (.git/HEAD -> ref)
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".git" / "HEAD").write_text("ref: refs/heads/feature/ui-2\n", encoding="utf-8")
+    assert _git_branch(repo) == "feature/ui-2"
+
+    # Detached HEAD -> 7-char SHA
+    (repo / ".git" / "HEAD").write_text("0123456789abcdef0123456789abcdef01234567\n", encoding="utf-8")
+    assert _git_branch(repo) == "0123456"
+
+    # Git worktree (.git file pointing via relative gitdir)
+    wt_git = tmp_path / "wt-meta"
+    wt_git.mkdir()
+    (wt_git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    wt = tmp_path / "worktree"
+    wt.mkdir()
+    (wt / ".git").write_text("gitdir: ../wt-meta\n", encoding="utf-8")
+    assert _git_branch(wt) == "main"
+
+
+def test_ui2_chat_full_height_layout_header_and_branch_badges(tmp_path, monkeypatch):
+    from baton import web
+    from test_models import model_item, write_config
+
+    async def no_projects(self, force=False):
+        return [], []
+
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    monkeypatch.setattr(web, "find_agy", lambda: "agy")
+    monkeypatch.setattr(
+        web, "catalog",
+        lambda agent: {"gemini-3.8-flash": {"label": "Gemini 3.8 Flash", "efforts": ["low"]}} if agent == "gemini" else {},
+    )
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    write_config(data_dir, [model_item(data_dir, "qwen")])
+    repo_dir = tmp_path / "demo-repo"
+    (repo_dir / ".git").mkdir(parents=True)
+    (repo_dir / ".git" / "HEAD").write_text("ref: refs/heads/ui-2-branch\n", encoding="utf-8")
+    scratch_dir = tmp_path / "scratch"
+    scratch_dir.mkdir()
+
+    app = web.create_app(Settings(data_dir=data_dir, lang="es", self_update=False, chat_scratch=str(scratch_dir)))
+    app.state.ctx.runner.repos.all = lambda: {"u/demo": repo_dir}
+    client = TestClient(app)
+
+    # Non-chat pages keep their own body class and are not affected by body.page-chat rules.
+    home_html = client.get("/").text
+    assert '<body class="page-projects">' in home_html
+
+    # Both Local and Agent views on /chat render the full-height UI-2 shell, slim topbar,
+    # ⋯ overflow menu, centred conversation column, bottom composer dock, and mobile drawer/tab bar.
+    for path in ("/chat", "/chat?agent=gemini"):
+        html = client.get(path).text
+        assert '<body class="page-chat">' in html, path
+        assert "data-chat-topbar" in html, path
+        assert "data-chat-title" in html, path
+        assert "data-chat-folder-badge" in html, path
+        assert "data-chat-branch-badge" in html, path
+        assert "data-chat-menu" in html, path
+        assert 'data-to-task hidden' in html, path
+        assert "data-thread-rename" in html, path
+        assert "data-thread-delete" in html, path
+        assert "data-chat-scroll" in html and 'class="chat-column"' in html, path
+        assert "data-chat-dock" in html and 'class="chat-dock-inner"' in html, path
+        assert 'class="chat-sidebar"' in html and "data-sidebar-toggle" in html, path
+        assert 'class="tab-bar"' in html, path
+        assert 'data-branch="ui-2-branch"' in html, path
+
+    chat_css = (STATIC / "chat.css").read_text(encoding="utf-8")
+    assert "body.page-chat main" in chat_css
+    assert "max-width: 760px" in chat_css

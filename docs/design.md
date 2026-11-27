@@ -77,10 +77,33 @@ that both dark blocks match, and the contrast below.
   with `el.hidden = true`, and a class that sets `display` (like `.btn`) must
   not undo that. `tests/test_design.py` checks both rules.
 
+## `/chat` full-height layout (UI-2, 2026-11-26)
+
+- **Scoped to `/chat` only:** `base.html` sets `<body class="page-{{ nav }}">`,
+  so `chat.css` removes `main`'s `max-width` and outer padding only on
+  `body.page-chat` without touching Projects, Tasks, Quotas, Models, Machines,
+  or Ranking.
+- **Desktop (`>= 960 px`):** the history sidebar (`.chat-sidebar`) sits flush
+  to Baton's navigation rail at full viewport height (`100dvh`, `background: var(--sidebar)`,
+  `1 px` hairline right border, no floating shadow or rounded outer frame).
+  The conversation pane is a 3-zone flex column:
+  1. **Slim topbar (`.chat-topbar`):** conversation title, subtle monospace
+     folder and git branch chips (read directly from `.git/HEAD` without
+     spawning `git`), New chat, and a `⋯` overflow menu (`Convert to task`,
+     `Rename`, `Delete`).
+  2. **Scrollable viewport (`.chat-scroll`):** internal scroll container with a
+     centred `760 px` conversation column (`.chat-column`). Sticky auto-scroll
+     and the `↓` jump button follow `.chat-scroll`.
+  3. **Anchored composer dock (`.chat-dock`):** pinned to the bottom of the
+     pane, centred to the same `760 px` measure.
+- **Phone (`< 900 px`):** keeps `.mobile-top`, the bottom `.tab-bar`, and the
+  slide-over history drawer (`.chat-sidebar` + backdrop) while keeping the
+  composer anchored cleanly above `.tab-bar`.
+
 ## Planned (decided 2026-11-26)
 
-The reference look is the Claude Code desktop app. UI-1 (neutral near-black
-dark tokens across the whole app) is complete; remaining stages UI-2 … UI-5
-in `STATUS.md` remodel `/chat` into a full-height layout with a bottom
-control-centre composer and unified local/agent renderer. The contrast and
-"both dark blocks match" tests stay as they are.
+The reference look is the Claude Code desktop app. UI-1 (near-black dark tokens)
+and UI-2 (full-height `/chat` layout) are complete; remaining stages UI-3 … UI-5
+in `STATUS.md` move controls into composer chips, restyle messages/tools, and
+merge the local/agent chat branches. The contrast and "both dark blocks match"
+tests stay as they are.

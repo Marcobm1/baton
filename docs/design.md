@@ -136,9 +136,23 @@ that both dark blocks match, and the contrast below.
   and `.composer-status` pairs keyboard/live status on the left with the context
   usage meter (or model/turn status) on the right.
 
-## Planned (decided 2026-11-26)
+## Unified `/chat` component (UI-5, 2026-11-27)
 
-The reference look is the Claude Code desktop app. UI-1 … UI-4 are complete;
-UI-5 in `STATUS.md` merges the two branches of `templates/chat.html` into a
-single shared chat component. The contrast and "both dark blocks match" tests
-stay as they are.
+- **Single template (`templates/chat.html`):** the earlier split between an
+  Agent branch and a Local branch was merged into one `<section class="chat" data-chat-root>`,
+  one topbar, one scrollable log, one composer, one status bar, and one
+  `#chat-strings` i18n payload built in Python (`_chat_strings()` in
+  `baton/routes/chat.py`). Only the backend-specific hidden native controls,
+  banners, and status-right widget vary between local models and ACP agents.
+- **Single message & tool renderer (`static/chat-common.js`):** assistant
+  bubbles (`createAssistantBubble`), copy buttons (`attachCopyButton`),
+  collapsible read-only tool groups, one-line tool cards, line-numbered diffs,
+  inline `1`/`2` approvals (`createToolsView`), and composer helpers
+  (`initComposerControls`, `selectedLabel`, `shortFolder`, `bindAutosize`) live
+  once in `window.BatonChat`.
+- **Thin transport adapters:** `static/chat.js` (local `llama-server` & local
+  tool harness) and `static/agents-chat.js` (ACP agents over SSE) only wire
+  their session lifecycle, persistence, and transport endpoints into the shared
+  component. `tests/test_design.py` guards both the single-template invariant
+  and the absence of duplicated renderer code.
+

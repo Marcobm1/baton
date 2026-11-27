@@ -176,11 +176,66 @@ async def chat_page(
                 "sessions": sessions,
             }
     local_folders = await asyncio.to_thread(ctx.chat_folders) if agent == "local" else []
+    chat_js = _chat_strings(ctx.t, ctx.settings.lang, agent)
     return ctx.page(
         request, "chat.html", "chat", view=view, selected=selected, error=error[:300],
         agent=agent, oc=oc, efforts=EFFORTS, threads=threads, active_thread=active_thread,
-        selected_folder=folder, local_folders=local_folders,
+        selected_folder=folder, local_folders=local_folders, chat_js=chat_js,
     )
+
+
+def _chat_strings(t: dict[str, str], lang: str, agent: str) -> dict:
+    """Single i18n payload shared by the unified /chat component (local & agents)."""
+    base: dict = {
+        "stop": t["chat_stop"], "send": t["chat_send"], "reasoning": t["chat_reasoning"],
+        "thinking": t["chat_thinking"], "writing": t["chat_writing"], "stopped": t["chat_stopped"],
+        "error": t["chat_error"], "copy": t["chat_copy"], "copied": t["chat_copied"],
+        "regenerate": t["chat_regenerate"], "edit": t["chat_edit"],
+        "history_empty": t["chat_history_empty"], "untitled": t["chat_untitled"], "new_chat": t["chat_new"],
+        "rename": t["chat_rename"], "del": t["chat_delete"], "del_confirm": t["chat_delete_confirm"],
+        "perm_title": t["ag_perm_title"], "allow": t["ag_allow"], "deny": t["ag_deny"],
+        "expires": t["ag_perm_expires"], "allowed": t["ag_allowed"], "denied": t["ag_denied"],
+        "timeout": t["ag_timeout"], "cancelled": t["ag_cancelled"], "expired": t["ag_expired"],
+        "input": t["ag_input"], "output": t["ag_output"], "command": t["ag_command"],
+        "st_pending": t["ag_st_pending"], "st_in_progress": t["ag_st_in_progress"],
+        "st_completed": t["ag_st_completed"], "st_failed": t["ag_st_failed"],
+        "grp_read": t["ag_grp_read"], "grp_search": t["ag_grp_search"], "grp_steps": t["ag_grp_steps"],
+        "lbl_agent": t["ag_agent"], "lbl_model": t["chat_model"], "lbl_effort": t["chat_effort"],
+        "lbl_folder": t["ag_folder"], "locked": t["chat_locked"], "filter_models": t["chat_filter_models"],
+        "thinking_s": t["chat_thinking_s"], "thought_for": t["chat_thought_for"],
+        "perm_keys": t["ag_perm_keys"], "diff_unchanged": t["ag_diff_unchanged"],
+        "kbd_hint": t["chat_kbd_hint"], "lang": lang,
+    }
+    if agent in ("opencode", "gemini", "claude-code", "codex"):
+        suffix = {"opencode": "", "gemini": "_gemini", "claude-code": "_claude", "codex": "_codex"}[agent]
+        base.update({
+            "starting": t["ag_starting" + suffix], "fixed": t["ag_fixed"], "plan": t["ag_plan"],
+            "done_reason": t["ag_done_reason"], "closed": t["ag_closed"],
+            "ag_effort_missing": t["ag_effort_missing"], "ag_resumed": t["ag_resumed"],
+            "full_off": t["ag_full_off"], "full_help": t["ag_full_help"],
+            "full_local_only": t["ag_full_local_only"], "full_abliterated": t["ag_full_abliterated"],
+            "full_badge": t["ag_full_badge"], "confirm_label": t["ag_confirm"], "full_label": t["ag_full"],
+            "confirm_help": t["ag_confirm_help" + suffix],
+            "lbl_mode": t["ag_mode"], "lbl_resume": t["ag_resume"],
+        })
+    else:
+        base.update({
+            "ctx_label": t["chat_ctx_label"],
+            "presets": {
+                "coder": t["chat_sys_coder"],
+                "tutor": t["chat_sys_tutor"],
+                "reviewer": t["chat_sys_reviewer"],
+            },
+            "off": t["chat_off"], "loading": t["chat_loading"], "busy": t["chat_busy"], "start": t["m_start"],
+            "lh_off": t["lh_off"], "lh_on": t["lh_on"],
+            "lh_help_tools": t["lh_help_tools"], "lh_help_safety": t["lh_help_safety"],
+            "lh_warn": t["lh_warn"], "lh_warn_folder": t["lh_warn_folder"],
+            "lh_warn_abliterated": t["lh_warn_abliterated"],
+            "lh_running_tools": t["lh_running_tools"], "lh_waiting_perm": t["lh_waiting_perm"],
+            "lh_rounds": t["lh_rounds"],
+            "lbl_mode": t["lh_mode"], "lbl_preset": t["chat_preset"],
+        })
+    return base
 
 
 # ------------------------------------------------------- Persistent threads API

@@ -4,10 +4,12 @@
 (function () {
   var root = document.querySelector("[data-agents]");
   if (!root || !root.querySelector("[data-form]")) return;
-  var T = JSON.parse(document.getElementById("agents-strings").textContent);
+  var T = JSON.parse(document.getElementById("chat-strings").textContent);
   var bootEl = document.getElementById("chat-bootstrap");
   var boot = bootEl ? JSON.parse(bootEl.textContent) : {};
-  var md = window.BatonChat.md;
+  var BC = window.BatonChat;
+  var el = BC.el, md = BC.md, selectedLabel = BC.selectedLabel, shortFolder = BC.shortFolder;
+  var createAssistantBubble = BC.createAssistantBubble;
   var csrf = root.dataset.csrf;
   function $(s) { return root.querySelector(s); }
   var log = $("[data-log]"), empty = $("[data-empty]"), form = $("[data-form]"), text = $("[data-text]");
@@ -19,8 +21,8 @@
   var fullRadio = root.querySelector('[data-mode][value="full"]');
   var scrollBtn = $("[data-scroll-bottom]");
   var scrollEl = $("[data-chat-scroll]");
-  var scroller = window.BatonChat.createScroller(scrollBtn, scrollEl);
-  var attachments = window.BatonChat.createAttachments(root, text);
+  var scroller = BC.createScroller(scrollBtn, scrollEl);
+  var attachments = BC.createAttachments(root, text);
   var sandboxReady = root.dataset.sandboxReady === "1";
 
   var agent = root.dataset.agent || "opencode";
@@ -36,16 +38,18 @@
     }).map(function (o) { return o.cloneNode(true); }));
     if (effortSel.querySelector('option[value="' + CSS.escape(was) + '"]')) effortSel.value = was;
   }
-  var chat = null, threadId = "", after = 0, source = null, busy = false, current = null, tools = {}, perms = {};
+  var chat = null, threadId = "", after = 0, source = null, busy = false, current = null;
   var refused = false;
+  var toolsView = BC.createToolsView(log, {
+    T: T,
+    showToolName: true,
+    onInsert: function (kind) {
+      empty.hidden = true;
+      if (kind !== "notice") current = null;
+    }
+  });
 
   // ------------------------------------------------------------ helpers
-  function el(tag, cls, txt) {
-    var e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (txt != null) e.textContent = txt;
-    return e;
-  }
   function api(path, body) {
     return fetch(path, {
       method: "POST", headers: { "Content-Type": "application/json", "X-Baton-CSRF": csrf },
@@ -58,28 +62,7 @@
     });
   }
   function add(node) { log.appendChild(node); empty.hidden = true; return node; }
-  function note(cls, msg) { add(el("p", "ag-note " + cls, msg)); }
-
-  function attachCopy(article, getText) {
-    var meta = article.querySelector(".msg-meta");
-    if (!meta) {
-      meta = el("p", "msg-meta muted small");
-      article.appendChild(meta);
-    }
-    if (meta.querySelector("[data-msg-copy]")) return;
-    var copy = el("button", "", T.copy || "Copy");
-    copy.type = "button";
-    copy.setAttribute("data-msg-copy", "");
-    copy.addEventListener("click", function () {
-      try {
-        navigator.clipboard.writeText(getText() || "").then(function () {
-          copy.textContent = T.copied || "Copied";
-          setTimeout(function () { copy.textContent = T.copy || "Copy"; }, 1400);
-        });
-      } catch (e) {}
-    });
-    meta.appendChild(copy);
-  }
+  function note(cls, msg) { return toolsView.onNotice(msg, null, cls); }
 
   function isLocalModel(m) {
     return typeof m === "string" && m.toLowerCase().indexOf("local-") === 0 && m.indexOf("/") > 0;
@@ -210,19 +193,6 @@
   var agentSel = $("[data-agent-switch]");
   var composer = null;
   function syncComposer() { if (composer) composer.sync(); }
-  function selectedLabel(sel) {
-    if (!sel || sel.selectedIndex < 0) return "";
-    return (sel.options[sel.selectedIndex].textContent || "").trim();
-  }
-  function shortFolder(sel) {
-    var txt = selectedLabel(sel);
-    if (!txt) return "";
-    if (sel.value === "scratch") {
-      var parts = txt.split(/[\\/]/);
-      return parts[parts.length - 1] || txt;
-    }
-    return txt;
-  }
   function catalogTabs() {
     var tabs = [];
     buttons.forEach(function (button, key) {
@@ -360,17 +330,16 @@
   });
 
   // ------------------------------------------------------------- history
-  var activeGroup = null;
-
   function clearView() {
     if (source) { source.close(); source = null; }
     if (chat) api("/api/agents/" + encodeURIComponent(chat.id) + "/close").catch(function () {});
     forget();
     threadId = "";
     header.setThread("", "");
+    toolsView.clear();
     log.querySelectorAll(":scope > :not([data-empty])").forEach(function (n) { n.remove(); });
     empty.hidden = false;
-    after = 0; current = null; activeGroup = null; tools = {}; perms = {};
+    after = 0; current = null;
     attachments.clear();
     text.disabled = send.disabled = false;
     setBusy(false);
@@ -399,24 +368,21 @@
       if (m.role === "user") {
         add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", m.content || ""));
       } else {
-        var a = add(el("article", "msg msg-assistant"));
-        a.innerHTML = '<details class="msg-think" hidden><summary></summary><div class="msg-think-text"></div></details>' +
-                      '<div class="msg-body"></div><p class="msg-meta muted small"></p>';
-        a.querySelector("summary").textContent = T.reasoning;
+        var b = createAssistantBubble(T);
+        add(b.el);
         if (m.reasoning) {
-          var tk = a.querySelector(".msg-think");
-          tk.hidden = false;
-          tk.querySelector(".msg-think-text").textContent = m.reasoning;
+          b.think.hidden = false;
+          b.thinkText.textContent = m.reasoning;
         }
-        a.querySelector(".msg-body").innerHTML = md(m.content || "");
-        if (m.content) attachCopy(a, function () { return m.content; });
+        b.body.innerHTML = md(m.content || "");
+        if (m.content) b.attachCopy(function () { return m.content; });
       }
     });
     history.replaceState(null, "", "/chat?agent=" + encodeURIComponent(agent) + "&thread=" + encodeURIComponent(threadId));
     scroller.follow(true);
   }
 
-  var sidebar = window.BatonChat.initSidebar({
+  var sidebar = BC.initSidebar({
     csrf: csrf,
     agent: agent,
     activeId: (boot.active_thread && boot.active_thread.id) || "",
@@ -448,11 +414,6 @@
   });
 
   // ------------------------------------------------------------ drawing
-  var diffBlockShared = window.BatonChat.diffBlock;
-  var registerPendingPerm = window.BatonChat.registerPendingPerm;
-  var unregisterPendingPerm = window.BatonChat.unregisterPendingPerm;
-  var setPermButton = window.BatonChat.setPermButton;
-  var createThinkTimer = window.BatonChat.createThinkTimer;
   var statusTextEl = $("[data-status-text]");
   var statusMetaEl = $("[data-status-meta]");
 
@@ -468,14 +429,10 @@
   }
   function assistant() {
     if (current) return current;
-    activeGroup = null;
-    var a = add(el("article", "msg msg-assistant"));
-    a.innerHTML = '<details class="msg-think" hidden><summary></summary><div class="msg-think-text"></div></details>' +
-                  '<div class="msg-body"></div><p class="msg-meta muted small"></p>';
-    var sum = a.querySelector("summary");
-    sum.textContent = T.reasoning;
-    var timer = createThinkTimer(sum, { thinkingS: T.thinking_s, thoughtFor: T.thought_for });
-    current = { el: a, text: "", thought: "", queued: false, thinkTimer: timer };
+    toolsView.resetGroup();
+    var b = createAssistantBubble(T);
+    add(b.el);
+    current = { el: b.el, bubble: b, text: "", thought: "", queued: false, thinkTimer: b.thinkTimer };
     return current;
   }
   function paint(m) {
@@ -483,184 +440,56 @@
     m.queued = true;
     requestAnimationFrame(function () {
       m.queued = false;
-      var think = m.el.querySelector(".msg-think");
-      if (m.thought) { think.hidden = false; think.querySelector(".msg-think-text").textContent = m.thought; }
-      m.el.querySelector(".msg-body").innerHTML = md(m.text);
-      if (m.text) attachCopy(m.el, function () { return m.text; });
+      if (m.thought) { m.bubble.think.hidden = false; m.bubble.thinkText.textContent = m.thought; }
+      m.bubble.body.innerHTML = md(m.text);
+      if (m.text) m.bubble.attachCopy(function () { return m.text; });
       scroller.follow(false);
     });
   }
-  function block(label, body, cls) {
-    var d = el("div", "ag-block");
-    d.appendChild(el("span", "label", label));
-    d.appendChild(el("pre", cls || "", body));
-    return d;
-  }
-  function readToolCategory(ev) {
-    if ((ev.diffs || []).length) return null;
-    var k = String(ev.kind || "").toLowerCase();
-    var n = String(ev.name || ev.title || "").toLowerCase();
-    if (k === "execute" || k === "edit" || k === "write" || k === "delete") return null;
-    if (k === "search" || k === "glob" || k === "grep" || /\b(grep|glob|search|find)\b/.test(n)) return "search";
-    if (k === "read" || k === "fetch" || k === "list" || /\b(read|view_file|ls|list)\b/.test(n)) return "read";
-    return null;
-  }
-  function updateGroupSummary(grp) {
-    var reads = 0, searches = 0, running = 0, failed = 0;
-    grp.items.forEach(function (it) {
-      if (it.cat === "search") searches++;
-      else reads++;
-      if (it.status === "pending" || it.status === "in_progress") running++;
-      else if (it.status === "failed") failed++;
-    });
-    var parts = [];
-    if (reads) parts.push((T.grp_read || "{n} read").replace("{n}", String(reads)));
-    if (searches) parts.push((T.grp_search || "{n} search").replace("{n}", String(searches)));
-    if (!parts.length) parts.push((T.grp_steps || "{n} steps").replace("{n}", String(grp.items.length)));
-    grp.titleEl.textContent = parts.join(" · ");
-    var st = running ? "in_progress" : (failed ? "failed" : "completed");
-    grp.dotEl.className = "ag-dot ag-" + st;
-    grp.statusEl.className = "ag-status ag-" + st;
-    grp.statusEl.textContent = T["st_" + st] || st;
-  }
-  function ensureReadGroup() {
-    if (activeGroup) return activeGroup;
-    var box = add(el("details", "ag-tool-group"));
-    var sum = el("summary");
-    var dotEl = el("span", "ag-dot ag-in_progress");
-    dotEl.setAttribute("aria-hidden", "true");
-    var titleEl = el("span", "ag-group-title", "");
-    var statusEl = el("span", "ag-status", "");
-    sum.appendChild(dotEl);
-    sum.appendChild(titleEl);
-    sum.appendChild(statusEl);
-    var list = el("div", "ag-tool-group-list");
-    box.appendChild(sum);
-    box.appendChild(list);
-    activeGroup = { el: box, list: list, dotEl: dotEl, titleEl: titleEl, statusEl: statusEl, items: new Map() };
-    return activeGroup;
-  }
-  function tool(ev) {
-    stopCurrentThink();
-    var cat = readToolCategory(ev);
-    var card = tools[ev.id];
-    var grp = card && card._group ? card._group : null;
-    if (!card) {
-      current = null;
-      if (cat) {
-        grp = ensureReadGroup();
-        card = tools[ev.id] = el("details", "ag-tool");
-        card._group = grp;
-        grp.list.appendChild(card);
-        empty.hidden = true;
-      } else {
-        activeGroup = null;
-        card = tools[ev.id] = add(el("details", "ag-tool"));
-      }
-    } else if (!cat && grp) {
-      // Tool gained a diff/edit payload on update: promote out of read-only group.
-      grp.items.delete(ev.id);
-      if (grp.items.size === 0) grp.el.remove();
-      else updateGroupSummary(grp);
-      card._group = null;
-      grp = null;
-      activeGroup = null;
-      log.appendChild(card);
-    }
-    var st = ev.status || "pending";
-    card.innerHTML = "";
-    var sum = el("summary");
-    var dot = el("span", "ag-dot ag-" + st);
-    dot.setAttribute("aria-hidden", "true");
-    sum.appendChild(dot);
-    sum.appendChild(el("span", "ag-kind", ev.kind || "tool"));
-    sum.appendChild(el("span", "ag-title", ev.title || ev.name || ev.id));
-    sum.appendChild(el("span", "ag-status ag-" + st, T["st_" + st] || st));
-    card.appendChild(sum);
-    var body = el("div", "ag-tool-body");
-    if (ev.name) body.appendChild(block("tool", ev.name));
-    if (ev.input) body.appendChild(block(T.input, ev.input));
-    (ev.diffs || []).forEach(function (d) { body.appendChild(diffBlockShared(d, T.diff_unchanged)); });
-    if (ev.output) body.appendChild(block(T.output, ev.output));
-    if (body.childNodes.length) card.appendChild(body);
-    if (grp) {
-      grp.items.set(ev.id, { cat: cat || "read", status: st });
-      updateGroupSummary(grp);
-    }
-    if (st === "in_progress" || st === "pending") setStatus((ev.kind || "tool") + ": " + (ev.title || ev.name || ""));
-  }
-  function permission(ev) {
-    stopCurrentThink();
-    activeGroup = null;
-    var box = perms[ev.id] = add(el("div", "ag-perm"));
-    current = null;
-    box.appendChild(el("strong", "ag-perm-head", T.perm_title + ": " + (ev.title || ev.kind)));
-    if (ev.command) box.appendChild(block(T.command, ev.command, "ag-cmd"));
-    (ev.diffs || []).forEach(function (d) { box.appendChild(diffBlockShared(d, T.diff_unchanged)); });
-    if (!ev.command && !(ev.diffs || []).length && ev.input) box.appendChild(block(T.input, ev.input));
-    if ((ev.locations || []).length) box.appendChild(el("p", "muted small", ev.locations.join("\n")));
-    var row = el("div", "ag-perm-actions");
-    var yes = el("button", "btn small"), no = el("button", "btn small danger");
-    yes.type = no.type = "button";
-    setPermButton(yes, "1", T.allow);
-    setPermButton(no, "2", T.deny);
-    yes.disabled = !ev.can_allow;
-    [[yes, true], [no, false]].forEach(function (b) {
-      b[0].addEventListener("click", function () {
-        yes.disabled = no.disabled = true;
-        unregisterPendingPerm(ev.id);
-        api("/api/agents/" + encodeURIComponent(chat.id) + "/permission", { id: ev.id, allow: b[1] })
-          .catch(function (e) { settle(ev.id, e.status === 404 ? "expired" : "error", e.message); });
-      });
-    });
-    registerPendingPerm(ev.id, yes, no);
-    row.appendChild(yes); row.appendChild(no);
-    var when = new Date(ev.expires * 1000).toLocaleTimeString(T.lang, { hour: "2-digit", minute: "2-digit" });
-    var metaHint = [T.perm_keys, T.expires.replace("{time}", when)].filter(Boolean).join(" · ");
-    row.appendChild(el("span", "muted small", metaHint));
-    box.appendChild(row);
-    setStatus(T.perm_title + " · " + (T.perm_keys || "1 / 2"));
-  }
-  function settle(id, outcome, detail) {
-    unregisterPendingPerm(id);
-    var box = perms[id];
-    if (!box) return;
-    var row = box.querySelector(".ag-perm-actions");
-    if (row) row.remove();
-    box.classList.add("ag-perm-" + outcome);
-    var label = { allowed: T.allowed, denied: T.denied, timeout: T.timeout, cancelled: T.cancelled,
-                  expired: T.expired }[outcome] || (T.error + " " + (detail || ""));
-    if (!box.querySelector(".ag-outcome")) box.appendChild(el("p", "ag-outcome", label));
-  }
   function handle(ev) {
     after = ev.seq + 1;
-    if (ev.type === "user") { stopCurrentThink(); current = null; activeGroup = null; refused = false; add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", ev.text)); setStatus(T.thinking); scroller.follow(true); return; }
-    else if (ev.type === "text") { var m = assistant(); m.thinkTimer.stop(); m.text += ev.text; paint(m); return; }
-    else if (ev.type === "thought") { var t = assistant(); t.thinkTimer.start(); t.thought += ev.text; setStatus(T.thinking); paint(t); return; }
-    else if (ev.type === "tool") tool(ev);
-    else if (ev.type === "permission") permission(ev);
-    else if (ev.type === "permission_done") { settle(ev.id, ev.outcome); refused = refused || ev.outcome !== "allowed"; }
-    else if (ev.type === "plan") {
+    if (ev.type === "user") {
+      stopCurrentThink(); current = null; toolsView.resetGroup(); refused = false;
+      add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", ev.text));
+      setStatus(T.thinking); scroller.follow(true); return;
+    } else if (ev.type === "text") {
+      var m = assistant(); m.thinkTimer.stop(); m.text += ev.text; paint(m); return;
+    } else if (ev.type === "thought") {
+      var t = assistant(); t.thinkTimer.start(); t.thought += ev.text; setStatus(T.thinking); paint(t); return;
+    } else if (ev.type === "tool") {
+      stopCurrentThink();
+      toolsView.onTool(ev);
+      var st = ev.status || "pending";
+      if (st === "in_progress" || st === "pending") setStatus((ev.kind || "tool") + ": " + (ev.title || ev.name || ""));
+    } else if (ev.type === "permission") {
+      stopCurrentThink();
+      toolsView.onPermission(ev, function (allow) {
+        return api("/api/agents/" + encodeURIComponent(chat.id) + "/permission", { id: ev.id, allow: allow });
+      });
+      setStatus(T.perm_title + " · " + (T.perm_keys || "1 / 2"));
+    } else if (ev.type === "permission_done") {
+      toolsView.settlePerm(ev.id, ev.outcome);
+      refused = refused || ev.outcome !== "allowed";
+    } else if (ev.type === "plan") {
       stopCurrentThink();
       current = null;
-      activeGroup = null;
       note("muted small", T.plan + ": " + ev.entries.map(function (e) { return (e.status === "completed" ? "☑ " : "☐ ") + e.content; }).join(" · "));
-    }
-    else if (ev.type === "notice") {
+    } else if (ev.type === "notice") {
       note("muted small", (T[ev.key] || ev.key).replace("{effort}", ev.effort || "").replace("{session}", ev.session || ""));
-    }
-    else if (ev.type === "error") { stopCurrentThink(); current = null; activeGroup = null; note("warn", T.error + " " + ev.text); }
-    else if (ev.type === "done") {
+    } else if (ev.type === "error") {
+      stopCurrentThink(); current = null; note("warn", T.error + " " + ev.text);
+    } else if (ev.type === "done") {
       stopCurrentThink();
       current = null;
-      activeGroup = null;
+      toolsView.resetGroup();
       if (ev.reason !== "end_turn" && ev.reason !== "completed" && !(ev.reason === "cancelled" && refused)) {
         note("muted small", ev.reason === "cancelled" ? T.stopped : T.done_reason.replace("{reason}", ev.reason));
       }
       setStatus("");
       sidebar.refresh(threadId);
+    } else if (ev.type === "closed") {
+      stopCurrentThink(); closed();
     }
-    else if (ev.type === "closed") { stopCurrentThink(); closed(); }
     scroller.follow(false);
   }
   function closed() {
@@ -734,8 +563,7 @@
   }
 
   // -------------------------------------------------------------- events
-  function autosize() { text.style.height = "auto"; text.style.height = Math.min(text.scrollHeight, 192) + "px"; }
-  text.addEventListener("input", autosize);
+  var autosize = BC.bindAutosize(text);
   text.addEventListener("keydown", function (e) {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(); }
   });

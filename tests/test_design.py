@@ -278,3 +278,58 @@ def test_ui4_claude_code_messages_diffs_approvals_and_status_line(tmp_path, monk
     assert "registerPendingPerm" in common_js
     assert "createThinkTimer" in common_js
     assert "ag-diff-row" in common_js
+
+
+def test_ui5_unified_chat_template_and_shared_renderer(tmp_path, monkeypatch):
+    from baton import web
+    from test_models import model_item, write_config
+
+    tpl = (Path(__file__).resolve().parents[1] / "baton" / "templates" / "chat.html").read_text(encoding="utf-8")
+    # Template must have ONE unified chat root, composer, log, and i18n payload — not duplicated agent/local branches.
+    assert tpl.count('<section class="chat"') == 1
+    assert tpl.count('<form class="chat-input composer"') == 1
+    assert tpl.count('<div class="chat-log"') == 1
+    assert tpl.count('<script id="chat-strings"') == 1
+    assert 'id="agents-strings"' not in tpl
+
+    common_js = (STATIC / "chat-common.js").read_text(encoding="utf-8")
+    chat_js = (STATIC / "chat.js").read_text(encoding="utf-8")
+    agents_js = (STATIC / "agents-chat.js").read_text(encoding="utf-8")
+    for sym in ("createAssistantBubble", "createToolsView", "attachCopyButton", "selectedLabel", "shortFolder", "bindAutosize"):
+        assert sym in common_js, sym
+    for js_name, js_src in (("chat.js", chat_js), ("agents-chat.js", agents_js)):
+        assert "function readToolCategory" not in js_src, js_name
+        assert "function updateGroupSummary" not in js_src, js_name
+        assert "function updateToolGroupSummary" not in js_src, js_name
+        assert "function selectedLabel" not in js_src, js_name
+        assert "function shortFolder" not in js_src, js_name
+        assert "function autosize" not in js_src, js_name
+        assert "createAssistantBubble" in js_src, js_name
+        assert "createToolsView" in js_src, js_name
+    assert 'getElementById("chat-strings")' in agents_js
+    assert "agents-strings" not in agents_js
+
+    async def no_projects(self, force=False):
+        return [], []
+
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    monkeypatch.setattr(web, "find_agy", lambda: "agy")
+    monkeypatch.setattr(
+        web, "catalog",
+        lambda agent: {"gemini-4-neon": {"label": "Gemini 4 Neon", "efforts": ["low"]}} if agent == "gemini" else {},
+    )
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    write_config(data_dir, [model_item(data_dir, "qwen")])
+    scratch_dir = tmp_path / "scratch"
+    scratch_dir.mkdir()
+    app = web.create_app(Settings(data_dir=data_dir, lang="es", self_update=False, chat_scratch=str(scratch_dir)))
+    client = TestClient(app)
+
+    for path in ("/chat", "/chat?agent=gemini"):
+        html = client.get(path).text
+        assert "data-chat-root" in html, path
+        assert 'id="chat-strings"' in html, path
+        assert 'id="chat-bootstrap"' in html, path
+        assert 'id="agents-strings"' not in html, path
+

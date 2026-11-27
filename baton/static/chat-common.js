@@ -965,15 +965,308 @@
     return { sync: sync, close: close, open: open };
   }
 
+  // Unified DOM & message/tool renderer shared by local models and ACP agents (UI-5).
+  function el(tag, cls, txt) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (txt != null) node.textContent = txt;
+    return node;
+  }
+
+  function selectedLabel(sel) {
+    if (!sel || sel.selectedIndex < 0) return "";
+    return (sel.options[sel.selectedIndex].textContent || "").trim();
+  }
+
+  function shortFolder(sel) {
+    var txt = selectedLabel(sel);
+    if (!txt) return "";
+    if (sel.value === "scratch") {
+      var parts = txt.split(/[\\/]/);
+      return parts[parts.length - 1] || txt;
+    }
+    return txt;
+  }
+
+  function bindAutosize(textarea) {
+    function autosize() {
+      textarea.style.height = "auto";
+      textarea.style.height = Math.min(textarea.scrollHeight, 192) + "px";
+    }
+    if (textarea) textarea.addEventListener("input", autosize);
+    return autosize;
+  }
+
+  function attachCopyButton(metaEl, getText, T) {
+    if (!metaEl || metaEl.querySelector("[data-msg-copy]")) return;
+    var copyLabel = (T && T.copy) || "Copy";
+    var copiedLabel = (T && T.copied) || "Copied";
+    var btn = el("button", "", copyLabel);
+    btn.type = "button";
+    btn.setAttribute("data-msg-copy", "");
+    btn.addEventListener("click", function () {
+      try {
+        navigator.clipboard.writeText(getText() || "").then(function () {
+          btn.textContent = copiedLabel;
+          setTimeout(function () { btn.textContent = copyLabel; }, 1400);
+        });
+      } catch (e) {}
+    });
+    metaEl.appendChild(btn);
+  }
+
+  function createAssistantBubble(T) {
+    var article = el("article", "msg msg-assistant");
+    article.innerHTML =
+      '<details class="msg-think" hidden><summary></summary><div class="msg-think-text"></div></details>' +
+      '<div class="msg-tools"></div>' +
+      '<div class="msg-body"></div>' +
+      '<p class="msg-meta muted small"><span></span></p>';
+    var think = article.querySelector(".msg-think");
+    var summary = think.querySelector("summary");
+    summary.textContent = (T && T.reasoning) || "Reasoning";
+    var thinkText = think.querySelector(".msg-think-text");
+    var toolsEl = article.querySelector(".msg-tools");
+    var bodyEl = article.querySelector(".msg-body");
+    var metaEl = article.querySelector(".msg-meta");
+    var metaSpan = metaEl.querySelector("span");
+    var thinkTimer = createThinkTimer(summary, {
+      thinkingS: T && T.thinking_s,
+      thoughtFor: T && T.thought_for
+    });
+    return {
+      el: article,
+      think: think,
+      thinkSummary: summary,
+      thinkText: thinkText,
+      tools: toolsEl,
+      body: bodyEl,
+      meta: metaEl,
+      metaText: metaSpan,
+      thinkTimer: thinkTimer,
+      attachCopy: function (getText) { attachCopyButton(metaEl, getText, T); }
+    };
+  }
+
+  function toolBlock(label, body, cls) {
+    var d = el("div", "ag-block");
+    d.appendChild(el("span", "label", label));
+    d.appendChild(el("pre", cls || "", body));
+    return d;
+  }
+
+  function readToolCategory(ev) {
+    if ((ev.diffs || []).length) return null;
+    var k = String(ev.kind || "").toLowerCase();
+    var n = String(ev.name || ev.title || "").toLowerCase();
+    if (k === "execute" || k === "edit" || k === "write" || k === "delete") return null;
+    if (k === "search" || k === "glob" || k === "grep" || /\b(grep|glob|search|find)\b/.test(n)) return "search";
+    if (k === "read" || k === "fetch" || k === "list" || k === "utility" || /\b(read|view_file|ls|list)\b/.test(n)) return "read";
+    return null;
+  }
+
+  function createToolsView(container, opts) {
+    opts = opts || {};
+    var T = opts.T || {};
+    var showToolName = !!opts.showToolName;
+    var onInsert = opts.onInsert || null;
+    var toolMap = {}, permMap = {}, activeGroup = null;
+
+    function updateGroupSummary(grp) {
+      var reads = 0, searches = 0, running = 0, failed = 0;
+      grp.items.forEach(function (it) {
+        if (it.cat === "search") searches++;
+        else reads++;
+        if (it.status === "pending" || it.status === "in_progress") running++;
+        else if (it.status === "failed") failed++;
+      });
+      var parts = [];
+      if (reads) parts.push((T.grp_read || "{n} read").replace("{n}", String(reads)));
+      if (searches) parts.push((T.grp_search || "{n} search").replace("{n}", String(searches)));
+      if (!parts.length) parts.push((T.grp_steps || "{n} steps").replace("{n}", String(grp.items.length)));
+      grp.titleEl.textContent = parts.join(" · ");
+      var st = running ? "in_progress" : (failed ? "failed" : "completed");
+      grp.dotEl.className = "ag-dot ag-" + st;
+      grp.statusEl.className = "ag-status ag-" + st;
+      grp.statusEl.textContent = T["st_" + st] || st;
+    }
+
+    function ensureGroup() {
+      if (activeGroup) return activeGroup;
+      var box = el("details", "ag-tool-group");
+      var sum = el("summary");
+      var dotEl = el("span", "ag-dot ag-in_progress");
+      dotEl.setAttribute("aria-hidden", "true");
+      var titleEl = el("span", "ag-group-title", "");
+      var statusEl = el("span", "ag-status", "");
+      sum.appendChild(dotEl);
+      sum.appendChild(titleEl);
+      sum.appendChild(statusEl);
+      var list = el("div", "ag-tool-group-list");
+      box.appendChild(sum);
+      box.appendChild(list);
+      container.appendChild(box);
+      activeGroup = { el: box, list: list, dotEl: dotEl, titleEl: titleEl, statusEl: statusEl, items: new Map() };
+      return activeGroup;
+    }
+
+    function populateToolCard(card, ev) {
+      var st = ev.status || "pending";
+      card.innerHTML = "";
+      var sum = el("summary");
+      var dot = el("span", "ag-dot ag-" + st);
+      dot.setAttribute("aria-hidden", "true");
+      sum.appendChild(dot);
+      sum.appendChild(el("span", "ag-kind", ev.kind || "tool"));
+      sum.appendChild(el("span", "ag-title", ev.title || ev.name || ev.id));
+      sum.appendChild(el("span", "ag-status ag-" + st, T["st_" + st] || st));
+      card.appendChild(sum);
+      var body = el("div", "ag-tool-body");
+      if (showToolName && ev.name) body.appendChild(toolBlock("tool", ev.name));
+      if (ev.input) body.appendChild(toolBlock(T.input || "Arguments", ev.input));
+      (ev.diffs || []).forEach(function (d) { body.appendChild(diffBlock(d, T.diff_unchanged)); });
+      if (ev.output) body.appendChild(toolBlock(T.output || "Result", ev.output));
+      if (body.childNodes.length) card.appendChild(body);
+    }
+
+    function onTool(ev, toolList) {
+      var cat = readToolCategory(ev);
+      var card = toolMap[ev.id];
+      var grp = card && card._group ? card._group : null;
+      if (!card) {
+        if (onInsert) onInsert("tool");
+        if (cat) {
+          grp = ensureGroup();
+          card = toolMap[ev.id] = el("details", "ag-tool");
+          card._group = grp;
+          grp.list.appendChild(card);
+        } else {
+          activeGroup = null;
+          card = toolMap[ev.id] = el("details", "ag-tool");
+          container.appendChild(card);
+        }
+      } else if (!cat && grp) {
+        // Tool gained a diff/edit payload on update: promote out of read-only group.
+        grp.items.delete(ev.id);
+        if (grp.items.size === 0) grp.el.remove();
+        else updateGroupSummary(grp);
+        card._group = null;
+        grp = null;
+        activeGroup = null;
+        container.appendChild(card);
+      }
+      populateToolCard(card, ev);
+      if (grp) {
+        grp.items.set(ev.id, { cat: cat || "read", status: ev.status || "pending" });
+        updateGroupSummary(grp);
+      }
+      if (toolList) {
+        var idx = toolList.findIndex(function (x) { return x.id === ev.id; });
+        if (idx >= 0) toolList[idx] = ev;
+        else toolList.push(ev);
+      }
+      return card;
+    }
+
+    function settlePerm(id, outcome, detail) {
+      unregisterPendingPerm(id);
+      var box = permMap[id];
+      if (!box) return;
+      var row = box.querySelector(".ag-perm-actions");
+      if (row) row.remove();
+      box.classList.add("ag-perm-" + outcome);
+      var label = {
+        allowed: T.allowed, denied: T.denied, timeout: T.timeout,
+        cancelled: T.cancelled, expired: T.expired
+      }[outcome] || ((T.error || "Error:") + " " + (detail || ""));
+      if (!box.querySelector(".ag-outcome")) box.appendChild(el("p", "ag-outcome", label));
+    }
+
+    function onPermission(ev, sendAnswer) {
+      activeGroup = null;
+      if (onInsert) onInsert("permission");
+      var box = permMap[ev.id] = el("div", "ag-perm");
+      box.appendChild(el("strong", "ag-perm-head", (T.perm_title || "Asks for permission") + ": " + (ev.title || ev.kind)));
+      if (ev.command) box.appendChild(toolBlock(T.command || "Command", ev.command, "ag-cmd"));
+      (ev.diffs || []).forEach(function (d) { box.appendChild(diffBlock(d, T.diff_unchanged)); });
+      if (!ev.command && !(ev.diffs || []).length && ev.input) box.appendChild(toolBlock(T.input || "Arguments", ev.input));
+      if ((ev.locations || []).length) box.appendChild(el("p", "muted small", ev.locations.join("\n")));
+      var row = el("div", "ag-perm-actions");
+      var yes = el("button", "btn small");
+      var no = el("button", "btn small danger");
+      yes.type = no.type = "button";
+      setPermButton(yes, "1", T.allow || "Allow");
+      setPermButton(no, "2", T.deny || "Deny");
+      if (ev.can_allow === false) yes.disabled = true;
+      [[yes, true], [no, false]].forEach(function (pair) {
+        pair[0].addEventListener("click", function () {
+          yes.disabled = no.disabled = true;
+          unregisterPendingPerm(ev.id);
+          Promise.resolve(sendAnswer(pair[1])).catch(function (err) {
+            settlePerm(ev.id, err && err.status === 404 ? "expired" : "error", err && err.message);
+          });
+        });
+      });
+      registerPendingPerm(ev.id, yes, no);
+      row.appendChild(yes);
+      row.appendChild(no);
+      var metaParts = [];
+      if (T.perm_keys) metaParts.push(T.perm_keys);
+      if (ev.expires) {
+        var when = new Date(ev.expires * 1000).toLocaleTimeString(T.lang, { hour: "2-digit", minute: "2-digit" });
+        metaParts.push((T.expires || "").replace("{time}", when));
+      }
+      if (metaParts.length) row.appendChild(el("span", "muted small", metaParts.join(" · ")));
+      box.appendChild(row);
+      container.appendChild(box);
+      return box;
+    }
+
+    function onNotice(noteText, noticeList, cls) {
+      activeGroup = null;
+      if (onInsert) onInsert("notice");
+      var node = el("p", "ag-note " + (cls || "muted small"), noteText);
+      container.appendChild(node);
+      if (noticeList) noticeList.push(noteText);
+      return node;
+    }
+
+    function resetGroup() {
+      activeGroup = null;
+    }
+
+    function clear() {
+      Object.keys(permMap).forEach(unregisterPendingPerm);
+      toolMap = {};
+      permMap = {};
+      activeGroup = null;
+    }
+
+    return {
+      onTool: onTool,
+      onPermission: onPermission,
+      settlePerm: settlePerm,
+      onNotice: onNotice,
+      resetGroup: resetGroup,
+      clear: clear
+    };
+  }
+
   window.BatonChat = {
-    esc: esc, md: md, createScroller: createScroller,
+    esc: esc, el: el, md: md, createScroller: createScroller,
     initSidebar: initSidebar, initHeader: initHeader,
     initComposerControls: initComposerControls,
     createAttachments: createAttachments, diffBlock: diffBlock,
     registerPendingPerm: registerPendingPerm,
     unregisterPendingPerm: unregisterPendingPerm,
     setPermButton: setPermButton,
-    createThinkTimer: createThinkTimer
+    createThinkTimer: createThinkTimer,
+    selectedLabel: selectedLabel,
+    shortFolder: shortFolder,
+    bindAutosize: bindAutosize,
+    attachCopyButton: attachCopyButton,
+    createAssistantBubble: createAssistantBubble,
+    createToolsView: createToolsView
   };
 
   // Agent switcher: the page is drawn for one agent; switching reloads it.

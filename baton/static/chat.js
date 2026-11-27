@@ -26,12 +26,13 @@
   var harnessWarn = root.querySelector("[data-harness-warn]");
   var messages = [], threadId = "", busy = null, activeRunId = "", lastUsedTokens = 0;
 
-  var md = window.BatonChat.md;
-  var diffBlock = window.BatonChat.diffBlock;
-  var scroller = window.BatonChat.createScroller(scrollBtn, scrollEl);
-  var attachments = window.BatonChat.createAttachments(root, text);
+  var BC = window.BatonChat;
+  var mkEl = BC.el, md = BC.md, selectedLabel = BC.selectedLabel, shortFolder = BC.shortFolder;
+  var attachCopyButton = BC.attachCopyButton, createAssistantBubble = BC.createAssistantBubble;
+  var scroller = BC.createScroller(scrollBtn, scrollEl);
+  var attachments = BC.createAttachments(root, text);
 
-  var header = window.BatonChat.initHeader({
+  var header = BC.initHeader({
     root: root,
     csrf: csrf,
     labels: {
@@ -139,7 +140,7 @@
       body: body != null ? JSON.stringify(body) : undefined
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
-        if (!r.ok) throw new Error(j.detail || "HTTP " + r.status);
+        if (!r.ok) { var e = new Error(j.detail || "HTTP " + r.status); e.status = r.status; throw e; }
         return j;
       });
     });
@@ -253,201 +254,19 @@
   });
 
   // ----------------------------------------------------------- messages & tools
-  function mkEl(tag, cls, txt) {
-    var node = document.createElement(tag);
-    if (cls) node.className = cls;
-    if (txt != null) node.textContent = txt;
-    return node;
-  }
-
-  var registerPendingPerm = window.BatonChat.registerPendingPerm;
-  var unregisterPendingPerm = window.BatonChat.unregisterPendingPerm;
-  var setPermButton = window.BatonChat.setPermButton;
-  var createThinkTimer = window.BatonChat.createThinkTimer;
   var statusTextEl = root.querySelector("[data-status-text]");
   function setStatus(liveMsg) {
     if (statusTextEl) statusTextEl.textContent = liveMsg || T.kbd_hint || "";
   }
 
-  function toolBlock(label, body, cls) {
-    var d = mkEl("div", "ag-block");
-    d.appendChild(mkEl("span", "label", label));
-    d.appendChild(mkEl("pre", cls || "", body));
-    return d;
-  }
-
-  function populateToolCard(card, ev) {
-    var st = ev.status || "pending";
-    card.innerHTML = "";
-    var sum = mkEl("summary");
-    var dot = mkEl("span", "ag-dot ag-" + st);
-    dot.setAttribute("aria-hidden", "true");
-    sum.appendChild(dot);
-    sum.appendChild(mkEl("span", "ag-kind", ev.kind || "tool"));
-    sum.appendChild(mkEl("span", "ag-title", ev.title || ev.name || ev.id));
-    sum.appendChild(mkEl("span", "ag-status ag-" + st, T["st_" + st] || st));
-    card.appendChild(sum);
-    var body = mkEl("div", "ag-tool-body");
-    if (ev.input) body.appendChild(toolBlock(T.input || "Arguments", ev.input));
-    (ev.diffs || []).forEach(function (d) { body.appendChild(diffBlock(d, T.diff_unchanged)); });
-    if (ev.output) body.appendChild(toolBlock(T.output || "Result", ev.output));
-    if (body.childNodes.length) card.appendChild(body);
-  }
-
-  function readToolCategory(ev) {
-    if ((ev.diffs || []).length) return null;
-    var k = String(ev.kind || "").toLowerCase();
-    if (k === "edit" || k === "execute" || k === "write" || k === "delete") return null;
-    if (k === "search") return "search";
-    if (k === "fetch" || k === "read" || k === "utility") return "read";
-    return null;
-  }
-
-  function updateToolGroupSummary(grp) {
-    var reads = 0, searches = 0, running = 0, failed = 0;
-    grp.items.forEach(function (it) {
-      if (it.cat === "search") searches++;
-      else reads++;
-      if (it.status === "pending" || it.status === "in_progress") running++;
-      else if (it.status === "failed") failed++;
-    });
-    var parts = [];
-    if (reads) parts.push((T.grp_read || "{n} read").replace("{n}", String(reads)));
-    if (searches) parts.push((T.grp_search || "{n} search").replace("{n}", String(searches)));
-    if (!parts.length) parts.push((T.grp_steps || "{n} steps").replace("{n}", String(grp.items.length)));
-    grp.titleEl.textContent = parts.join(" · ");
-    var st = running ? "in_progress" : (failed ? "failed" : "completed");
-    grp.dotEl.className = "ag-dot ag-" + st;
-    grp.statusEl.className = "ag-status ag-" + st;
-    grp.statusEl.textContent = T["st_" + st] || st;
-  }
-
-  function createToolsView(container) {
-    var toolMap = {}, permMap = {}, activeGroup = null;
-
-    function ensureGroup() {
-      if (activeGroup) return activeGroup;
-      var box = mkEl("details", "ag-tool-group");
-      var sum = mkEl("summary");
-      var dotEl = mkEl("span", "ag-dot ag-in_progress");
-      dotEl.setAttribute("aria-hidden", "true");
-      var titleEl = mkEl("span", "ag-group-title", "");
-      var statusEl = mkEl("span", "ag-status", "");
-      sum.appendChild(dotEl);
-      sum.appendChild(titleEl);
-      sum.appendChild(statusEl);
-      var list = mkEl("div", "ag-tool-group-list");
-      box.appendChild(sum);
-      box.appendChild(list);
-      container.appendChild(box);
-      activeGroup = { el: box, list: list, dotEl: dotEl, titleEl: titleEl, statusEl: statusEl, items: new Map() };
-      return activeGroup;
-    }
-
-    function onTool(ev, toolList) {
-      var cat = readToolCategory(ev);
-      var card = toolMap[ev.id];
-      var grp = card && card._group ? card._group : null;
-      if (!card) {
-        if (cat) {
-          grp = ensureGroup();
-          card = toolMap[ev.id] = mkEl("details", "ag-tool");
-          card._group = grp;
-          grp.list.appendChild(card);
-        } else {
-          activeGroup = null;
-          card = toolMap[ev.id] = mkEl("details", "ag-tool");
-          container.appendChild(card);
-        }
-      } else if (!cat && grp) {
-        grp.items.delete(ev.id);
-        if (grp.items.size === 0) grp.el.remove();
-        else updateToolGroupSummary(grp);
-        card._group = null;
-        grp = null;
-        activeGroup = null;
-        container.appendChild(card);
-      }
-      populateToolCard(card, ev);
-      if (grp) {
-        grp.items.set(ev.id, { cat: cat || "read", status: ev.status || "pending" });
-        updateToolGroupSummary(grp);
-      }
-      if (toolList) {
-        var idx = toolList.findIndex(function (x) { return x.id === ev.id; });
-        if (idx >= 0) toolList[idx] = ev;
-        else toolList.push(ev);
-      }
-    }
-
-    function settlePerm(id, outcome, detail) {
-      unregisterPendingPerm(id);
-      var box = permMap[id];
-      if (!box) return;
-      var row = box.querySelector(".ag-perm-actions");
-      if (row) row.remove();
-      box.classList.add("ag-perm-" + outcome);
-      var label = {
-        allowed: T.allowed, denied: T.denied, timeout: T.timeout,
-        cancelled: T.cancelled, expired: T.expired
-      }[outcome] || ((T.error || "Error:") + " " + (detail || ""));
-      if (!box.querySelector(".ag-outcome")) box.appendChild(mkEl("p", "ag-outcome", label));
-    }
-
-    function onPermission(runId, ev) {
-      activeGroup = null;
-      var box = permMap[ev.id] = mkEl("div", "ag-perm");
-      box.appendChild(mkEl("strong", "ag-perm-head", (T.perm_title || "Asks for permission") + ": " + (ev.title || ev.kind)));
-      if (ev.command) box.appendChild(toolBlock(T.command || "Command", ev.command, "ag-cmd"));
-      (ev.diffs || []).forEach(function (d) { box.appendChild(diffBlock(d, T.diff_unchanged)); });
-      if (!ev.command && !(ev.diffs || []).length && ev.input) box.appendChild(toolBlock(T.input || "Arguments", ev.input));
-      if ((ev.locations || []).length) box.appendChild(mkEl("p", "muted small", ev.locations.join("\n")));
-      var row = mkEl("div", "ag-perm-actions");
-      var yes = mkEl("button", "btn small");
-      var no = mkEl("button", "btn small danger");
-      yes.type = no.type = "button";
-      setPermButton(yes, "1", T.allow || "Allow");
-      setPermButton(no, "2", T.deny || "Deny");
-      [[yes, true], [no, false]].forEach(function (pair) {
-        pair[0].addEventListener("click", function () {
-          yes.disabled = no.disabled = true;
-          unregisterPendingPerm(ev.id);
-          api("/api/chat-harness/" + encodeURIComponent(runId) + "/permission", "POST", { id: ev.id, allow: pair[1] })
-            .catch(function (err) { settlePerm(ev.id, "expired", err.message); });
-        });
-      });
-      registerPendingPerm(ev.id, yes, no);
-      row.appendChild(yes);
-      row.appendChild(no);
-      var metaParts = [];
-      if (T.perm_keys) metaParts.push(T.perm_keys);
-      if (ev.expires) {
-        var when = new Date(ev.expires * 1000).toLocaleTimeString(T.lang, { hour: "2-digit", minute: "2-digit" });
-        metaParts.push((T.expires || "").replace("{time}", when));
-      }
-      if (metaParts.length) row.appendChild(mkEl("span", "muted small", metaParts.join(" · ")));
-      box.appendChild(row);
-      container.appendChild(box);
-    }
-
-    function onNotice(noteText, noticeList) {
-      activeGroup = null;
-      container.appendChild(mkEl("p", "ag-note muted small", noteText));
-      if (noticeList) noticeList.push(noteText);
-    }
-
-    return { onTool: onTool, onPermission: onPermission, settlePerm: settlePerm, onNotice: onNotice };
-  }
-
   function bubble(role, idx) {
-    var el = document.createElement("article");
-    el.className = "msg msg-" + role;
+    var el;
     if (role === "assistant") {
-      el.innerHTML = '<details class="msg-think" hidden><summary></summary><div class="msg-think-text"></div></details>' +
-                     '<div class="msg-tools"></div>' +
-                     '<div class="msg-body"></div><p class="msg-meta muted small"><span></span></p>';
-      el.querySelector("summary").textContent = T.reasoning;
+      var b = createAssistantBubble(T);
+      el = b.el;
+      el._bubble = b;
     } else {
+      el = mkEl("article", "msg msg-user");
       el.innerHTML = '<div class="msg-body"></div><p class="msg-meta muted small msg-user-meta"></p>';
       if (typeof idx === "number") attachUserActions(el, idx);
     }
@@ -480,32 +299,20 @@
   }
 
   function fill(el, m, isLastAssistant) {
-    var think = el.querySelector(".msg-think");
+    var b = el._bubble;
     if (m.reasoning) {
-      think.hidden = false;
+      b.think.hidden = false;
       if (m.thinkSec) {
-        think.querySelector("summary").textContent = (T.thought_for || "Thought for {s}s").replace("{s}", String(m.thinkSec));
+        b.thinkSummary.textContent = (T.thought_for || "Thought for {s}s").replace("{s}", String(m.thinkSec));
       }
-      think.querySelector(".msg-think-text").textContent = m.reasoning;
+      b.thinkText.textContent = m.reasoning;
     }
-    el.querySelector(".msg-body").innerHTML = md(m.content || "");
-    var meta = el.querySelector(".msg-meta");
-    meta.querySelector("span").textContent = m.meta || "";
-    meta.querySelectorAll("button").forEach(function (b) { b.remove(); });
+    b.body.innerHTML = md(m.content || "");
+    b.metaText.textContent = m.meta || "";
+    b.meta.querySelectorAll("button").forEach(function (btn) { btn.remove(); });
     var streaming = m.meta === T.thinking || m.meta === T.writing || m.meta === T.lh_running_tools || m.meta === T.lh_waiting_perm;
     if (!streaming && m.content) {
-      var copy = document.createElement("button");
-      copy.type = "button";
-      copy.textContent = T.copy;
-      copy.addEventListener("click", function () {
-        try {
-          navigator.clipboard.writeText(m.content).then(function () {
-            copy.textContent = T.copied;
-            setTimeout(function () { copy.textContent = T.copy; }, 1500);
-          });
-        } catch (e) {}
-      });
-      meta.appendChild(copy);
+      attachCopyButton(b.meta, function () { return m.content; }, T);
     }
     if (!streaming && isLastAssistant && !busy && ready()) {
       var regen = document.createElement("button");
@@ -518,7 +325,7 @@
         renderAll();
         streamReply();
       });
-      meta.appendChild(regen);
+      b.meta.appendChild(regen);
     }
   }
 
@@ -528,7 +335,7 @@
       var el = bubble(m.role, idx);
       if (m.role === "assistant") {
         if ((m.tools && m.tools.length) || (m.notices && m.notices.length)) {
-          var view = createToolsView(el.querySelector(".msg-tools"));
+          var view = BC.createToolsView(el._bubble.tools, { T: T });
           (m.tools || []).forEach(function (ev) { view.onTool(ev); });
           (m.notices || []).forEach(function (nt) { view.onNotice(nt); });
         }
@@ -613,8 +420,8 @@
   async function streamHarnessReply(restoreOnFail) {
     var m = { role: "assistant", content: "", reasoning: "", meta: T.thinking, tools: [], notices: [] };
     var el = bubble("assistant");
-    var thinkTimer = createThinkTimer(el.querySelector(".msg-think summary"), { thinkingS: T.thinking_s, thoughtFor: T.thought_for });
-    var toolsView = createToolsView(el.querySelector(".msg-tools"));
+    var thinkTimer = el._bubble.thinkTimer;
+    var toolsView = BC.createToolsView(el._bubble.tools, { T: T });
     fill(el, m, false);
     scroller.follow(true);
     busy = new AbortController();
@@ -687,7 +494,10 @@
             } else if (j.type === "permission") {
               var sec3 = thinkTimer.stop();
               if (sec3) m.thinkSec = sec3;
-              toolsView.onPermission(j.run_id || activeRunId, j);
+              var runId = j.run_id || activeRunId;
+              toolsView.onPermission(j, function (allow) {
+                return api("/api/chat-harness/" + encodeURIComponent(runId) + "/permission", "POST", { id: j.id, allow: allow });
+              });
               m.meta = T.lh_waiting_perm || T.thinking;
               setStatus((T.lh_waiting_perm || T.perm_title) + " · " + (T.perm_keys || "1 / 2"));
               fill(el, m, false);
@@ -727,6 +537,7 @@
       else { failed = true; m.meta = T.error + " " + e.message; }
     } finally {
       done = true;
+      toolsView.clear();
       var finalS = thinkTimer.stop();
       if (finalS) m.thinkSec = finalS;
       busy = null;
@@ -752,7 +563,7 @@
     if (harnessOn()) return streamHarnessReply(restoreOnFail);
     var m = { role: "assistant", content: "", reasoning: "", meta: T.thinking };
     var el = bubble("assistant");
-    var thinkTimer = createThinkTimer(el.querySelector(".msg-think summary"), { thinkingS: T.thinking_s, thoughtFor: T.thought_for });
+    var thinkTimer = el._bubble.thinkTimer;
     fill(el, m, false);
     scroller.follow(true);
     busy = new AbortController();
@@ -854,20 +665,7 @@
 
   // ------------------------------------------------------------- events
   var agentSel = root.querySelector("[data-agent-switch]");
-  function selectedLabel(sel) {
-    if (!sel || sel.selectedIndex < 0) return "";
-    return (sel.options[sel.selectedIndex].textContent || "").trim();
-  }
-  function shortFolder(sel) {
-    var txt = selectedLabel(sel);
-    if (!txt) return "";
-    if (sel.value === "scratch") {
-      var parts = txt.split(/[\\/]/);
-      return parts[parts.length - 1] || txt;
-    }
-    return txt;
-  }
-  var composer = window.BatonChat.initComposerControls({
+  var composer = BC.initComposerControls({
     root: root,
     labels: { locked: T.locked, filterModels: T.filter_models },
     chips: [
@@ -932,8 +730,7 @@
     setTimeout(function () { composer.sync(); }, 250);
   };
 
-  function autosize() { text.style.height = "auto"; text.style.height = Math.min(text.scrollHeight, 192) + "px"; }
-  text.addEventListener("input", autosize);
+  var autosize = BC.bindAutosize(text);
   text.addEventListener("keydown", function (e) {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(); }
   });

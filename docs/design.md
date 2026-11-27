@@ -39,8 +39,11 @@ the light block, then the same names for dark, twice (inside
 `tests/test_design.py` checks that no colour is written outside those blocks,
 that both dark blocks match, and the contrast below.
 
-- **Dark is blue-grey, never pure black** (`#0f1318` page, `#171d26` cards):
-  softer on the eyes and lets shadows and borders still read.
+- **Dark is neutral near-black (Claude Code desktop look)** (`#0c0c0d` page,
+  `#111113` sidebar, `#161618` cards, `#1e1e21` insets, `#2a2a2e` borders —
+  replaced the earlier blue-grey palette in UI-1 on 2026-11-26): avoids pure
+  `#000000` so surfaces and hairline borders stay clearly separated while
+  dropping the blue tint.
 - **Contrast:** every text colour (`ink`, `muted`, `faint`, `accent`, `ok`,
   `warn`, `bad`) is at least 4.5:1 (WCAG AA) on cards, insets and the page, in
   both themes. The first light palette failed for labels, green and amber; it
@@ -76,6 +79,8 @@ that both dark blocks match, and the contrast below.
 
 ## Planned (decided 2026-11-26)
 
-The reference look is the Claude Code desktop app, and the dark theme moves
-from blue-grey to near-black across the whole app (task UI-1 in `STATUS.md`).
-The contrast and "both dark blocks match" tests stay as they are.
+The reference look is the Claude Code desktop app. UI-1 (neutral near-black
+dark tokens across the whole app) is complete; remaining stages UI-2 … UI-5
+in `STATUS.md` remodel `/chat` into a full-height layout with a bottom
+control-centre composer and unified local/agent renderer. The contrast and
+"both dark blocks match" tests stay as they are.

@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "UI-1: Near-black dark theme (Claude Code desktop look)"
+next: "UI-2: Full-height /chat layout like Claude Code desktop"
 updated: 2026-11-26
 updated_by: gemini
 open_source: true
@@ -13,6 +13,7 @@ links:
 ---
 
 ## Done recently
+- 2026-11-26: UI-1: switched both dark token blocks in `baton/static/style.css` to neutral near-black surfaces (`#0c0c0d` / `#111113` / `#161618` / `#1e1e21`, Claude Code desktop look), updated `docs/design.md`, and verified WCAG AA contrast (`tests/test_design.py`).
 - 2026-11-26: Local harness hardening & UX fixes: streaming `<tool_call>` sanitizer + Qwen3.8 XML/JSON fallback parser, explicit synthesis closing prompt (`tool_choice: "none"` with HTTP 400 retry), honest DuckDuckGo anti-bot error reporting + local SearXNG Docker setup (`docker/searxng/`) + Brave/Tavily API support, older tool-output context compaction + live per-round context meter, and collapsible `.ag-tool-group` for read/search calls (`baton/local_harness.py`, `baton/static/chat.js`, `docs/local-harness.md`).
 - 2026-11-26: UI-0: fixed invisible buttons in `/chat` (suggestion chips, attach `＋`, Sign out) and the "Convert to task" link showing on an empty chat; guarded by `tests/test_design.py`.
 - 2026-11-26: Local model tool-calling harness in `/chat`: opt-in **Internet + tools** mode (off by default) with OpenAI-compatible multi-round tool loop (`baton/local_harness.py`), `web_search` (DuckDuckGo HTML or optional `BATON_SEARCH_URL` SearXNG JSON), SSRF-guarded `fetch_url`, `get_datetime`, AST `calculate`, optional allowlisted-folder file/command tools, and mandatory one-shot **Allow / Deny** confirmation on writes, commands, and `.env` reads (`docs/local-harness.md`, `tests/test_local_harness.py`).
@@ -37,11 +38,7 @@ links:
 - [x] 2026-11-26 Chat-3: Chat image attachments (vision) + local system prompt presets + context usage meter (`baton/models.py`, `baton/routes/chat.py`, `tests/test_chat_vision_presets.py`)
 - [x] 2026-11-26 Local model tool-calling harness in `/chat`: opt-in Internet + utilities + allowlisted-folder file/command tools with mandatory Allow/Deny on writes, commands, and `.env` reads (`baton/local_harness.py`, `docs/local-harness.md`, `tests/test_local_harness.py`)
 - [x] 2026-11-26 UI-0: Fix invisible buttons and the always-visible "Convert to task" link (global `button` rule no longer forces its colour with `!important`; `[hidden]` always wins; `tests/test_design.py`)
-- [ ] UI-1: Near-black dark theme (Claude Code desktop look)
-  Change only the dark token blocks in `static/style.css` (both copies) to neutral near-black
-  surfaces instead of blue-grey, for the whole app; update the Theme notes in `docs/design.md`.
-  Verify: `pytest -q tests/test_design.py` (dark blocks match, WCAG AA) and a dark screenshot of `/`, `/tasks`, `/chat`.
-  Recommended: claude-code, opus, medium
+- [x] 2026-11-26 UI-1: Near-black dark theme (Claude Code desktop look — neutral charcoal/near-black tokens in `baton/static/style.css`, updated `docs/design.md`, WCAG AA verified in `tests/test_design.py`)
 - [ ] UI-2: Full-height `/chat` layout like Claude Code desktop
   On `/chat` only: no `main` max-width/padding, history as a flush full-height left column,
   conversation centred (~760 px), composer anchored to the bottom, slim header (title, folder, branch,
@@ -85,6 +82,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-26 (gemini): Completed UI-1 near-black dark theme across the whole app (`baton/static/style.css` dark token blocks, `docs/design.md`, WCAG AA verified in `tests/test_design.py`).
 - 2026-11-26 (gemini): Fixed Windows NTFS sharing-violation race in `LocalModels._state()` / `_save()` (deterministic retry test in `tests/test_models.py`) and added `(Marco)` reminder to start local SearXNG in Docker.
 - 2026-11-26 (gemini): Hardened local chat harness (Blocks 1–4): streaming `<tool_call>` sanitizer + Qwen3.8 XML/JSON fallback parser, explicit synthesis closing prompt, honest DDG anti-bot detection + `docker/searxng/` + Brave/Tavily support, tool-output context compaction + live timings, and `.ag-tool-group` collapsing (`tests/test_local_harness.py`).
 - 2026-11-26 (claude-code): UI-0 CSS fix for invisible buttons and `[hidden]`; added UI-1…UI-5 plan (Claude Code look) and the Windows CI fix to Next.

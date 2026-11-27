@@ -105,9 +105,10 @@ main { width: 100%; max-width: 1240px; margin: 0 auto; padding: 1.4rem 1.1rem ca
   border-radius: 999px; background: var(--bad); color: var(--on-accent); font: 700 .62rem/16px var(--mono); text-align: center; }
 
 .brand { display: flex; align-items: center; gap: .65rem; color: var(--ink); text-decoration: none; }
-.mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; font-size: 1rem;
-  background: var(--ink); color: var(--panel); }
-.mobile-top .mark { width: 30px; height: 30px; border-radius: 9px; font-size: .9rem; }
+.mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
+  background: transparent; overflow: hidden; flex: none; }
+.mark-img { width: 100%; height: 100%; display: block; }
+.mobile-top .mark { width: 30px; height: 30px; border-radius: 9px; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
 .brand-name { font-weight: 650; }
 .brand-version { font: .68rem var(--mono); color: var(--faint); }

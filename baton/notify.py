@@ -23,6 +23,7 @@ from typing import Any, Callable
 import httpx
 
 from . import db
+from .config import DEFAULT_TITLE
 
 _log = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class Notifier:
         notify_tasks: bool = True,
         data_dir: Path | None = None,
         lang: str = "en",
+        app_name: str = DEFAULT_TITLE,
         client_factory: Callable[[], httpx.Client] | None = None,
     ):
         self.telegram_bot_token = (telegram_bot_token or "").strip()
@@ -55,6 +57,7 @@ class Notifier:
         self.notify_tasks = bool(notify_tasks)
         self.data_dir = Path(data_dir) if data_dir is not None else None
         self.lang = lang
+        self.app_name = (app_name or DEFAULT_TITLE).strip() or DEFAULT_TITLE
         self._client_factory = client_factory or (lambda: httpx.Client(timeout=10.0))
 
     @property
@@ -88,9 +91,9 @@ class Notifier:
         else:
             icon = "⚠️"
             label = "AVISO" if es else "WARNING"
-        mname = str(alert.get("machine_name") or alert.get("machine_id") or "Baton")
+        mname = str(alert.get("machine_name") or alert.get("machine_id") or self.app_name)
         esc = (" (escalada)" if es else " (escalated)") if alert.get("escalated") else ""
-        title = f"{icon} Baton · {label}{esc} · {mname}"
+        title = f"{icon} {self.app_name} · {label}{esc} · {mname}"
         body = str(alert.get("message") or alert.get("kind") or "")[:400]
         return title, body
 
@@ -109,7 +112,7 @@ class Notifier:
         agent = str(getattr(task, "agent", "") or "")
         model = str(getattr(task, "model", "") or "")
         who = f"{agent} ({model})" if model else agent
-        title = f"{icon} Baton · {state} · {repo}" if repo else f"{icon} Baton · {state}"
+        title = f"{icon} {self.app_name} · {state} · {repo}" if repo else f"{icon} {self.app_name} · {state}"
         lines = [ttitle]
         if who:
             lines.append(f"Agente: {who}" if es else f"Agent: {who}")
@@ -145,7 +148,7 @@ class Notifier:
             return False, _mask(f"Telegram error: {exc}", self.telegram_bot_token, self.webhook_url)
 
     def _send_webhook(self, client: httpx.Client, title: str, body: str, severity: str) -> tuple[bool, str]:
-        ascii_title = " ".join(title.encode("ascii", "ignore").decode("ascii").split())[:200] or "Baton"
+        ascii_title = " ".join(title.encode("ascii", "ignore").decode("ascii").split())[:200] or self.app_name
         try:
             resp = client.post(
                 self.webhook_url,
@@ -291,8 +294,8 @@ class Notifier:
         arts = getattr(task, "artifacts", None) or []
         if photo is not None and len(arts) > 1:
             extra = len(arts) - 1
-            note = f"(+{extra} imagen más en Baton)" if self.lang == "es" and extra == 1 else (
-                f"(+{extra} imágenes más en Baton)" if self.lang == "es" else f"(+{extra} more in Baton)"
+            note = f"(+{extra} imagen más en {self.app_name})" if self.lang == "es" and extra == 1 else (
+                f"(+{extra} imágenes más en {self.app_name})" if self.lang == "es" else f"(+{extra} more in {self.app_name})"
             )
             body = f"{body}\n{note}".strip()
         self.send_async(title, body, severity="bad" if status == "failed" else "info", photo=photo)
@@ -303,8 +306,8 @@ class Notifier:
         folder = str(info.get("folder") or "")
         command = str(info.get("command") or "").strip()
         summary = str(info.get("title") or info.get("kind") or "").strip()
-        title = (f"🔐 Baton · Permiso pendiente · {agent}" if es
-                 else f"🔐 Baton · Approval waiting · {agent}")
+        title = (f"🔐 {self.app_name} · Permiso pendiente · {agent}" if es
+                 else f"🔐 {self.app_name} · Approval waiting · {agent}")
         lines: list[str] = []
         if folder:
             lines.append(f"Carpeta: {folder}" if es else f"Folder: {folder}")
@@ -313,9 +316,9 @@ class Notifier:
         elif summary:
             lines.append(summary[:260])
         lines.append(
-            "Abre /chat en Baton para permitir o denegar antes de que caduque."
+            f"Abre /chat en {self.app_name} para permitir o denegar antes de que caduque."
             if es else
-            "Open /chat in Baton to allow or deny before it times out."
+            f"Open /chat in {self.app_name} to allow or deny before it times out."
         )
         return title, "\n".join(lines)
 
@@ -328,7 +331,7 @@ class Notifier:
 
     def send_test(self) -> tuple[bool, str]:
         es = self.lang == "es"
-        title = "🔔 Baton · Aviso de prueba" if es else "🔔 Baton · Test notification"
+        title = f"🔔 {self.app_name} · Aviso de prueba" if es else f"🔔 {self.app_name} · Test notification"
         body = (
             "Las notificaciones de alertas de máquinas y tareas terminadas funcionan correctamente."
             if es else

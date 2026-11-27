@@ -104,8 +104,9 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         notify_tasks=settings.notify_tasks,
         data_dir=settings.data_dir,
         lang=settings.lang,
+        app_name=settings.title,
     )
-    alerts = AlertEngine(settings.data_dir, on_opened=notifier.notify_alert)
+    alerts = AlertEngine(settings.data_dir, on_opened=notifier.notify_alert, app_name=settings.title)
     agent_chats = AgentChats(
         data_dir=settings.data_dir,
         sandbox_image=settings.sandbox_image,
@@ -156,15 +157,15 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     login_csrf = secrets.token_urlsafe(32)
     access_key = settings.access_key
     auth_enabled = bool(access_key)
-    t = strings(settings.lang)
+    t = strings(settings.lang, settings.title)
 
     templates.env.globals.update(
         t=t, title=settings.title, version=__version__, lang=settings.lang, csrf=csrf_token,
         agents=AGENTS, auth_enabled=auth_enabled, active_alerts_count=alerts.active_count,
-        # Changes whenever any stylesheet or script changes, so browsers (and
+        # Changes whenever any stylesheet, script or icon changes, so browsers (and
         # phones, which cache hard) never keep an old copy after an update.
         css_v=hashlib.sha256(b"".join(
-            f.read_bytes() for f in sorted((HERE / "static").glob("*")) if f.suffix in (".css", ".js")
+            f.read_bytes() for f in sorted((HERE / "static").glob("*")) if f.suffix in (".css", ".js", ".svg")
         )).hexdigest()[:10],
     )
     templates.env.filters["md"] = _render_md

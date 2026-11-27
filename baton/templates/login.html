@@ -13,13 +13,14 @@
       if (theme === "light" || theme === "dark") d.dataset.theme = theme;
     })();
   </script>
+  <link rel="icon" type="image/svg+xml" href="/static/huo-icon.svg?v={{ css_v }}">
   <link rel="stylesheet" href="/static/style.css?v={{ css_v }}">
 </head>
 <body>
 <div class="login-shell">
   <section class="login-card">
     <div class="brand">
-      <span class="mark" aria-hidden="true">◆</span>
+      <span class="mark" aria-hidden="true"><img class="mark-img" src="/static/huo-icon.svg?v={{ css_v }}" alt="" width="34" height="34"></span>
       <span class="brand-text"><span class="brand-name">{{ title }}</span><span class="brand-version">v{{ version }}</span></span>
     </div>
     <h1>{{ t.auth_heading }}</h1>

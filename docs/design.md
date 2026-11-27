@@ -178,3 +178,25 @@ that both dark blocks match, and the contrast below.
 - **Phone:** header is ☰ · title · ＋ · ⋯; composer chips sit in one row that
   scrolls sideways instead of wrapping into three.
 
+## Brand & icon: Huo (2026-11-27)
+
+- **Visible brand vs. technical internals:** the web UI and mobile
+  notifications default to **Huo** (`DEFAULT_TITLE = "Huo"` in
+  `baton/config.py`) while keeping the Python package (`baton/`), CLI
+  (`baton`), environment variables (`BATON_*`), data directory (`~/.baton`),
+  and Windows scheduled task untouched for zero-breakage compatibility.
+- **Dynamic `{app}` strings:** every visible brand mention in `baton/i18n.py`
+  uses `{app}` (substituted via safe `str.replace` in `strings(lang, app)` so
+  `%s` and `{port}` placeholders and literal braces never collide), and
+  `Notifier` receives `app_name=settings.title` so Telegram and Webhook
+  headings match `BATON_TITLE` automatically (keeping `"source": "baton"` in
+  structured webhook JSON).
+- **Single-source SVG icon (`static/huo-icon.svg`):** replaces the plain `◆`
+  glyph in the desktop sidebar, mobile header, `/login`, and `<link rel="icon">`
+  favicon, cache-busted by `css_v` (which now hashes `.svg` alongside `.css`
+  and `.js`). Designed as mischievous Mr. Tail (spectral jade fox-flame with
+  slanted golden eyes) in front of a golden Taoist talisman carrying the
+  vermilion *Li* trigram (`☲`, Fire) seal — inspired by Huohuo from
+  *Honkai: Star Rail* — inside a dark obsidian-jade squircle so it stays sharp
+  and high-contrast on both light and near-black dark themes at 16 px, 30 px,
+  and 34 px.

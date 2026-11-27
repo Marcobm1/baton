@@ -54,6 +54,9 @@ def _gh_cli_token() -> str:
     return out.stdout.strip() if out.returncode == 0 else ""
 
 
+DEFAULT_TITLE = "Huo"
+
+
 @dataclass
 class Settings:
     github_token: str = ""
@@ -67,7 +70,7 @@ class Settings:
     data_dir: Path = Path.home() / ".baton"
     codex_home: Path = Path.home() / ".codex"
     lang: str = "en"
-    title: str = "Baton"
+    title: str = DEFAULT_TITLE
     ping_claude_minutes: int = 0
     ping_codex_minutes: int = 0
     ping_hours: str = ""
@@ -140,7 +143,7 @@ class Settings:
             data_dir=Path(os.environ.get("BATON_DATA_DIR") or Path.home() / ".baton"),
             codex_home=Path(codex_home),
             lang=os.environ.get("BATON_LANG", "en").strip().lower()[:2] or "en",
-            title=os.environ.get("BATON_TITLE", "Baton"),
+            title=os.environ.get("BATON_TITLE", DEFAULT_TITLE).strip() or DEFAULT_TITLE,
             ping_claude_minutes=int(os.environ.get("BATON_PING_CLAUDE_MINUTES", "0") or 0),
             ping_codex_minutes=int(os.environ.get("BATON_PING_CODEX_MINUTES", "0") or 0),
             ping_hours=os.environ.get("BATON_PING_HOURS", ""),

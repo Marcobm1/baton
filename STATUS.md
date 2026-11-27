@@ -5,14 +5,16 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
 updated: 2026-11-27
-updated_by: claude-code
+updated_by: antigravity
 open_source: true
 tags: [tooling, ai-agents]
 links:
   Hub repo: https://github.com/Marcobm1/proyectos
+  Future ideas: docs/ideas.md
 ---
 
 ## Done recently
+- 2026-11-27: Rebranded the visible UI and notifications/alerts to **Huo** with a custom Mr. Tail + Taoist talisman (`☲`) SVG icon & favicon (`baton/static/huo-icon.svg`): set `DEFAULT_TITLE = "Huo"`, replaced hardcoded visible `"Baton"` prose in `baton/i18n.py` with `{app}` and parameterized `Notifier` and `AlertEngine` with `app_name=settings.title` so `BATON_TITLE` updates every page, alert, and Telegram message cleanly without breaking CLI, `.env`, `~/.baton`, or scheduled tasks (`tests/test_i18n.py`, `tests/test_notify.py`, `tests/test_alerts.py`, `tests/test_design.py`, `docs/design.md`, `docs/ideas.md`).
 - 2026-11-27: UI-5: unified `/chat` component for local models and ACP agents (merged the duplicated Agent/Local branches of `baton/templates/chat.html` into one root, topbar, log, composer, status bar, and `#chat-strings` payload built by `_chat_strings()`; moved assistant bubbles, copy buttons, tool rows, read-only tool groups, diffs, inline `1`/`2` approvals, and composer helpers into `baton/static/chat-common.js` so `chat.js` and `agents-chat.js` are thin transport adapters; `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26: UI-4: Claude Code-style messages on `/chat` (cardless assistant prose, compact one-line tool rows & read groups with status dots, line-numbered inline diffs with `+/-` stats & collapsed context hunks, inline approvals answerable with keys `1`/`2`, collapsed live `"Thinking… Ns"` → `"Thought for Ns"` timer, and unified bottom status line with context meter; `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26: UI-3: composer as the control centre on `/chat` (agent, readable model names via `readable_model_name()`, effort, folder, permission/tool mode, and preset/resume moved into bottom-row composer chips with upward popovers, locked-not-hidden state once started, and `Enter` / `Shift+Enter` / `Shift+Tab` / `Esc` shortcuts; `tests/test_design.py`, `docs/design.md`).
@@ -73,6 +75,7 @@ links:
 - Confirm mode on the host runs approved commands as the host Windows user (Gemini Confirm covers commands only; Codex approved commands write even under `sandbox: "read-only"`).
 
 ## Decisions
+- 2026-11-27 (Marco): Visible UI and notification brand renamed to **Huo** (`DEFAULT_TITLE = "Huo"`, inspired by Huohuo / Mr. Tail from *Honkai: Star Rail*) with a single-source SVG brand mark & favicon (`baton/static/huo-icon.svg`) and dynamic `{app}` substitution via `BATON_TITLE`. Internal package (`baton/`), CLI, `BATON_*` env vars, `~/.baton`, and Windows scheduled task stay unchanged for compatibility.
 - 2026-11-27: Chat tool rows are saved with each assistant turn (`chat_messages.tools`, JSON): only rendered fields, outputs clipped to 4,000 chars, big diffs dropped, and never the output of anything touching an `.env` file. `web_search` falls back to the next backend when local SearXNG is down. The SearXNG image is pinned by digest.
 - 2026-11-26 (Marco): UI reference for `/chat` and the app is the Claude Code desktop app; the dark theme becomes near-black like Claude Code across the whole app (replaces "blue-grey, never pure black"). Plan: UI-0 … UI-5 under Next.
 - 2026-11-26: Native local-model tool-calling harness (`baton/local_harness.py`, [docs/local-harness.md](docs/local-harness.md)): opt-in per conversation (Offline by default), reliable search backends (`BATON_SEARCH_URL` local SearXNG in `docker/searxng/`, `BATON_BRAVE_API_KEY`, `BATON_TAVILY_API_KEY`, or honest DuckDuckGo anti-bot error), SSRF-guarded `fetch_url` (6K default), `get_datetime`, AST `calculate`, older tool-output compaction, streaming `<tool_call>` sanitizer/fallback parser, collapsible `.ag-tool-group`, and optional allowlisted-folder tools (`list_files`, `read_file`, `search_files`, `write_file`, `run_command`). Writes, commands, and `.env` reads ALWAYS require one-shot CSRF-protected Allow/Deny confirmation (never unattended, including for abliterated models).
@@ -84,6 +87,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-27 (antigravity): Renamed the visible UI, alerts, and notifications to **Huo** (`DEFAULT_TITLE = "Huo"`, dynamic `{app}` strings in `baton/i18n.py`, `Notifier` & `AlertEngine` `app_name=settings.title`), replaced the `◆` brand mark with the fused Mr. Tail + Taoist talisman (`☲`) SVG icon & favicon (`baton/static/huo-icon.svg`), and captured future ideas in `docs/ideas.md` (`tests/test_i18n.py`, `tests/test_notify.py`, `tests/test_alerts.py`, `tests/test_design.py`, `docs/design.md`).
 - 2026-11-27 (claude-code): Reviewed UI-1…UI-5 and shipped UI-6 polish (14 fixes, tool persistence + migration, search fallback, SearXNG digest pin); started SearXNG on Marco's PC and set `BATON_SEARCH_URL`.
 - 2026-11-27 (gemini): Completed UI-5 unified `/chat` component for local models and ACP agents (merged the two branches of `baton/templates/chat.html` into one composer & message shell with `_chat_strings()`, extracted shared assistant bubble / tool-row / read-group / diff / `1`/`2` approval renderer into `baton/static/chat-common.js`, reduced `chat.js` and `agents-chat.js` to thin transport adapters, `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26 (gemini): Completed UI-4 Claude Code-style messages on `/chat` (cardless assistant prose, compact one-line tool rows with status dots, line-numbered inline diffs with collapsed context, `1`/`2` approval hotkeys, live `"Thinking… Ns"` timer, and unified bottom status line with context; `tests/test_design.py`, `docs/design.md`).

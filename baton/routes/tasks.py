@@ -20,6 +20,7 @@ from ..github import GitHubError
 from ..task_models import opencode_groups
 from ..task_report import format_task_log, task_report
 from ..task_store import PRIORITIES, Task, UpdateInProgress, new_id
+from ..townhall_bridge import townhall_task_draft
 from .deps import CTX, AppContext
 
 router = APIRouter()
@@ -68,6 +69,7 @@ async def task_new(
     effort: str = "",
     followup: str = "",
     from_thread: str = "",
+    from_townhall: str = "",
     ctx: AppContext = CTX,
 ):
     original = None
@@ -91,6 +93,15 @@ async def task_new(
         agent = agent or draft["agent"]
         model = model or draft["model"]
         effort = effort or draft["effort"]
+        details_limit = max(details_limit, len(details) + 1000)
+    elif from_townhall:
+        rec = await asyncio.to_thread(ctx.townhall.store.get, from_townhall)
+        if rec is None:
+            raise HTTPException(404, "Unknown Town Hall session")
+        draft = townhall_task_draft(rec, repo=repo, lang=ctx.settings.lang)
+        repo = repo or draft["repo"]
+        title = title or draft["title"]
+        details = details or draft["details"]
         details_limit = max(details_limit, len(details) + 1000)
     projects, _ = await ctx.hub.load()
     repos = sorted({p.repo for p in projects})

@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}{{ t.th_title }} · {{ title }}{% endblock %}
+{% block refresh %}{% if active_count %}<meta http-equiv="refresh" content="15">{% endif %}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/townhall.css?v={{ css_v }}">{% endblock %}
+
+{% block main %}
+<h1>{{ t.th_title }}</h1>
+<p class="muted">{{ t.th_sub }}</p>
+
+<div class="th-grid">
+  <section class="th-card">
+    <h2>{{ t.th_new }}</h2>
+    <form class="th-form" method="post" action="/townhall">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+
+      <label for="th-topic">{{ t.th_topic }}</label>
+      <textarea id="th-topic" name="topic" required placeholder="{{ t.th_topic_ph }}"></textarea>
+
+      <label for="th-folder">{{ t.th_folder }}</label>
+      <select id="th-folder" name="folder">
+        <option value="">{{ t.th_no_folder }}</option>
+        {% for f in folders %}
+        <option value="{{ f.key }}">{{ f.label }}{% if f.branch %} ({{ f.branch }}){% endif %}</option>
+        {% endfor %}
+      </select>
+
+      <div class="th-row">
+        <div>
+          <label for="th-mode">{{ t.th_mode }}</label>
+          <select id="th-mode" name="mode">
+            <option value="council">{{ t.th_mode_council }}</option>
+            <option value="open_floor">{{ t.th_mode_floor }}</option>
+          </select>
+        </div>
+        <div>
+          <label for="th-rounds">{{ t.th_rounds }}</label>
+          <input id="th-rounds" name="rounds" type="number" min="0" max="3" value="1">
+        </div>
+        <div>
+          <label for="th-max-seconds">{{ t.th_max_seconds }}</label>
+          <input id="th-max-seconds" name="max_seconds" type="number" min="10" max="3600" value="600">
+        </div>
+        <div>
+          <label for="th-moderator">{{ t.th_moderator }}</label>
+          <select id="th-moderator" name="moderator">
+            <option value="claude">Claude</option>
+            <option value="gemini">Gemini</option>
+            <option value="codex">Codex</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="th-models-row">
+        <div>
+          <label for="th-gemini">Gemini</label>
+          {% set g_cat = catalogs.get('gemini', {}) %}
+          {% if g_cat %}
+          <select id="th-gemini" name="gemini_model">
+            {% for mid, meta in g_cat.items() %}
+            <option value="{{ mid }}" {% if mid == defaults.gemini %}selected{% endif %}>{{ meta.label or mid }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input id="th-gemini" name="gemini_model" type="text" value="{{ defaults.gemini }}" placeholder="default">
+          {% endif %}
+        </div>
+        <div>
+          <label for="th-codex">Codex</label>
+          {% set x_cat = catalogs.get('codex', {}) %}
+          {% if x_cat %}
+          <select id="th-codex" name="codex_model">
+            {% for mid, meta in x_cat.items() %}
+            <option value="{{ mid }}" {% if mid == defaults.codex %}selected{% endif %}>{{ meta.label or mid }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input id="th-codex" name="codex_model" type="text" value="{{ defaults.codex }}" placeholder="default">
+          {% endif %}
+        </div>
+        <div>
+          <label for="th-claude">Claude</label>
+          {% set c_cat = catalogs.get('claude-code', {}) %}
+          {% if c_cat %}
+          <select id="th-claude" name="claude_model">
+            {% for mid, meta in c_cat.items() %}
+            <option value="{{ mid }}" {% if mid == defaults.claude %}selected{% endif %}>{{ meta.label or mid }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input id="th-claude" name="claude_model" type="text" value="{{ defaults.claude }}" placeholder="default">
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="th-row">
+        <div>
+          <label for="th-guest">{{ t.th_guest_pool }}</label>
+          <select id="th-guest" name="guest_scope">
+            <option value="go">{{ t.th_guest_go }}{% if go_count %} ({{ go_count }}){% endif %}</option>
+            <option value="all">{{ t.th_guest_all }}{% if oc_count %} ({{ oc_count }}){% endif %}</option>
+            <option value="none">{{ t.th_guest_none }}</option>
+          </select>
+        </div>
+        <div>
+          <label for="th-turns">{{ t.th_max_turns }}</label>
+          <input id="th-turns" name="max_turns" type="number" min="2" max="30" value="6">
+        </div>
+      </div>
+
+      <div class="th-actions">
+        <label class="th-check">
+          <input type="checkbox" name="demo_mode" value="1">
+          <span>{{ t.th_demo }}</span>
+        </label>
+        <button type="submit" class="btn primary">{{ t.th_start }}</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="th-card">
+    <h2>{{ t.th_sched_new }}</h2>
+    <form class="th-form" method="post" action="/townhall/schedules">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+
+      <label for="sc-name">{{ t.th_sched_name }}</label>
+      <input id="sc-name" name="name" type="text" required placeholder="{{ t.th_sched_name_ph }}">
+
+      <label for="sc-topic">{{ t.th_topic }}</label>
+      <input id="sc-topic" name="topic" type="text" required placeholder="{{ t.th_topic_ph }}">
+
+      <label for="sc-folder">{{ t.th_folder }}</label>
+      <select id="sc-folder" name="folder">
+        <option value="">{{ t.th_no_folder }}</option>
+        {% for f in folders %}
+        <option value="{{ f.key }}">{{ f.label }}</option>
+        {% endfor %}
+      </select>
+
+      <div class="th-row">
+        <div>
+          <label for="sc-hours">{{ t.th_sched_hours }}</label>
+          <input id="sc-hours" name="interval_hours" type="number" min="1" step="1" value="168">
+        </div>
+        <div>
+          <label for="sc-window">{{ t.th_sched_window }}</label>
+          <input id="sc-window" name="allowed_hours" type="text" placeholder="09:00-21:00">
+        </div>
+        <div>
+          <label for="sc-max">{{ t.th_max_seconds }}</label>
+          <input id="sc-max" name="max_seconds" type="number" min="30" max="3600" value="600">
+        </div>
+      </div>
+
+      <div class="th-actions">
+        <span></span>
+        <button type="submit" class="btn">{{ t.th_sched_save }}</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<section class="th-card">
+  <h2>{{ t.th_history }}</h2>
+  {% if sessions %}
+  <ul class="th-list">
+    {% for s in sessions %}
+    <li class="th-item">
+      <div>
+        <a href="/townhall/{{ s.id }}"><strong>{{ s.topic }}</strong></a>
+        <div class="muted small">
+          {{ s.started_at|when }} · {{ s.mode }}
+          {% if s.guest_model %} · 4º: <code>{{ s.guest_model }}</code>{% endif %}
+        </div>
+      </div>
+      <span class="th-pill is-{{ s.status }}">{{ s.status }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">{{ t.th_empty }}</p>
+  {% endif %}
+</section>
+
+<section class="th-card">
+  <h2>{{ t.th_schedules }}</h2>
+  {% if schedules %}
+  <ul class="th-list">
+    {% for sc in schedules %}
+    <li class="th-item">
+      <div>
+        <strong>{{ sc.name }}</strong>
+        <span class="th-pill {% if sc.enabled %}is-completed{% endif %}">{{ 'on' if sc.enabled else 'off' }}</span>
+        <div class="muted small">
+          {{ sc.topic }} · {{ sc.interval_hours|int }}h
+          {% if sc.allowed_hours %} · {{ sc.allowed_hours }}{% endif %}
+          {% if sc.last_session_id %} · <a href="/townhall/{{ sc.last_session_id }}">{{ sc.last_session_id }}</a>{% endif %}
+        </div>
+      </div>
+      <div class="th-item-actions">
+        <form method="post" action="/townhall/schedules/{{ sc.id }}/run">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="btn ghost small">{{ t.th_sched_run }}</button>
+        </form>
+        <form method="post" action="/townhall/schedules/{{ sc.id }}/toggle">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="btn ghost small">{{ t.th_sched_pause if sc.enabled else t.th_sched_enable }}</button>
+        </form>
+        <form method="post" action="/townhall/schedules/{{ sc.id }}/delete">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="btn ghost small">{{ t.th_sched_delete }}</button>
+        </form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">{{ t.th_sched_empty }}</p>
+  {% endif %}
+</section>
+{% endblock %}

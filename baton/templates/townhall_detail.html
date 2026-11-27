@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{{ session.topic[:48] }} · {{ t.th_title }} · {{ title }}{% endblock %}
+{% block refresh %}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/townhall.css?v={{ css_v }}">{% endblock %}
+
+{% block main %}
+<div class="th-head">
+  <div>
+    <a href="/townhall" class="muted small">← {{ t.th_back }}</a>
+    <h1>{{ session.topic }}</h1>
+    <div class="muted small">
+      <span class="th-pill is-{{ session.status }}">{{ session.status }}</span>
+      {% if session.budget_reached %}<span class="th-pill is-running">{{ t.th_budget_hit }}</span>{% endif %}
+      · {{ session.mode }} · {{ session.started_at|when }}
+      · {% for p in session.participants %}{{ p.name }}{% if p.model %} (<code>{{ p.model }}</code>){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+  </div>
+  <div class="th-head-actions">
+    {% if session.status == 'running' %}
+    <form method="post" action="/townhall/{{ session.id }}/cancel">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button type="submit" class="btn ghost small">{{ t.th_cancel }}</button>
+    </form>
+    {% endif %}
+    {% if session.status == 'completed' %}
+    <a class="btn primary small" href="/tasks/new?from_townhall={{ session.id }}{% if repo_key %}&repo={{ repo_key|urlencode }}{% endif %}">{{ t.th_to_task }}</a>
+    {% endif %}
+    {% if folder_key %}
+    <a class="btn ghost small" href="/chat?folder={{ folder_key|urlencode }}">{{ t.th_to_chat }}</a>
+    {% endif %}
+    <a class="btn ghost small" href="/townhall/{{ session.id }}.md">Markdown</a>
+    <a class="btn ghost small" href="/api/townhall/{{ session.id }}">JSON</a>
+  </div>
+</div>
+
+{% if session.status == 'running' %}
+<section class="th-card">
+  <h2>{{ t.th_live }}</h2>
+  <div id="th-live-log" class="th-live" data-events-url="/api/townhall/{{ session.id }}/events">{{ t.th_live_connecting }}</div>
+</section>
+<script src="/static/townhall.js?v={{ css_v }}" defer></script>
+{% endif %}
+
+{% if session.conclusion %}
+{% set c = session.conclusion %}
+<section class="th-card">
+  <h2>{{ t.th_conclusion }}</h2>
+  <p>{{ c.conclusion }}</p>
+
+  <h3>{{ t.th_summary }}</h3>
+  <p class="muted">{{ c.summary }}</p>
+
+  {% if c.agreements %}
+  <h3>{{ t.th_agreements }}</h3>
+  <ul class="th-bullets">{% for item in c.agreements %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if c.disagreements %}
+  <h3>{{ t.th_disagreements }}</h3>
+  <ul class="th-bullets">{% for item in c.disagreements %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if c.action_items %}
+  <h3>{{ t.th_actions }}</h3>
+  <ol class="th-bullets">{% for item in c.action_items %}<li>{{ item }}</li>{% endfor %}</ol>
+  {% endif %}
+
+  <p class="muted small">{{ t.th_moderator }}: {{ c.moderator_name }}</p>
+</section>
+{% endif %}
+
+{% if session.guest_selection %}
+{% set g = session.guest_selection %}
+<section class="th-card">
+  <h2>{{ t.th_guest_election }} · <code>{{ g.chosen_model }}</code> <span class="th-pill">{{ g.method }}</span></h2>
+  <ul class="th-bullets">
+    {% for v in g.votes %}
+    <li>
+      <strong>{{ v.voter_name }}:</strong> <code>{{ v.primary or 'invalid' }}</code>
+      {% if v.secondary %} (2: <code>{{ v.secondary }}</code>){% endif %}
+      {% if v.reason %} — {{ v.reason }}{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="th-card">
+  <h2>{{ t.th_transcript }}</h2>
+  {% if transcript_turns %}
+    {% for tr in transcript_turns %}
+    <details class="th-turn" open>
+      <summary>[{{ tr.phase }} · #{{ tr.round_num }}] {{ tr.participant_name }} <span class="muted small">({{ tr.model }})</span></summary>
+      <pre class="th-turn-body">{% if tr.error %}Error: {{ tr.error }}{% else %}{{ tr.content }}{% endif %}</pre>
+    </details>
+    {% endfor %}
+  {% else %}
+  <p class="muted">{{ t.th_no_turns }}</p>
+  {% endif %}
+</section>
+{% endblock %}

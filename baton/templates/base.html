@@ -30,6 +30,7 @@
 {%- elif name == 'machines' %}<rect x="3.5" y="4" width="17" height="6.5" rx="1.5"/><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5"/><circle cx="7" cy="7.25" r=".9" fill="currentColor" stroke="none"/><circle cx="7" cy="16.75" r=".9" fill="currentColor" stroke="none"/><path d="M11 7.25h6M11 16.75h6"/>
 {%- elif name == 'chat' %}<path d="M4 5h16v10.5H10l-4.5 3.8v-3.8H4z"/><path d="M8 9.5h8M8 12.5h5"/>
 {%- elif name == 'ranking' %}<path d="M5 20V11M12 20V5M19 20v-6"/><path d="M3 20h18"/>
+{%- elif name == 'townhall' %}<path d="M3 10l9-6 9 6"/><path d="M5 10v8M10 10v8M14 10v8M19 10v8"/><path d="M3 18h18M2 21h20"/>
 {%- elif name == 'auto' %}<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>
 {%- elif name == 'light' %}<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>
 {%- elif name == 'dark' %}<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>
@@ -38,7 +39,7 @@
 {% set sections = [('projects', '/', t.projects), ('tasks', '/tasks', t.tasks_nav),
                    ('quotas', '/quotas', t.quotas), ('models', '/models', t.models_nav),
                    ('machines', '/machines', t.machines_nav), ('chat', '/chat', t.chat_nav),
-                   ('ranking', '/ranking', t.ranking)] %}
+                   ('townhall', '/townhall', t.townhall_nav), ('ranking', '/ranking', t.ranking)] %}
 <div class="shell">
   <aside class="sidebar">
     <a class="brand" href="/">

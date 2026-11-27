@@ -28,6 +28,7 @@ from ..ping import Scheduler, fetch_gemini_quota
 from ..ranking import Ranking
 from ..task_report import task_report
 from ..task_store import Task, TaskStore
+from ..townhall_bridge import TownHallService
 
 
 @dataclass
@@ -49,6 +50,7 @@ class AppContext:
     agent_chats: AgentChats
     local_harness: LocalHarnessManager
     chat_history: ChatHistory
+    townhall: TownHallService
     ranking: Ranking
     runner: Any
     updater: Any

@@ -54,6 +54,7 @@ from .runner import (
 )
 from .self_update import SelfUpdate
 from .task_models import catalog
+from .townhall_bridge import TownHallService
 
 HERE = Path(__file__).parent
 _md = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table")
@@ -119,6 +120,14 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         tavily_api_key=settings.tavily_api_key,
     )
     chat_history = ChatHistory(settings.data_dir)
+    townhall_svc = TownHallService(
+        settings.data_dir,
+        on_finished=notifier.notify_townhall,
+        find_claude=lambda: find_claude(),
+        find_codex=lambda: find_codex(),
+        find_agy=lambda: find_agy(),
+        find_opencode=lambda: find_opencode(),
+    )
     ranking = store.ranking
 
     def quota_left(agent: str) -> float | None:
@@ -189,6 +198,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         agent_chats=agent_chats,
         local_harness=local_harness,
         chat_history=chat_history,
+        townhall=townhall_svc,
         ranking=ranking,
         runner=runner,
         updater=updater,
@@ -232,6 +242,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         )
         if scheduler.enabled:
             scheduler.tick()
+        townhall_svc.tick_schedules()
         # OpenCode Go's usage endpoint and agy's /usage are free to ask: keep
         # those cards fresh even when nobody has the page open (every 5 minutes).
         if settings.opencode_go_key:
@@ -297,6 +308,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
                 await loop_task
         await asyncio.to_thread(agent_chats.close_all)   # no OpenCode left behind
         await asyncio.to_thread(local_harness.close_all)
+        await asyncio.to_thread(townhall_svc.stop_all)
         runner.on_finished = notifier.notify_task
         if update_task:
             update_task.cancel()

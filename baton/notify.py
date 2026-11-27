@@ -339,3 +339,44 @@ class Notifier:
         )
         ok, msgs = self.send_sync(title, body, severity="info")
         return ok, " · ".join(msgs)
+
+    def format_townhall(self, record: Any, *, schedule_name: str = "") -> tuple[str, str]:
+        es = self.lang == "es"
+        status = str(getattr(record, "status", "") or "")
+        topic = str(getattr(record, "topic", "") or "")[:120]
+        if status == "completed":
+            icon = "🏛️"
+            state = "Town Hall listo" if es else "Town Hall finished"
+        else:
+            icon = "❌"
+            state = "Town Hall fallido" if es else "Town Hall failed"
+        label = f"{state} ({schedule_name})" if schedule_name else state
+        title = f"{icon} {self.app_name} · {label}"
+        lines = [topic] if topic else []
+        guest = getattr(record, "guest_selection", None)
+        if guest and getattr(guest, "chosen_model", ""):
+            lines.append(
+                f"4º modelo ({guest.method}): {guest.chosen_model}"
+                if es else
+                f"4th guest ({guest.method}): {guest.chosen_model}"
+            )
+        concl = getattr(record, "conclusion", None)
+        if concl and getattr(concl, "conclusion", ""):
+            snippet = " ".join(str(concl.conclusion).split())[:300]
+            lines.append(snippet)
+        elif getattr(record, "error", ""):
+            lines.append(str(record.error)[:240])
+        sid = str(getattr(record, "id", "") or "")
+        if sid:
+            lines.append(f"/townhall/{sid}")
+        return title, "\n".join(lines)
+
+    def notify_townhall(self, record: Any, schedule_name: str = "") -> None:
+        """Notify asynchronously when a Town Hall deliberation finishes or fails."""
+        if not self.configured:
+            return
+        status = str(getattr(record, "status", "") or "")
+        if status not in ("completed", "failed"):
+            return
+        title, body = self.format_townhall(record, schedule_name=schedule_name)
+        self.send_async(title, body, severity="bad" if status == "failed" else "info")

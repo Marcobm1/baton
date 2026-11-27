@@ -26,7 +26,7 @@ def test_runner_and_web_modular_exports():
     assert callable(review_merge.finish_pr)
     assert callable(review_merge.wait_for_tests)
     assert callable(review_merge.run_review)
-    assert len(routes.ROUTERS) == 9
+    assert len(routes.ROUTERS) == 10
 
 
 def test_create_app_instances_have_isolated_context(tmp_path):
@@ -39,6 +39,7 @@ def test_create_app_instances_have_isolated_context(tmp_path):
     assert ctx1.login_csrf != ctx2.login_csrf
     assert ctx1.store.dir != ctx2.store.dir
     assert ctx1.agent_chats is not ctx2.agent_chats
+    assert ctx1.townhall is not ctx2.townhall
 
 
 def test_quotas_and_statusline_stay_stdlib_only():

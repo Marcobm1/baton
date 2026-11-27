@@ -141,29 +141,41 @@
   });
 
   // Sticky auto-scroll: follows streamed tokens only when the user is near the bottom.
-  function createScroller(btn) {
+  // Supports an internal scroll container (.chat-scroll) and falls back to window.
+  function createScroller(btn, container) {
     var pinned = true;
+    var sc = container || null;
     function distanceFromBottom() {
+      if (sc) return Math.max(0, sc.scrollHeight - (sc.scrollTop + sc.clientHeight));
       var doc = document.documentElement;
       return Math.max(0, doc.scrollHeight - (window.scrollY + window.innerHeight));
+    }
+    function scrollToBottom(smooth) {
+      if (sc) {
+        sc.scrollTo({ top: sc.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+      } else if (smooth) {
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+      } else {
+        window.scrollTo(0, document.documentElement.scrollHeight);
+      }
     }
     function sync() {
       var dist = distanceFromBottom();
       pinned = dist < 110;
       if (btn) btn.hidden = dist < 180;
     }
-    window.addEventListener("scroll", sync, { passive: true });
+    (sc || window).addEventListener("scroll", sync, { passive: true });
     if (btn) {
       btn.addEventListener("click", function () {
         pinned = true;
-        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+        scrollToBottom(true);
         btn.hidden = true;
       });
     }
     return {
       follow: function (force) {
         if (force || pinned) {
-          window.scrollTo(0, document.documentElement.scrollHeight);
+          scrollToBottom(false);
           pinned = true;
           if (btn) btn.hidden = true;
         } else if (btn) {
@@ -180,7 +192,7 @@
     var listEl = document.querySelector("[data-thread-list]");
     var searchEl = document.querySelector("[data-thread-search]");
     var backdrop = document.querySelector("[data-sidebar-backdrop]");
-    var toggleBtn = document.querySelector("[data-sidebar-toggle]");
+    var toggleBtns = Array.from(document.querySelectorAll("[data-sidebar-toggle]"));
     var newBtn = document.querySelector("[data-sidebar-new]");
     if (!shell || !listEl) return { refresh: function () {}, setActive: function () {}, closeDrawer: function () {} };
 
@@ -192,9 +204,11 @@
 
     function setOpen(on) {
       shell.classList.toggle("sidebar-open", !!on);
-      if (toggleBtn) toggleBtn.setAttribute("aria-expanded", String(!!on));
+      toggleBtns.forEach(function (b) { b.setAttribute("aria-expanded", String(!!on)); });
     }
-    if (toggleBtn) toggleBtn.addEventListener("click", function () { setOpen(!shell.classList.contains("sidebar-open")); });
+    toggleBtns.forEach(function (b) {
+      b.addEventListener("click", function () { setOpen(!shell.classList.contains("sidebar-open")); });
+    });
     if (backdrop) backdrop.addEventListener("click", function () { setOpen(false); });
     if (newBtn && opts.onNew) {
       newBtn.addEventListener("click", function () {
@@ -254,11 +268,16 @@
           ev.stopPropagation();
           var next = window.prompt(labels.rename || "Rename", th.title || "");
           if (!next || !next.trim()) return;
+          var cleanTitle = next.trim();
           fetch("/api/chat-threads/" + encodeURIComponent(th.id), {
             method: "PATCH",
             headers: { "Content-Type": "application/json", "X-Baton-CSRF": csrf },
-            body: JSON.stringify({ title: next.trim() })
-          }).then(function (r) { if (r.ok) refresh(); });
+            body: JSON.stringify({ title: cleanTitle })
+          }).then(function (r) {
+            if (!r.ok) return;
+            if (th.id === activeId && opts.onRenamedActive) opts.onRenamedActive(cleanTitle);
+            refresh();
+          });
         });
 
         var del = document.createElement("button");
@@ -302,7 +321,14 @@
       var url = "/api/chat-threads" + (q ? "?q=" + encodeURIComponent(q) : "");
       return fetch(url, { cache: "no-store" })
         .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (d) { if (d && Array.isArray(d.threads)) render(d.threads); })
+        .then(function (d) {
+          if (!d || !Array.isArray(d.threads)) return;
+          render(d.threads);
+          if (activeId && opts.onActiveMeta) {
+            var match = d.threads.find(function (t) { return t.id === activeId; });
+            if (match) opts.onActiveMeta(match);
+          }
+        })
         .catch(function () {});
     }
 
@@ -330,6 +356,115 @@
       refresh: refresh,
       setActive: function (id) { activeId = id || ""; markActive(); },
       closeDrawer: function () { setOpen(false); }
+    };
+  }
+
+  // Slim header controller: conversation title, folder & git branch badges,
+  // and the "⋯" overflow menu (Convert to task, Rename, Delete).
+  function initHeader(opts) {
+    var root = opts.root || document;
+    var titleEl = root.querySelector("[data-chat-title]");
+    var folderBadge = root.querySelector("[data-chat-folder-badge]");
+    var branchBadge = root.querySelector("[data-chat-branch-badge]");
+    var menuEl = root.querySelector("[data-chat-menu]");
+    var toTaskLinks = Array.from(root.querySelectorAll("[data-to-task]"));
+    var renameBtn = root.querySelector("[data-thread-rename]");
+    var deleteBtn = root.querySelector("[data-thread-delete]");
+    var csrf = opts.csrf || "";
+    var labels = opts.labels || {};
+    var state = { threadId: "", title: "" };
+
+    function closeMenu() {
+      if (menuEl) menuEl.open = false;
+    }
+
+    if (menuEl) {
+      document.addEventListener("click", function (ev) {
+        if (menuEl.open && !menuEl.contains(ev.target)) closeMenu();
+      });
+      document.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape" && menuEl.open) closeMenu();
+      });
+    }
+
+    function setThread(id, title) {
+      state.threadId = id || "";
+      if (title !== undefined) state.title = title || "";
+      else if (!state.threadId) state.title = "";
+      if (titleEl) {
+        titleEl.textContent = state.title || (state.threadId ? (labels.untitled || "Untitled") : (labels.newChat || "New chat"));
+      }
+      toTaskLinks.forEach(function (a) {
+        a.hidden = !state.threadId;
+        if (state.threadId) a.href = "/tasks/new?from_thread=" + encodeURIComponent(state.threadId);
+      });
+      if (renameBtn) renameBtn.disabled = !state.threadId;
+      if (deleteBtn) deleteBtn.disabled = !state.threadId;
+    }
+
+    function setTitle(title) {
+      state.title = title || "";
+      if (titleEl) {
+        titleEl.textContent = state.title || (state.threadId ? (labels.untitled || "Untitled") : (labels.newChat || "New chat"));
+      }
+    }
+
+    function setContext(folder, branch) {
+      if (folderBadge) {
+        folderBadge.textContent = folder || "";
+        folderBadge.title = folder || "";
+        folderBadge.hidden = !folder;
+      }
+      if (branchBadge) {
+        branchBadge.textContent = branch ? "⎇ " + branch : "";
+        branchBadge.title = branch || "";
+        branchBadge.hidden = !branch;
+      }
+    }
+
+    if (renameBtn) {
+      renameBtn.addEventListener("click", function () {
+        closeMenu();
+        if (!state.threadId) return;
+        var next = window.prompt(labels.rename || "Rename", state.title || "");
+        if (!next || !next.trim()) return;
+        var cleanTitle = next.trim();
+        fetch("/api/chat-threads/" + encodeURIComponent(state.threadId), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", "X-Baton-CSRF": csrf },
+          body: JSON.stringify({ title: cleanTitle })
+        }).then(function (r) {
+          if (!r.ok) return;
+          setTitle(cleanTitle);
+          if (opts.onAfterRename) opts.onAfterRename(cleanTitle);
+        });
+      });
+    }
+
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", function () {
+        closeMenu();
+        if (!state.threadId) return;
+        if (!window.confirm(labels.delConfirm || "Delete this conversation?")) return;
+        var doomed = state.threadId;
+        fetch("/api/chat-threads/" + encodeURIComponent(doomed), {
+          method: "DELETE",
+          headers: { "X-Baton-CSRF": csrf }
+        }).then(function (r) {
+          if (!r.ok) return;
+          setThread("", "");
+          if (opts.onAfterDelete) opts.onAfterDelete();
+        });
+      });
+    }
+
+    setThread("", "");
+
+    return {
+      setThread: setThread,
+      setTitle: setTitle,
+      setContext: setContext,
+      closeMenu: closeMenu
     };
   }
 
@@ -447,8 +582,8 @@
 
   window.BatonChat = {
     esc: esc, md: md, createScroller: createScroller,
-    initSidebar: initSidebar, createAttachments: createAttachments,
-    diffBlock: diffBlock
+    initSidebar: initSidebar, initHeader: initHeader,
+    createAttachments: createAttachments, diffBlock: diffBlock
   };
 
   // Agent switcher: the page is drawn for one agent; switching reloads it.

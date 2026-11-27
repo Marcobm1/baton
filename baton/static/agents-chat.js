@@ -18,7 +18,8 @@
   var confirmRadio = root.querySelector('[data-mode][value="confirm"]');
   var fullRadio = root.querySelector('[data-mode][value="full"]');
   var scrollBtn = $("[data-scroll-bottom]");
-  var scroller = window.BatonChat.createScroller(scrollBtn);
+  var scrollEl = $("[data-chat-scroll]");
+  var scroller = window.BatonChat.createScroller(scrollBtn, scrollEl);
   var attachments = window.BatonChat.createAttachments(root, text);
   var sandboxReady = root.dataset.sandboxReady === "1";
 
@@ -176,10 +177,40 @@
     var o = modelSel.options[modelSel.selectedIndex];
     payg.hidden = !(o && o.hasAttribute("data-payg"));
   }
+  var header = window.BatonChat.initHeader({
+    root: root,
+    csrf: csrf,
+    labels: {
+      newChat: T.new_chat,
+      untitled: T.untitled,
+      rename: T.rename,
+      delConfirm: T.del_confirm
+    },
+    onAfterRename: function () { sidebar.refresh(threadId); },
+    onAfterDelete: function () {
+      clearView();
+      history.replaceState(null, "", "/chat?agent=" + encodeURIComponent(agent));
+      sidebar.refresh("");
+    }
+  });
+  function syncHeaderContext(info) {
+    var opt = folderSel && folderSel.options[folderSel.selectedIndex];
+    if (info && info.folder) {
+      var matched = Array.from((folderSel && folderSel.options) || []).find(function (o) {
+        return o.value === info.folder || o.dataset.label === info.folder || o.textContent === info.folder;
+      });
+      var b = matched ? (matched.dataset.branch || "") : "";
+      header.setContext(info.folder, b);
+      return;
+    }
+    var label = (opt && (opt.dataset.label || opt.textContent)) || "";
+    var branch = (opt && opt.dataset.branch) || "";
+    header.setContext(label, branch);
+  }
   [modelSel, effortSel, folderSel].forEach(function (s) {
     s.addEventListener("change", function () {
       if (s === modelSel) setEfforts();
-      savePrefs(); showPayg(); updateFullMode();
+      savePrefs(); showPayg(); updateFullMode(); syncHeaderContext();
     });
   });
   if (resumeSel) {
@@ -196,7 +227,7 @@
       if (o.dataset.effort && effortSel.querySelector('option[value="' + CSS.escape(o.dataset.effort) + '"]')) {
         effortSel.value = o.dataset.effort;
       }
-      showPayg(); updateFullMode();
+      showPayg(); updateFullMode(); syncHeaderContext();
     });
   }
   root.querySelectorAll("[data-mode]").forEach(function (r) {
@@ -229,6 +260,7 @@
     }
     showPayg();
     updateFullMode();
+    syncHeaderContext(info);
   }
   function setBusy(on) {
     busy = on;
@@ -237,13 +269,6 @@
   }
 
   // ------------------------------------------------------------- history
-  var toTaskLinks = root.querySelectorAll("[data-to-task]");
-  function syncToTask() {
-    toTaskLinks.forEach(function (a) {
-      a.hidden = !threadId;
-      if (threadId) a.href = "/tasks/new?from_thread=" + encodeURIComponent(threadId);
-    });
-  }
   var activeGroup = null;
 
   function clearView() {
@@ -251,7 +276,7 @@
     if (chat) api("/api/agents/" + encodeURIComponent(chat.id) + "/close").catch(function () {});
     forget();
     threadId = "";
-    syncToTask();
+    header.setThread("", "");
     log.querySelectorAll(":scope > :not([data-empty])").forEach(function (n) { n.remove(); });
     empty.hidden = false;
     after = 0; current = null; activeGroup = null; tools = {}; perms = {};
@@ -265,7 +290,7 @@
   function renderSavedThread(th) {
     clearView();
     threadId = th.id || "";
-    syncToTask();
+    header.setThread(threadId, th.title || "");
     sidebar.setActive(threadId);
     if (th.model) restoreModel(th.model);
     if (th.effort && effortSel.querySelector('option[value="' + CSS.escape(th.effort) + '"]')) {
@@ -277,6 +302,7 @@
     if (resumeSel && th.session_id && resumeSel.querySelector('option[value="' + CSS.escape(th.session_id) + '"]')) {
       resumeSel.value = th.session_id;
     }
+    syncHeaderContext();
     (th.messages || []).forEach(function (m) {
       if (m.role === "user") {
         add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", m.content || ""));
@@ -321,6 +347,8 @@
         .then(function (full) { if (full) renderSavedThread(full); })
         .catch(function () {});
     },
+    onRenamedActive: function (title) { header.setTitle(title); },
+    onActiveMeta: function (th) { if (th && th.title) header.setTitle(th.title); },
     onDeletedActive: function () {
       clearView();
       history.replaceState(null, "", "/chat?agent=" + encodeURIComponent(agent));
@@ -579,7 +607,7 @@
         var s = log.querySelector(".ag-starting"); if (s) s.remove();
         if (chat.thread_id) {
           threadId = chat.thread_id;
-          syncToTask();
+          header.setThread(threadId, undefined);
           history.replaceState(null, "", "/chat?agent=" + encodeURIComponent(agent) + "&thread=" + encodeURIComponent(threadId));
         }
         try { localStorage.setItem(STORE, JSON.stringify({ id: chat.id, thread_id: threadId })); } catch (e) {}
@@ -619,6 +647,7 @@
   });
 
   showPayg();
+  syncHeaderContext();
   if (boot.active_thread && boot.active_thread.agent === agent) {
     renderSavedThread(boot.active_thread);
   } else {
@@ -632,8 +661,8 @@
           chat = info;
           if (info.thread_id) {
             threadId = info.thread_id;
-            syncToTask();
-            sidebar.setActive(threadId);
+            header.setThread(threadId, undefined);
+            sidebar.refresh(threadId);
           }
           lock(info);
           setBusy(info.busy);

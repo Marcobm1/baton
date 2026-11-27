@@ -13,6 +13,30 @@
           <option value="codex" {% if agent == 'codex' %}selected{% endif %}>{{ t.ag_codex }}</option>
         </select></label>
 {% endmacro %}
+{% macro chat_topbar(show_full_badge=false, show_new=true) %}
+  <header class="chat-topbar" data-chat-topbar>
+    <div class="chat-topbar-main">
+      <button type="button" class="btn ghost small sidebar-toggle" data-sidebar-toggle aria-expanded="false" aria-label="{{ t.chat_history }}">☰</button>
+      <h2 class="chat-topbar-title" data-chat-title>{{ active_thread.title if active_thread and active_thread.title else t.chat_new }}</h2>
+      <div class="chat-topbar-meta">
+        <span class="chat-meta-chip" data-chat-folder-badge hidden></span>
+        <span class="chat-meta-chip chat-meta-branch" data-chat-branch-badge hidden></span>
+        {% if show_full_badge %}<span class="ag-full-badge" data-full-badge hidden>{{ t.ag_full_badge }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="chat-topbar-actions">
+      {% if show_new %}<button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>{% endif %}
+      <details class="chat-menu" data-chat-menu>
+        <summary class="chat-menu-trigger" aria-label="{{ t.chat_more_actions }}" title="{{ t.chat_more_actions }}">⋯</summary>
+        <div class="chat-menu-pop" role="menu">
+          <a class="chat-menu-item" role="menuitem" data-to-task hidden href="/tasks/new">{{ t.chat_to_task }} →</a>
+          <button type="button" class="chat-menu-item" role="menuitem" data-thread-rename disabled>{{ t.chat_rename }}</button>
+          <button type="button" class="chat-menu-item danger" role="menuitem" data-thread-delete disabled>{{ t.chat_delete }}</button>
+        </div>
+      </details>
+    </div>
+  </header>
+{% endmacro %}
 {% block main %}
 <div class="chat-shell" data-chat-shell>
   <aside class="chat-sidebar" aria-label="{{ t.chat_history }}">
@@ -42,99 +66,105 @@
   'full_abliterated': t.ag_full_abliterated, 'full_badge': t.ag_full_badge,
   'copy': t.chat_copy, 'copied': t.chat_copied,
   'grp_read': t.ag_grp_read, 'grp_search': t.ag_grp_search, 'grp_steps': t.ag_grp_steps,
-  'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled,
+  'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled, 'new_chat': t.chat_new,
   'rename': t.chat_rename, 'del': t.chat_delete, 'del_confirm': t.chat_delete_confirm,
   'lang': lang} %}
+{% set can_chat = oc.available and oc.folders and (agent == 'opencode' or oc.groups) %}
 <section class="chat" data-agents data-agent="{{ agent }}" data-csrf="{{ csrf }}"
          data-sandbox-ready="{{ '1' if oc.sandbox_ready else '0' }}">
-  <div class="chat-head">
-    <div class="chat-title-row">
-      <button type="button" class="btn ghost small sidebar-toggle" data-sidebar-toggle aria-expanded="false">☰ {{ t.chat_history }}</button>
-      <h2>{{ t.chat_nav }}</h2>
-    </div>
-    <div class="chat-controls">
-      {{ agent_select() }}
-      {% if oc.available and oc.folders %}
-      <div class="ag-catalog" role="group" aria-label="{{ t.ag_model_catalog }}" data-catalog hidden></div>
-      <label><span class="label">{{ t.chat_model }}</span>
-        <select data-oc-model{% if oc.efforts %} data-efforts="{{ oc.efforts|tojson|forceescape }}"{% endif %}>
-          {% for g in oc.groups %}
-          <optgroup label="{{ g.label }}" data-catalog-key="{{ 'go' if g.included else 'payg' if g.payg else 'other' }}" data-catalog-label="{{ g.label if g.included or g.payg else t.ag_other_providers }}">
-            {% for m in g.models %}<option value="{{ m }}" {% if g.payg %}data-payg{% endif %}>{{ m }}</option>{% endfor %}
-          </optgroup>
-          {% endfor %}
-        </select></label>
-      <label><span class="label">{{ t.chat_effort }}</span>
-        <select data-oc-effort>
-          {% for e in efforts %}
-          <option value="{{ e }}">{{ t['ag_effort_' ~ e] if e in ('default', 'xhigh', 'max') else t['chat_effort_' ~ e] }}</option>
-          {% endfor %}
-        </select></label>
-      <label><span class="label">{{ t.ag_folder }}</span>
-        <select data-oc-folder>
-          {% for f in oc.folders %}<option value="{{ f.key }}"{% if selected_folder and f.key.lower() == selected_folder.lower() %} selected{% endif %}>{{ f.label }}</option>{% endfor %}
-        </select></label>
-      {% if oc.sessions %}
-      <label><span class="label">{{ t.ag_resume }}</span>
-        <select data-oc-resume>
-          <option value="">{{ t.ag_resume_new }}</option>
-          {% for s in oc.sessions %}
-          <option value="{{ s.session_id }}" data-folder="{{ s.folder_key }}" data-model="{{ s.model }}" data-effort="{{ s.effort }}">{{ (s.title or s.session_id[:12]) ~ ' · ' ~ s.folder_label }}</option>
-          {% endfor %}
-        </select></label>
-      {% endif %}
-      <a class="btn ghost small" data-to-task hidden href="/tasks/new">{{ t.chat_to_task }} →</a>
-      <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
-      {% endif %}
-    </div>
-  </div>
-  {% if not oc.available %}
-  <p class="warn">{{ t['ag_unavailable' ~ suffix] }}</p>
-  {% elif agent != 'opencode' and not oc.groups %}
-  <p class="warn">{{ t['ag_no_models' ~ suffix] }}</p>
-  {% elif not oc.folders %}
-  <p class="warn">{{ t.ag_no_folders }}</p>
-  {% else %}
-  <div class="ag-mode-bar">
-    <div class="ag-mode-pills" role="radiogroup" aria-label="{{ t.ag_mode }}">
-      <label class="ag-pill"><input type="radio" name="ag-mode" value="confirm" checked data-mode><span>{{ t.ag_confirm }}</span></label>
-      <label class="ag-pill ag-full{% if oc.sandbox_ready %} ag-full-ready{% endif %}"><input type="radio" name="ag-mode" value="full"{% if not oc.sandbox_ready %} disabled{% endif %} data-mode><span>{{ t.ag_full }}</span></label>
-    </div>
-    <details class="ag-mode-info">
-      <summary class="small muted" title="{{ t.ag_mode }}">?</summary>
-      <div class="ag-mode-info-body small muted">
-        <p><strong>{{ t.ag_confirm }}:</strong> {{ t['ag_confirm_help' ~ suffix] }}</p>
-        <p><strong>{{ t.ag_full }}:</strong> <span data-full-note>{{ t.ag_full_help if oc.sandbox_ready else t.ag_full_off }}</span></p>
+  {{ chat_topbar(show_full_badge=true, show_new=can_chat) }}
+  <div class="chat-scroll" data-chat-scroll>
+    <div class="chat-column">
+      <div class="chat-setup">
+        <div class="chat-head">
+          <div class="chat-controls">
+            {{ agent_select() }}
+            {% if oc.available and oc.folders %}
+            <div class="ag-catalog" role="group" aria-label="{{ t.ag_model_catalog }}" data-catalog hidden></div>
+            <label><span class="label">{{ t.chat_model }}</span>
+              <select data-oc-model{% if oc.efforts %} data-efforts="{{ oc.efforts|tojson|forceescape }}"{% endif %}>
+                {% for g in oc.groups %}
+                <optgroup label="{{ g.label }}" data-catalog-key="{{ 'go' if g.included else 'payg' if g.payg else 'other' }}" data-catalog-label="{{ g.label if g.included or g.payg else t.ag_other_providers }}">
+                  {% for m in g.models %}<option value="{{ m }}" {% if g.payg %}data-payg{% endif %}>{{ m }}</option>{% endfor %}
+                </optgroup>
+                {% endfor %}
+              </select></label>
+            <label><span class="label">{{ t.chat_effort }}</span>
+              <select data-oc-effort>
+                {% for e in efforts %}
+                <option value="{{ e }}">{{ t['ag_effort_' ~ e] if e in ('default', 'xhigh', 'max') else t['chat_effort_' ~ e] }}</option>
+                {% endfor %}
+              </select></label>
+            <label><span class="label">{{ t.ag_folder }}</span>
+              <select data-oc-folder>
+                {% for f in oc.folders %}<option value="{{ f.key }}"{% if f.branch %} data-branch="{{ f.branch }}"{% endif %}{% if selected_folder and f.key.lower() == selected_folder.lower() %} selected{% endif %}>{{ f.label }}</option>{% endfor %}
+              </select></label>
+            {% if oc.sessions %}
+            <label><span class="label">{{ t.ag_resume }}</span>
+              <select data-oc-resume>
+                <option value="">{{ t.ag_resume_new }}</option>
+                {% for s in oc.sessions %}
+                <option value="{{ s.session_id }}" data-folder="{{ s.folder_key }}" data-model="{{ s.model }}" data-effort="{{ s.effort }}">{{ (s.title or s.session_id[:12]) ~ ' · ' ~ s.folder_label }}</option>
+                {% endfor %}
+              </select></label>
+            {% endif %}
+            {% endif %}
+          </div>
+        </div>
+        {% if not oc.available %}
+        <p class="warn">{{ t['ag_unavailable' ~ suffix] }}</p>
+        {% elif agent != 'opencode' and not oc.groups %}
+        <p class="warn">{{ t['ag_no_models' ~ suffix] }}</p>
+        {% elif not oc.folders %}
+        <p class="warn">{{ t.ag_no_folders }}</p>
+        {% else %}
+        <div class="ag-mode-bar">
+          <div class="ag-mode-pills" role="radiogroup" aria-label="{{ t.ag_mode }}">
+            <label class="ag-pill"><input type="radio" name="ag-mode" value="confirm" checked data-mode><span>{{ t.ag_confirm }}</span></label>
+            <label class="ag-pill ag-full{% if oc.sandbox_ready %} ag-full-ready{% endif %}"><input type="radio" name="ag-mode" value="full"{% if not oc.sandbox_ready %} disabled{% endif %} data-mode><span>{{ t.ag_full }}</span></label>
+          </div>
+          <details class="ag-mode-info">
+            <summary class="small muted" title="{{ t.ag_mode }}">?</summary>
+            <div class="ag-mode-info-body small muted">
+              <p><strong>{{ t.ag_confirm }}:</strong> {{ t['ag_confirm_help' ~ suffix] }}</p>
+              <p><strong>{{ t.ag_full }}:</strong> <span data-full-note>{{ t.ag_full_help if oc.sandbox_ready else t.ag_full_off }}</span></p>
+            </div>
+          </details>
+        </div>
+        <p class="ag-full-warn small" role="alert" data-full-warn hidden>{{ t.ag_full_warn }}</p>
+        <p class="warn small" data-payg-warn hidden>{{ t.oc_payg_warning }}</p>
+        <div class="muted small ag-fixed" data-fixed hidden>
+          <span data-fixed-text></span>
+        </div>
+        {% endif %}
       </div>
-    </details>
-  </div>
-  <p class="ag-full-warn small" role="alert" data-full-warn hidden>{{ t.ag_full_warn }}</p>
-  <p class="warn small" data-payg-warn hidden>{{ t.oc_payg_warning }}</p>
-  <div class="muted small ag-fixed" data-fixed hidden>
-    <span><button type="button" class="btn ghost small sidebar-toggle" data-sidebar-toggle aria-expanded="false">☰</button> <span data-fixed-text></span> <span class="ag-full-badge" data-full-badge hidden>{{ t.ag_full_badge }}</span></span>
-    <span class="ag-fixed-actions">
-      <a class="btn ghost small" data-to-task hidden href="/tasks/new">{{ t.chat_to_task }} →</a>
-      <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
-    </span>
-  </div>
-  <div class="chat-log" data-log aria-live="polite">
-    <div class="chat-empty" data-empty>
-      <p class="muted">{{ t['ag_empty' ~ suffix] }}</p>
-      <div class="chat-suggests">
-        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_arch }}">{{ t.chat_sug_arch }}</button>
-        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_diff }}">{{ t.chat_sug_diff }}</button>
-        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_plan }}">{{ t.chat_sug_plan }}</button>
+      {% if can_chat %}
+      <div class="chat-log" data-log aria-live="polite">
+        <div class="chat-empty" data-empty>
+          <p class="muted">{{ t['ag_empty' ~ suffix] }}</p>
+          <div class="chat-suggests">
+            <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_arch }}">{{ t.chat_sug_arch }}</button>
+            <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_diff }}">{{ t.chat_sug_diff }}</button>
+            <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_plan }}">{{ t.chat_sug_plan }}</button>
+          </div>
+        </div>
       </div>
+      {% endif %}
     </div>
   </div>
-  <button type="button" class="scroll-bottom" data-scroll-bottom hidden aria-label="{{ t.chat_scroll_bottom }}">↓</button>
-  <div class="attach-bar" data-attach-bar hidden></div>
-  <form class="chat-input" data-form>
-    <input type="file" data-attach-input accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
-    <button type="button" class="attach-btn" data-attach-btn title="{{ t.chat_attach }}" aria-label="{{ t.chat_attach }}">＋</button>
-    <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
-    <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
-  </form>
+  {% if can_chat %}
+  <div class="chat-dock" data-chat-dock>
+    <div class="chat-dock-inner">
+      <button type="button" class="scroll-bottom" data-scroll-bottom hidden aria-label="{{ t.chat_scroll_bottom }}">↓</button>
+      <div class="attach-bar" data-attach-bar hidden></div>
+      <form class="chat-input" data-form>
+        <input type="file" data-attach-input accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+        <button type="button" class="attach-btn" data-attach-btn title="{{ t.chat_attach }}" aria-label="{{ t.chat_attach }}">＋</button>
+        <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
+        <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
+      </form>
+    </div>
+  </div>
   {% endif %}
 </section>
 <script id="agents-strings" type="application/json">{{ js|tojson }}</script>
@@ -153,7 +183,7 @@
     'reviewer': t.chat_sys_reviewer
   },
   'off': t.chat_off, 'loading': t.chat_loading, 'busy': t.chat_busy,
-  'start': t.m_start, 'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled,
+  'start': t.m_start, 'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled, 'new_chat': t.chat_new,
   'rename': t.chat_rename, 'del': t.chat_delete, 'del_confirm': t.chat_delete_confirm,
   'perm_title': t.ag_perm_title, 'allow': t.ag_allow, 'deny': t.ag_deny,
   'expires': t.ag_perm_expires, 'allowed': t.ag_allowed, 'denied': t.ag_denied,
@@ -168,106 +198,115 @@
   'lh_rounds': t.lh_rounds,
   'lang': lang} %}
 <section class="chat" data-chat data-csrf="{{ csrf }}">
-  <div class="chat-head">
-    <div class="chat-title-row">
-      <button type="button" class="btn ghost small sidebar-toggle" data-sidebar-toggle aria-expanded="false">☰ {{ t.chat_history }}</button>
-      <h2>{{ t.chat_nav }}</h2>
-    </div>
-    <div class="chat-controls">
-      {{ agent_select() }}
+  {{ chat_topbar(show_full_badge=false, show_new=view.models|length > 0) }}
+  <div class="chat-scroll" data-chat-scroll>
+    <div class="chat-column">
+      <div class="chat-setup">
+        <div class="chat-head">
+          <div class="chat-controls">
+            {{ agent_select() }}
+            {% if view.models %}
+            <label><span class="label">{{ t.chat_model }}</span>
+              <select data-model>
+                {% if view.groups|length > 1 %}
+                {% for g in view.groups %}
+                <optgroup label="{{ g.label }}">
+                  {% for m in g.models %}
+                  <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
+                          {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}" data-abliterated="{{ '1' if m.abliterated else '0' }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
+                  {% endfor %}
+                </optgroup>
+                {% endfor %}
+                {% else %}
+                {% for m in view.models %}
+                <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
+                        {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}" data-abliterated="{{ '1' if m.abliterated else '0' }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
+                {% endfor %}
+                {% endif %}
+              </select></label>
+            <label><span class="label">{{ t.chat_effort }}</span>
+              <select data-effort>
+                {% for e in ['none', 'low', 'medium', 'high'] %}
+                <option value="{{ e }}" {% if e == 'low' %}selected{% endif %}>{{ t['chat_effort_' ~ e] }}</option>
+                {% endfor %}
+              </select></label>
+            <label><span class="label">{{ t.chat_preset }}</span>
+              <select data-preset>
+                <option value="">{{ t.chat_preset_default }}</option>
+                <option value="coder">{{ t.chat_preset_coder }}</option>
+                <option value="tutor">{{ t.chat_preset_tutor }}</option>
+                <option value="reviewer">{{ t.chat_preset_reviewer }}</option>
+                <option value="custom">{{ t.chat_preset_custom }}</option>
+              </select></label>
+            {% endif %}
+          </div>
+        </div>
+        {% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
+        {% if not view.models %}
+        <p class="muted">{{ t.m_no_config.format(path=view.config.path) }}</p>
+        {% else %}
+        <div class="local-tools-bar">
+          <div class="ag-mode-pills" role="radiogroup" aria-label="{{ t.lh_mode }}">
+            <label class="ag-pill"><input type="radio" name="lh-mode" value="off" checked data-harness-mode><span>{{ t.lh_off }}</span></label>
+            <label class="ag-pill lh-pill-on"><input type="radio" name="lh-mode" value="on" data-harness-mode><span>{{ t.lh_on }}</span></label>
+          </div>
+          <label class="lh-folder-wrap" data-harness-folder-wrap hidden><span class="label">{{ t.ag_folder }}</span>
+            <select data-harness-folder>
+              <option value="">{{ t.lh_folder_none }}</option>
+              {% for f in local_folders %}
+              <option value="{{ f.key }}"{% if f.branch %} data-branch="{{ f.branch }}"{% endif %}{% if selected_folder and f.key.lower() == selected_folder.lower() %} selected{% endif %}>{{ f.label }}</option>
+              {% endfor %}
+            </select></label>
+          <details class="ag-mode-info">
+            <summary class="small muted" title="{{ t.lh_mode }}">?</summary>
+            <div class="ag-mode-info-body small muted">
+              <p>{{ t.lh_help_tools }}</p>
+              <p>{{ t.lh_help_safety }}</p>
+            </div>
+          </details>
+        </div>
+        <p class="local-harness-warn small" role="alert" data-harness-warn hidden></p>
+        <textarea class="custom-sys small" data-custom-system rows="2" hidden placeholder="{{ t.chat_custom_sys_placeholder }}" aria-label="{{ t.chat_preset_custom }}"></textarea>
+        <div class="warn chat-off" data-off hidden>
+          <span data-off-text></span>
+          <form method="post" data-start-form>
+            <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="/chat">
+            <button type="submit" class="btn small" data-start>{{ t.m_start }}</button>
+          </form>
+        </div>
+        {% endif %}
+      </div>
       {% if view.models %}
-      <label><span class="label">{{ t.chat_model }}</span>
-        <select data-model>
-          {% if view.groups|length > 1 %}
-          {% for g in view.groups %}
-          <optgroup label="{{ g.label }}">
-            {% for m in g.models %}
-            <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
-                    {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}" data-abliterated="{{ '1' if m.abliterated else '0' }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
-            {% endfor %}
-          </optgroup>
-          {% endfor %}
-          {% else %}
-          {% for m in view.models %}
-          <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
-                  {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}" data-abliterated="{{ '1' if m.abliterated else '0' }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
-          {% endfor %}
-          {% endif %}
-        </select></label>
-      <label><span class="label">{{ t.chat_effort }}</span>
-        <select data-effort>
-          {% for e in ['none', 'low', 'medium', 'high'] %}
-          <option value="{{ e }}" {% if e == 'low' %}selected{% endif %}>{{ t['chat_effort_' ~ e] }}</option>
-          {% endfor %}
-        </select></label>
-      <label><span class="label">{{ t.chat_preset }}</span>
-        <select data-preset>
-          <option value="">{{ t.chat_preset_default }}</option>
-          <option value="coder">{{ t.chat_preset_coder }}</option>
-          <option value="tutor">{{ t.chat_preset_tutor }}</option>
-          <option value="reviewer">{{ t.chat_preset_reviewer }}</option>
-          <option value="custom">{{ t.chat_preset_custom }}</option>
-        </select></label>
-      <a class="btn ghost small" data-to-task hidden href="/tasks/new">{{ t.chat_to_task }} →</a>
-      <button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>
+      <div class="chat-log" data-log aria-live="polite">
+        <div class="chat-empty" data-empty>
+          <p class="muted">{{ t.chat_empty }}</p>
+          <div class="chat-suggests">
+            <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_explain }}">{{ t.chat_sug_explain }}</button>
+            <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_review }}">{{ t.chat_sug_review }}</button>
+            <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_ideas }}">{{ t.chat_sug_ideas }}</button>
+          </div>
+        </div>
+      </div>
       {% endif %}
     </div>
   </div>
-  {% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
-  {% if not view.models %}
-  <p class="muted">{{ t.m_no_config.format(path=view.config.path) }}</p>
-  {% else %}
-  <div class="local-tools-bar">
-    <div class="ag-mode-pills" role="radiogroup" aria-label="{{ t.lh_mode }}">
-      <label class="ag-pill"><input type="radio" name="lh-mode" value="off" checked data-harness-mode><span>{{ t.lh_off }}</span></label>
-      <label class="ag-pill lh-pill-on"><input type="radio" name="lh-mode" value="on" data-harness-mode><span>{{ t.lh_on }}</span></label>
-    </div>
-    <label class="lh-folder-wrap" data-harness-folder-wrap hidden><span class="label">{{ t.ag_folder }}</span>
-      <select data-harness-folder>
-        <option value="">{{ t.lh_folder_none }}</option>
-        {% for f in local_folders %}
-        <option value="{{ f.key }}"{% if selected_folder and f.key.lower() == selected_folder.lower() %} selected{% endif %}>{{ f.label }}</option>
-        {% endfor %}
-      </select></label>
-    <details class="ag-mode-info">
-      <summary class="small muted" title="{{ t.lh_mode }}">?</summary>
-      <div class="ag-mode-info-body small muted">
-        <p>{{ t.lh_help_tools }}</p>
-        <p>{{ t.lh_help_safety }}</p>
+  {% if view.models %}
+  <div class="chat-dock" data-chat-dock>
+    <div class="chat-dock-inner">
+      <button type="button" class="scroll-bottom" data-scroll-bottom hidden aria-label="{{ t.chat_scroll_bottom }}">↓</button>
+      <div class="ctx-meter small muted" data-ctx-meter hidden>
+        <span data-ctx-text></span>
+        <span class="ctx-bar"><span class="ctx-fill" data-ctx-fill></span></span>
       </div>
-    </details>
-  </div>
-  <p class="local-harness-warn small" role="alert" data-harness-warn hidden></p>
-  <textarea class="custom-sys small" data-custom-system rows="2" hidden placeholder="{{ t.chat_custom_sys_placeholder }}" aria-label="{{ t.chat_preset_custom }}"></textarea>
-  <div class="warn chat-off" data-off hidden>
-    <span data-off-text></span>
-    <form method="post" data-start-form>
-      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="/chat">
-      <button type="submit" class="btn small" data-start>{{ t.m_start }}</button>
-    </form>
-  </div>
-  <div class="chat-log" data-log aria-live="polite">
-    <div class="chat-empty" data-empty>
-      <p class="muted">{{ t.chat_empty }}</p>
-      <div class="chat-suggests">
-        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_explain }}">{{ t.chat_sug_explain }}</button>
-        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_review }}">{{ t.chat_sug_review }}</button>
-        <button type="button" class="suggest-chip" data-suggest="{{ t.chat_sug_ideas }}">{{ t.chat_sug_ideas }}</button>
-      </div>
+      <div class="attach-bar" data-attach-bar hidden></div>
+      <form class="chat-input" data-form>
+        <input type="file" data-attach-input accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+        <button type="button" class="attach-btn" data-attach-btn title="{{ t.chat_attach }}" aria-label="{{ t.chat_attach }}">＋</button>
+        <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
+        <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
+      </form>
     </div>
   </div>
-  <button type="button" class="scroll-bottom" data-scroll-bottom hidden aria-label="{{ t.chat_scroll_bottom }}">↓</button>
-  <div class="ctx-meter small muted" data-ctx-meter hidden>
-    <span data-ctx-text></span>
-    <span class="ctx-bar"><span class="ctx-fill" data-ctx-fill></span></span>
-  </div>
-  <div class="attach-bar" data-attach-bar hidden></div>
-  <form class="chat-input" data-form>
-    <input type="file" data-attach-input accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
-    <button type="button" class="attach-btn" data-attach-btn title="{{ t.chat_attach }}" aria-label="{{ t.chat_attach }}">＋</button>
-    <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
-    <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
-  </form>
   {% endif %}
 </section>
 <script id="chat-strings" type="application/json">{{ js|tojson }}</script>

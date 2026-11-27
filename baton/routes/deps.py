@@ -223,17 +223,47 @@ class AppContext:
         """Where an agent conversation may work: Baton's local clones and the
         scratch folder. The browser only ever sends one of these keys."""
         out = [
-            {"key": repo, "label": repo, "path": path}
+            {"key": repo, "label": repo, "path": path, "branch": _git_branch(path)}
             for repo, path in sorted(self.runner.repos.all().items())
             if path.is_dir()
         ]
         if self.settings.chat_scratch:
+            scratch = Path(self.settings.chat_scratch)
             out.append({
                 "key": "scratch",
                 "label": f"{self.settings.chat_scratch} ({self.t['ag_scratch']})",
-                "path": Path(self.settings.chat_scratch),
+                "path": scratch,
+                "branch": _git_branch(scratch) if scratch.is_dir() else "",
             })
         return out
+
+
+def _git_branch(path: Path) -> str:
+    """Read the current git branch (or short detached HEAD SHA) directly from .git/HEAD."""
+    dot_git = path / ".git"
+    try:
+        if dot_git.is_file():
+            text = dot_git.read_text(encoding="utf-8", errors="ignore").strip()
+            if not text.lower().startswith("gitdir:"):
+                return ""
+            raw = text.split(":", 1)[1].strip()
+            git_dir = Path(raw)
+            if not git_dir.is_absolute():
+                git_dir = (path / git_dir).resolve()
+        elif dot_git.is_dir():
+            git_dir = dot_git
+        else:
+            return ""
+        head = (git_dir / "HEAD").read_text(encoding="utf-8", errors="ignore").strip()
+    except OSError:
+        return ""
+    if head.startswith("ref: refs/heads/"):
+        return head[len("ref: refs/heads/"):].strip()
+    if head.startswith("ref:"):
+        return head.rsplit("/", 1)[-1].strip()
+    if len(head) >= 7 and all(c in "0123456789abcdefABCDEF" for c in head[:7]):
+        return head[:7]
+    return ""
 
 
 def get_ctx(request: Request) -> AppContext:

@@ -14,6 +14,7 @@
   var effortSel = root.querySelector("[data-effort]"), off = root.querySelector("[data-off]");
   var offText = root.querySelector("[data-off-text]"), startForm = root.querySelector("[data-start-form]");
   var scrollBtn = root.querySelector("[data-scroll-bottom]");
+  var scrollEl = root.querySelector("[data-chat-scroll]");
   var presetSel = root.querySelector("[data-preset]");
   var customSys = root.querySelector("[data-custom-system]");
   var ctxMeter = root.querySelector("[data-ctx-meter]");
@@ -27,8 +28,21 @@
 
   var md = window.BatonChat.md;
   var diffBlock = window.BatonChat.diffBlock;
-  var scroller = window.BatonChat.createScroller(scrollBtn);
+  var scroller = window.BatonChat.createScroller(scrollBtn, scrollEl);
   var attachments = window.BatonChat.createAttachments(root, text);
+
+  var header = window.BatonChat.initHeader({
+    root: root,
+    csrf: csrf,
+    labels: {
+      newChat: T.new_chat,
+      untitled: T.untitled,
+      rename: T.rename,
+      delConfirm: T.del_confirm
+    },
+    onAfterRename: function () { sidebar.refresh(threadId); },
+    onAfterDelete: function () { startNew(); sidebar.refresh(""); }
+  });
 
   try { var eff = localStorage.getItem("baton-chat-effort"); if (eff && effortSel.querySelector('option[value="' + CSS.escape(eff) + '"]')) effortSel.value = eff; } catch (e) {}
   if (harnessFolderSel) {
@@ -50,9 +64,20 @@
     var onRadio = root.querySelector('[data-harness-mode][value="on"]');
     return !!(onRadio && onRadio.checked);
   }
+  function syncHeaderContext() {
+    if (!harnessOn() || !harnessFolderSel || !harnessFolderSel.value) {
+      header.setContext("", "");
+      return;
+    }
+    var opt = harnessFolderSel.options[harnessFolderSel.selectedIndex];
+    var label = (opt && (opt.dataset.label || opt.textContent)) || harnessFolderSel.value;
+    var branch = (opt && opt.dataset.branch) || "";
+    header.setContext(label, branch);
+  }
   function syncHarnessUi() {
     var on = harnessOn();
     if (harnessFolderWrap) harnessFolderWrap.hidden = !on;
+    syncHeaderContext();
     if (!harnessWarn) return;
     if (!on) {
       harnessWarn.hidden = true;
@@ -120,14 +145,6 @@
     });
   }
 
-  var toTaskLinks = root.querySelectorAll("[data-to-task]");
-  function syncToTask() {
-    toTaskLinks.forEach(function (a) {
-      a.hidden = !threadId;
-      if (threadId) a.href = "/tasks/new?from_thread=" + encodeURIComponent(threadId);
-    });
-  }
-
   function persistThread() {
     if (!messages.length) return Promise.resolve();
     var payload = {
@@ -139,17 +156,21 @@
     };
     if (threadId) {
       return api("/api/chat-threads/" + encodeURIComponent(threadId) + "/messages", "POST", payload)
-        .then(function () { syncToTask(); sidebar.refresh(threadId); })
+        .then(function (updated) {
+          header.setThread(threadId, updated && updated.title ? updated.title : undefined);
+          sidebar.refresh(threadId);
+        })
         .catch(function () {});
     }
     return api("/api/chat-threads", "POST", {
       agent: "local", model: modelSel.value, effort: effortSel.value
     }).then(function (th) {
       threadId = th.id;
-      syncToTask();
+      header.setThread(threadId, th.title || "");
       history.replaceState(null, "", "/chat?agent=local&thread=" + encodeURIComponent(threadId));
       return api("/api/chat-threads/" + encodeURIComponent(threadId) + "/messages", "POST", payload);
-    }).then(function () {
+    }).then(function (updated) {
+      if (updated && updated.title) header.setTitle(updated.title);
       sidebar.refresh(threadId);
     }).catch(function () {});
   }
@@ -177,7 +198,7 @@
   function applyThread(th) {
     threadId = th.id || "";
     lastUsedTokens = 0;
-    syncToTask();
+    header.setThread(threadId, th.title || "");
     if (th.model && modelSel.querySelector('option[value="' + CSS.escape(th.model) + '"]')) {
       modelSel.value = th.model;
     }
@@ -201,7 +222,7 @@
     threadId = "";
     lastUsedTokens = 0;
     attachments.clear();
-    syncToTask();
+    header.setThread("", "");
     messages = [];
     sidebar.setActive("");
     renderAll();
@@ -224,6 +245,8 @@
     },
     onNew: startNew,
     onSelect: function (th) { loadThread(th.id); },
+    onRenamedActive: function (title) { header.setTitle(title); },
+    onActiveMeta: function (th) { if (th && th.title) header.setTitle(th.title); },
     onDeletedActive: startNew
   });
 

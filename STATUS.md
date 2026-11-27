@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
 updated: 2026-11-27
-updated_by: antigravity
+updated_by: human
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -59,7 +59,7 @@ links:
   exactly in the `dev` extra; skip when no browser is installed. Verify: the test fails on a commit
   that reintroduces `button { color: … !important }`.
   Recommended: claude-code, opus, medium
-- [ ] (Marco) Try `web_search` from `/chat` with a local model in **Internet + tools** mode (needs your sign-in)
+- [x] 2026-11-27 (Marco) Try `web_search` from `/chat` with a local model in **Internet + tools** mode (needs your sign-in)
 - [ ] (Marco) Decide two layout questions from the UI review
   (a) collapse the global menu to icons on `/chat` to give the conversation more width;
   (b) local chat without models: show the same composer with a setup notice instead of the old "Agent" form.

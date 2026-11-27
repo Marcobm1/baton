@@ -111,6 +111,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     agent_chats = AgentChats(
         data_dir=settings.data_dir,
         sandbox_image=settings.sandbox_image,
+        agents_sandbox_image=settings.agents_sandbox_image,
         on_permission_wait=notifier.notify_permission,
     )
     local_harness = LocalHarnessManager(

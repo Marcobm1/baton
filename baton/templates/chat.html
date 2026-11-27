@@ -87,7 +87,7 @@
         {% endif %}
         <input type="radio" name="ag-mode" value="confirm" checked data-mode>
         <input type="radio" name="ag-mode" value="full"{% if not oc.sandbox_ready %} disabled{% endif %} data-mode>
-        <span data-full-note>{{ t.ag_full_help if oc.sandbox_ready else t.ag_full_off }}</span>
+        <span data-full-note>{% if agent == 'opencode' %}{{ t.ag_full_help if oc.sandbox_ready else t.ag_full_off }}{% else %}{{ t.ag_full_help_agent if oc.sandbox_ready else t.ag_full_off_agent }}{% endif %}</span>
         {% else %}
         <select data-model>
           {% if view.groups|length > 1 %}

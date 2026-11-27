@@ -230,11 +230,75 @@ interactive protocols:
     selector (`GET /api/agents/sessions`) to resume any saved session from
     desktop or phone; `POST /api/agents` validates that `resume` belongs to a
     saved session for that agent (fail closed).
-- **Permissions boundary:** **All permissions** stays refused (`403`) on the
-  server for Claude Code and Codex (only OpenCode local models run inside the
-  credential-free Docker sandbox).
+- **Permissions boundary:** Confirm mode remains the default on the host;
+  **All permissions** requires the isolated multi-CLI Docker sandbox below
+  (refused with `403` otherwise, and always refused for abliterated models).
 - **Tests (`tests/test_agents_phase2.py`, `tests/fake_claude_chat.py`, `tests/fake_codex_app_server.py`):**
   verify CLI flags, free reads, allow/deny/timeout/cancel approvals, fail-closed
   bypass rejection, environment & `account`/`credential_expires_at` scrubbing,
-  Full mode 403 refusal, auth on `/api/agents/sessions`, and session resume
-  across a simulated Baton restart.
+  Full mode 403 refusal without sandbox, auth on `/api/agents/sessions`, and
+  session resume across a simulated Baton restart.
+
+## Multi-CLI Docker sandbox for Claude Code, Codex, and Gemini (2026-11-27)
+
+**All permissions** in `/chat` also supports **Claude Code**, **Codex**, and
+**Gemini (`agy`)** inside a hardened Linux container built from
+`docker/agents-sandbox.Dockerfile`:
+
+```bash
+# 1. Build the multi-CLI sandbox image once on the host:
+docker build -f docker/agents-sandbox.Dockerfile -t baton-agents-sandbox:latest .
+
+# 2. Sign in once per CLI you want to unlock (one isolated Docker volume per CLI):
+baton sandbox-login claude-code
+baton sandbox-login codex
+baton sandbox-login gemini
+```
+
+(Override the image tag with `BATON_AGENTS_SANDBOX_IMAGE` if needed.)
+
+### Isolation and credential design
+
+- **Zero host credential access by Baton:** Baton never reads, copies, stores,
+  or forwards host OAuth tokens or host `~/.claude` / `~/.codex` / `~/.gemini`
+  profiles. Instead, each CLI signs in directly inside a disposable login
+  container (`baton sandbox-login <agent>`, mounting **no** host folder) backed
+  by its own dedicated Docker named volume:
+  - `claude-code` → `baton-sandbox-claude-auth` → `/home/agent/.claude` (`CLAUDE_CONFIG_DIR=/home/agent/.claude`, `DISABLE_AUTOUPDATER=1`)
+  - `codex` → `baton-sandbox-codex-auth` → `/home/agent/.codex` (`CODEX_HOME=/home/agent/.codex`, login via `codex login --device-auth`)
+  - `gemini` → `baton-sandbox-gemini-auth` → `/home/agent/.gemini` (`XDG_CONFIG_HOME` and `XDG_DATA_HOME` routed inside the volume)
+- **Strict per-agent volume separation:** a Claude Code container never mounts
+  Codex's or Gemini's auth volume (and vice versa). Baton checks readiness with
+  `docker image inspect` + `docker volume inspect` only — it never inspects the
+  files inside any volume.
+- **Hardened runtime (`sandbox_agent_docker_command()`):**
+  `docker run --rm -i --init --cap-drop=ALL --security-opt=no-new-privileges:true --pids-limit=256 --memory=4g`,
+  bind-mounting **only** the canonical selected workspace folder at `/workspace`
+  plus that single agent's auth volume. No Windows/host home directory, no
+  sibling repos, no `.baton` data, no Docker socket, and no host secrets
+  (`GITHUB_TOKEN`, `BATON_*`, `ANTHROPIC_API_KEY`, etc.).
+- **In-container protocol adjustments & fail-closed guards:**
+  - **Claude Code (`baton/chat_claude.py`):** passes `--dangerously-skip-permissions`
+    inside Docker only; `ClaudeChat.start()` and `system/init` fail closed if
+    `mode == "full"` without `isolated=True` or if bypass mode appears outside
+    Docker.
+  - **Codex (`baton/chat_codex.py`):** passes `cwd="/workspace"`,
+    `sandbox="danger-full-access"`, and `approvalPolicy="never"` inside Docker
+    only (nested Landlock/userns sandboxing is unavailable under `--cap-drop=ALL`;
+    Docker itself is the boundary). Fails closed if `mode == "full"` without
+    `isolated=True`.
+  - **Gemini (`baton/agent_chat.py`):** runs `agy acp --dangerously-skip-permissions`
+    with `cwd="/workspace"` and ACP mode `"auto"` inside Docker only; fails
+    closed if `mode == "full"` without `isolated=True`.
+  - **Hardlinks & abliterated models:** `find_hardlinks(folder)` refuses (`403`)
+    any workspace containing hardlinks (`st_nlink > 1`), and abliterated models
+    remain permanently refused (`403`).
+- **Residual trade-off (explicit):** host isolation is real (a rogue command
+  cannot reach Windows, sibling projects, SSH keys, Baton data, or other agents'
+  volumes), **but** because the CLI process inside the container needs its own
+  OAuth token to talk to Anthropic/OpenAI/Google, a malicious command running as
+  the same container user could read that single CLI's auth volume and exfiltrate
+  it over the internet. Only point All-permissions containers at repositories
+  and prompts you trust, and revoke/delete a volume anytime with
+  `docker volume rm baton-sandbox-<agent>-auth`.
+

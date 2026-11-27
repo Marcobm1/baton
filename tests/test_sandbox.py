@@ -260,3 +260,259 @@ def test_real_docker_container_confines_workspace_and_blocks_sibling_and_symlink
     assert (workspace / "by-parent.txt").read_text(encoding="utf-8").strip() == "from-parent"
     assert (workspace / "by-child.txt").read_text(encoding="utf-8").strip() == "from-child"
     assert secret.read_text(encoding="utf-8").strip() == "TOP_SECRET_SIBLING_DATA"
+
+
+FAKE_CLAUDE = Path(__file__).with_name("fake_claude_chat.py")
+FAKE_CODEX = Path(__file__).with_name("fake_codex_app_server.py")
+
+
+def test_sandbox_agent_docker_command_and_login_isolation(tmp_path):
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    all_vols = {a: p.volume for a, p in sandbox.AGENT_SANDBOX_PROFILES.items()}
+
+    for agent, profile in sandbox.AGENT_SANDBOX_PROFILES.items():
+        cmd = sandbox.sandbox_agent_docker_command(
+            agent, ws, "baton-agents-sandbox:latest", ["echo", "ok"],
+            container_name=f"baton-sandbox-{agent}", docker_bin="docker",
+        )
+        assert cmd[:5] == ["docker", "run", "--rm", "-i", "--init"]
+        assert "--cap-drop=ALL" in cmd
+        assert "--security-opt=no-new-privileges:true" in cmd
+        assert "--pids-limit=256" in cmd
+        assert "--memory=4g" in cmd
+        assert f"type=bind,src={os.path.realpath(ws)},dst=/workspace" in cmd
+        assert f"type=volume,src={profile.volume},dst={profile.mount_dst}" in cmd
+        assert cmd[cmd.index("-w") + 1] == "/workspace"
+        joined = " ".join(cmd)
+        assert "docker.sock" not in joined
+        assert "GITHUB_TOKEN" not in joined
+        assert "BATON_ACCESS_KEY" not in joined
+        # One agent's container never mounts another agent's auth volume.
+        for other, other_vol in all_vols.items():
+            if other != agent:
+                assert other_vol not in joined
+
+        login = sandbox.sandbox_login_command(agent, "baton-agents-sandbox:latest", docker_bin="docker")
+        assert login[:5] == ["docker", "run", "--rm", "-it", "--init"]
+        assert "--cap-drop=ALL" in login
+        assert "--security-opt=no-new-privileges:true" in login
+        assert f"type=volume,src={profile.volume},dst={profile.mount_dst}" in login
+        assert "type=bind" not in " ".join(login)
+        assert login[-len(profile.login_cmd):] == list(profile.login_cmd)
+
+    with pytest.raises(ValueError):
+        sandbox.sandbox_agent_docker_command("unknown", ws, "img", ["sh"], container_name="c")
+    with pytest.raises(ValueError):
+        sandbox.sandbox_login_command("unknown", "img")
+
+
+def test_claude_codex_gemini_full_mode_sandbox_end_to_end(tmp_path, monkeypatch):
+    async def no_projects(self, force=False):
+        return [], []
+
+    catalogs = {
+        "claude-code": {"claude-sonnet-4-6": {"label": "Claude Sonnet 4.6", "efforts": ["low", "high"]}},
+        "codex": {"gpt-6.2-sol": {"label": "GPT-6.2 Sol", "efforts": ["low", "high"]}},
+        "gemini": {"gemini-4-neon": {"label": "Gemini 4 Neon", "efforts": ["low", "high"]}},
+    }
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    monkeypatch.setattr(web, "find_claude", lambda: "claude")
+    monkeypatch.setattr(web, "find_codex", lambda: "codex")
+    monkeypatch.setattr(web, "find_agy", lambda: "agy")
+    monkeypatch.setattr(web, "catalog", lambda agent: catalogs.get(agent, {}))
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret_agents")
+    monkeypatch.setenv("BATON_ACCESS_KEY", "secret_key_agents")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk_ant_secret_agents")
+
+    scratch = tmp_path / "scratch"
+    app = create_app(Settings(
+        data_dir=tmp_path / "data", lang="en", self_update=False,
+        chat_scratch=str(scratch), sandbox_image="", agents_sandbox_image="",
+    ))
+    chats = app.state.agent_chats
+    seen_calls: list[tuple[str, Path, str, list[str]]] = []
+
+    def fake_agent_sandbox(agent: str, folder: Path, cname: str, inner: list[str]) -> list[str]:
+        seen_calls.append((agent, folder, cname, list(inner)))
+        if agent == "claude-code":
+            return [sys.executable, str(FAKE_CLAUDE), *inner[1:]]
+        if agent == "codex":
+            return [sys.executable, str(FAKE_CODEX)]
+        return [sys.executable, str(FAKE_ACP), "--gemini"]
+
+    chats.agent_sandbox_command = fake_agent_sandbox
+
+    def wait_idle(chat, seconds: float = 10.0) -> None:
+        deadline = time.time() + seconds
+        while time.time() < deadline and chat.busy:
+            time.sleep(0.02)
+        assert not chat.busy
+
+    def get_events(client: TestClient, cid: str) -> list[dict]:
+        resp = client.get(f"/api/agents/{cid}/events?after=0")
+        assert resp.status_code == 200
+        return [json.loads(line[6:]) for line in resp.text.splitlines()
+                if line.startswith("data: ") and line != "data: {}"]
+
+    with TestClient(app) as client:
+        # 1. Claude Code Full mode inside Docker sandbox.
+        p_claude = client.get("/chat?agent=claude-code").text
+        assert 'data-sandbox-ready="1"' in p_claude
+        assert 'value="full" data-mode' in p_claude
+        assert EN["ag_full_help_agent"] in p_claude
+        csrf = p_claude.split('data-csrf="')[1].split('"')[0]
+        headers = {"X-Baton-CSRF": csrf}
+
+        r = client.post("/api/agents", json={
+            "agent": "claude-code", "model": "claude-sonnet-4-6",
+            "effort": "high", "folder": "scratch", "mode": "full",
+        }, headers=headers)
+        assert r.status_code == 200, r.text
+        info = r.json()
+        assert info["mode"] == "full" and info["isolated"] is True
+        cid = info["id"]
+        chat = chats.get(cid)
+        assert seen_calls[-1][0] == "claude-code"
+        assert "--dangerously-skip-permissions" in seen_calls[-1][3]
+        assert "--permission-mode" not in seen_calls[-1][3]
+
+        assert client.post(f"/api/agents/{cid}/prompt", json={"text": "write claude_full.txt ok"}, headers=headers).status_code == 202
+        wait_idle(chat)
+        assert (scratch / "claude_full.txt").read_text(encoding="utf-8") == "ok\n"
+        assert client.post(f"/api/agents/{cid}/prompt", json={"text": "run echo hi"}, headers=headers).status_code == 202
+        wait_idle(chat)
+        assert client.post(f"/api/agents/{cid}/prompt", json={"text": "env"}, headers=headers).status_code == 202
+        wait_idle(chat)
+        evs = get_events(client, cid)
+        assert not [e for e in evs if e["type"] == "permission"]
+        raw = json.dumps(evs)
+        assert "leaked: none" in raw and "SECRET_CLAUDE_EMAIL" not in raw
+        assert client.post(f"/api/agents/{cid}/close", headers=headers).status_code == 200
+
+        # 2. Codex Full mode inside Docker sandbox.
+        p_codex = client.get("/chat?agent=codex").text
+        assert 'data-sandbox-ready="1"' in p_codex
+        r2 = client.post("/api/agents", json={
+            "agent": "codex", "model": "gpt-6.2-sol",
+            "effort": "low", "folder": "scratch", "mode": "full",
+        }, headers=headers)
+        assert r2.status_code == 200, r2.text
+        info2 = r2.json()
+        assert info2["mode"] == "full" and info2["isolated"] is True
+        cid2 = info2["id"]
+        chat2 = chats.get(cid2)
+        assert seen_calls[-1][0] == "codex" and seen_calls[-1][3] == ["codex", "app-server"]
+
+        assert client.post(f"/api/agents/{cid2}/prompt", json={"text": "edit codex_full.txt done"}, headers=headers).status_code == 202
+        wait_idle(chat2)
+        assert (scratch / "codex_full.txt").read_text(encoding="utf-8") == "done\n"
+        assert client.post(f"/api/agents/{cid2}/prompt", json={"text": "run echo codex-ok"}, headers=headers).status_code == 202
+        wait_idle(chat2)
+        assert (scratch / "accepted.txt").read_text(encoding="utf-8").strip() == "echo codex-ok"
+        assert client.post(f"/api/agents/{cid2}/prompt", json={"text": "env"}, headers=headers).status_code == 202
+        wait_idle(chat2)
+        evs2 = get_events(client, cid2)
+        assert not [e for e in evs2 if e["type"] == "permission"]
+        raw2 = json.dumps(evs2)
+        assert "leaked: none" in raw2 and "SECRET_PLAN_PRO" not in raw2
+        assert client.post(f"/api/agents/{cid2}/close", headers=headers).status_code == 200
+
+        # 3. Gemini (agy) Full mode inside Docker sandbox.
+        p_gem = client.get("/chat?agent=gemini").text
+        assert 'data-sandbox-ready="1"' in p_gem
+        r3 = client.post("/api/agents", json={
+            "agent": "gemini", "model": "gemini-4-neon",
+            "effort": "high", "folder": "scratch", "mode": "full",
+        }, headers=headers)
+        assert r3.status_code == 200, r3.text
+        info3 = r3.json()
+        assert info3["mode"] == "full" and info3["isolated"] is True
+        cid3 = info3["id"]
+        chat3 = chats.get(cid3)
+        assert seen_calls[-1][0] == "gemini"
+        assert seen_calls[-1][3] == ["agy", "acp", "--dangerously-skip-permissions"]
+
+        assert client.post(f"/api/agents/{cid3}/prompt", json={"text": "write gem_full.txt ok"}, headers=headers).status_code == 202
+        wait_idle(chat3)
+        assert (scratch / "gem_full.txt").read_text(encoding="utf-8") == "ok\n"
+        assert client.post(f"/api/agents/{cid3}/prompt", json={"text": "run echo gem-ok"}, headers=headers).status_code == 202
+        wait_idle(chat3)
+        assert client.post(f"/api/agents/{cid3}/prompt", json={"text": "env"}, headers=headers).status_code == 202
+        wait_idle(chat3)
+        evs3 = get_events(client, cid3)
+        assert not [e for e in evs3 if e["type"] == "permission"]
+        gem_text = "".join(e["text"] for e in evs3 if e["type"] == "text")
+        assert "leaked: none" in gem_text
+        assert client.post(f"/api/agents/{cid3}/close", headers=headers).status_code == 200
+
+        # 4. Hardlinks refuse Full mode for Claude Code, Codex, and Gemini too.
+        sibling = tmp_path / "sibling_agents"
+        sibling.mkdir()
+        secret = sibling / "secret.txt"
+        secret.write_text("SIBLING\n", encoding="utf-8")
+        os.link(str(secret), str(scratch / "hl.txt"))
+        for ag, mod in [("claude-code", "claude-sonnet-4-6"), ("codex", "gpt-6.2-sol"), ("gemini", "gemini-4-neon")]:
+            rh = client.post("/api/agents", json={
+                "agent": ag, "model": mod, "effort": "low", "folder": "scratch", "mode": "full",
+            }, headers=headers)
+            assert rh.status_code == 403 and EN["ag_full_hardlink"] in rh.json()["detail"]
+
+
+def test_full_mode_fails_closed_without_isolated_flag_and_stops_containers(tmp_path, monkeypatch):
+    from baton import chat_claude, chat_codex
+    from baton.agent_chat import AcpError, AgentChat
+
+    with pytest.raises(AcpError):
+        chat_claude.ClaudeChat(
+            id="c1", folder=tmp_path, folder_label="ws", model="claude-sonnet-4-6",
+            effort="low", mode="full", isolated=False,
+        ).start(["echo"], {})
+    with pytest.raises(AcpError):
+        chat_codex.CodexChat(
+            id="c2", folder=tmp_path, folder_label="ws", model="gpt-6.2-sol",
+            effort="low", mode="full", isolated=False,
+        ).start(["echo"], {})
+    with pytest.raises(AcpError):
+        AgentChat(
+            id="c3", folder=tmp_path, folder_label="ws", model="gemini-4-neon",
+            effort="low", mode="full", agent="gemini", isolated=False,
+        ).start(["echo"], {})
+
+    stopped: list[str] = []
+    monkeypatch.setattr(chat_claude, "stop_container", stopped.append)
+    monkeypatch.setattr(chat_codex, "stop_container", stopped.append)
+    chat_claude.ClaudeChat(
+        id="c4", folder=tmp_path, folder_label="ws", model="m", effort="low", container_name="box-claude",
+    ).close()
+    chat_codex.CodexChat(
+        id="c5", folder=tmp_path, folder_label="ws", model="m", effort="low", container_name="box-codex",
+    ).close()
+    assert stopped == ["box-claude", "box-codex"]
+
+
+def test_cli_sandbox_login(monkeypatch, capsys):
+    from baton import __main__ as cli
+
+    monkeypatch.setattr(cli, "_settings", lambda: Settings())
+    monkeypatch.setattr(sandbox, "find_docker", lambda: None)
+    assert cli.main(["sandbox-login", "codex"]) == 1
+    assert "Docker CLI" in capsys.readouterr().err
+
+    monkeypatch.setattr(sandbox, "find_docker", lambda: "docker")
+    monkeypatch.setattr(sandbox, "docker_available", lambda img: False)
+    assert cli.main(["sandbox-login", "claude-code"]) == 1
+    err = capsys.readouterr().err
+    assert "docker build -f docker/agents-sandbox.Dockerfile" in err
+
+    ran: list[list[str]] = []
+
+    class _Done:
+        returncode = 0
+
+    monkeypatch.setattr(sandbox, "docker_available", lambda img: True)
+    monkeypatch.setattr(cli.subprocess, "run", lambda cmd: (ran.append(cmd), _Done())[1])
+    assert cli.main(["sandbox-login", "codex", "--image", "custom:latest"]) == 0
+    assert ran and ran[0][-3:] == ["codex", "login", "--device-auth"]
+    assert "custom:latest" in ran[0]
+

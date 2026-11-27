@@ -103,7 +103,8 @@ def prompt(sid, text):
                 "rawInput": {"filePath": str(path), "content": new}, "locations": [{"path": str(path)}],
                 "content": [{"type": "diff", "path": str(path), "oldText": old, "newText": new}]}
         update(sid, sessionUpdate="tool_call", **call)
-        choice = "once" if state["mode"] == "baton-chat-full" else ask(sid, call)
+        auto_ok = state["mode"] == "baton-chat-full" or (GEMINI and state["mode"] == "auto")
+        choice = "once" if auto_ok else ask(sid, call)
         if choice == "once":
             path.write_text(new)
             update(sid, sessionUpdate="tool_call_update", toolCallId=tid, status="completed",
@@ -118,7 +119,8 @@ def prompt(sid, text):
         call = {"toolCallId": "t-run", "title": cmd, "kind": "execute", "status": "pending",
                 "rawInput": {"command": cmd}}
         update(sid, sessionUpdate="tool_call", **call)
-        choice = "once" if state["mode"] == "baton-chat-full" else ask(sid, call)
+        auto_ok = state["mode"] == "baton-chat-full" or (GEMINI and state["mode"] == "auto")
+        choice = "once" if auto_ok else ask(sid, call)
         if choice == "once":
             update(sid, sessionUpdate="tool_call_update", toolCallId="t-run", status="completed",
                    rawOutput={"output": f"ran: {cmd}"})

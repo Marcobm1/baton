@@ -42,6 +42,7 @@ from .agent_chat import (
 )
 from .ping import _NO_WINDOW, find_claude
 from .proc import attach_job, close_job, kill_tree
+from .sandbox import stop_container
 
 _BYPASS_MODES = frozenset({"bypassPermissions", "dontAsk"})
 
@@ -52,8 +53,9 @@ def claude_chat_command(
     resume_id: str = "",
     *,
     binary: str | None = None,
+    mode: str = "confirm",
 ) -> list[str] | None:
-    """Build the argv for an interactive Confirm-mode Claude Code session."""
+    """Build the argv for an interactive Claude Code session (Confirm or isolated Full)."""
     exe = binary if binary is not None else find_claude()
     if not exe:
         return None
@@ -62,12 +64,16 @@ def claude_chat_command(
         "--input-format", "stream-json",
         "--output-format", "stream-json",
         "--verbose",
-        "--permission-mode", "manual",
-        "--permission-prompt-tool", "stdio",
+    ]
+    if mode == "full":
+        cmd.append("--dangerously-skip-permissions")
+    else:
+        cmd.extend(["--permission-mode", "manual", "--permission-prompt-tool", "stdio"])
+    cmd.extend([
         "--strict-mcp-config",
         "--setting-sources", "local",
         "--disallowedTools", "AskUserQuestion",
-    ]
+    ])
     if model:
         cmd.extend(["--model", model])
     if effort and effort != "default":
@@ -220,6 +226,7 @@ class ClaudeChat:
     alive: bool = True
     session_id: str = ""
     resumed: bool = False
+    container_name: str = ""
     isolated: bool = False
     permission_timeout: float = PERMISSION_TIMEOUT
     turn_timeout: float = TURN_TIMEOUT
@@ -269,11 +276,13 @@ class ClaudeChat:
 
     # ------------------------------------------------------------- start
     def start(self, command: list[str], env: dict[str, str]) -> None:
+        if self.mode == "full" and not self.isolated:
+            raise AcpError("Claude Code full permissions requires an isolated Docker container.")
         self.client = _ClaudeProcess(command, self.folder, env, self._on_message, self._on_exit)
         resp = self.client.control_request("initialize", timeout=START_TIMEOUT)
-        # Never read/store `account` from resp. Fail closed if bypass mode is active.
+        # Never read/store `account` from resp. Fail closed if bypass mode is active outside Docker.
         pmode = str(resp.get("current_permission_mode") or "")
-        if pmode in _BYPASS_MODES:
+        if pmode in _BYPASS_MODES and not (self.mode == "full" and self.isolated):
             raise AcpError(f"Claude Code kept unsafe permission mode '{pmode}'.")
         if self.resume_id:
             self.resumed = True
@@ -335,6 +344,8 @@ class ClaudeChat:
         self._resolve_all("cancelled")
         if self.client:
             self.client.close()
+        if self.container_name:
+            stop_container(self.container_name)
         if was:
             self.emit("closed")
 
@@ -356,7 +367,7 @@ class ClaudeChat:
             sub = msg.get("subtype")
             if sub == "init":
                 pmode = str(msg.get("permissionMode") or "")
-                if pmode in _BYPASS_MODES:
+                if pmode in _BYPASS_MODES and not (self.mode == "full" and self.isolated):
                     self.emit("error", text=f"Claude Code entered unsafe permission mode '{pmode}'.")
                     self.close()
                     return

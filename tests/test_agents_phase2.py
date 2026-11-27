@@ -93,6 +93,12 @@ def test_claude_and_codex_command_builders():
     assert "--resume" in cmd and cmd[cmd.index("--resume") + 1] == "sess-123"
     assert "--dangerously-skip-permissions" not in cmd
 
+    cmd_full = claude_chat_command("claude-sonnet-4-6", "high", binary="/usr/bin/claude", mode="full")
+    assert cmd_full is not None
+    assert "--dangerously-skip-permissions" in cmd_full
+    assert "--permission-mode" not in cmd_full
+    assert "--permission-prompt-tool" not in cmd_full
+
     assert codex_chat_command(binary="/usr/bin/codex") == ["/usr/bin/codex", "app-server"]
     assert codex_chat_command(binary="") is None
 

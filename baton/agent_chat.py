@@ -41,12 +41,15 @@ from .agents import ALWAYS_DENIED, NO_GIT_CHANGES, _rule, find_opencode
 from .sandbox import (
     CHAT_AGENT_FULL,
     CONTAINER_WORKSPACE,
+    DEFAULT_AGENTS_SANDBOX_IMAGE,
     DEFAULT_SANDBOX_IMAGE,
     FULL_RULES as FULL_RULES,
+    agent_sandbox_available,
     docker_available,
     find_hardlinks,
     is_local_opencode_model,
     safe_container_name,
+    sandbox_agent_docker_command,
     sandbox_docker_command,
     sandbox_opencode_config,
     stop_container,
@@ -351,6 +354,8 @@ class AgentChat:
 
     # ------------------------------------------------------------- start
     def start(self, command: list[str], env: dict[str, str]) -> None:
+        if self.mode == "full" and not self.isolated:
+            raise AcpError(f"{self.profile.label} full permissions requires an isolated Docker container.")
         self.client = AcpClient(command, self.folder, env, self._on_message, self._on_exit)
         req = self.client.request
         req("initialize", {"protocolVersion": 1,
@@ -362,8 +367,12 @@ class AgentChat:
         if not self.session_id:
             raise AcpError(f"{self.profile.label} did not open a session.")
         # Fail closed: without Baton's own agent (OpenCode) or agy's asking
-        # "default" mode the model could run commands unasked.
-        session_mode = CHAT_AGENT_FULL if (self.agent == "opencode" and self.mode == "full") else self.profile.mode
+        # "default" mode the model could run commands unasked. Full mode is
+        # allowed ONLY when isolated inside Docker.
+        if self.mode == "full" and self.isolated:
+            session_mode = CHAT_AGENT_FULL if self.agent == "opencode" else "auto"
+        else:
+            session_mode = self.profile.mode
         options = self._set("mode", session_mode, new.get("configOptions"))
         options = self._set("model", self.model, options)
         effort_id = self.profile.effort_option
@@ -582,6 +591,8 @@ class AgentChats:
                  reap_interval: float = REAP_INTERVAL,
                  sandbox_image: str = DEFAULT_SANDBOX_IMAGE,
                  sandbox_command: Callable[[Path, str, str], list[str] | None] | None = None,
+                 agents_sandbox_image: str = DEFAULT_AGENTS_SANDBOX_IMAGE,
+                 agent_sandbox_command: Callable[[str, Path, str, list[str]], list[str] | None] | None = None,
                  on_permission_wait: Callable[[dict[str, Any]], None] | None = None,
                  permission_notify_after: float = 30.0):
         self.command = command                  # OpenCode
@@ -594,7 +605,9 @@ class AgentChats:
         self.turn_timeout = turn_timeout
         self.reap_interval = reap_interval
         self.sandbox_image = sandbox_image
-        self.sandbox_command = sandbox_command  # optional override for fake ACP sandbox tests
+        self.sandbox_command = sandbox_command  # optional override for fake OpenCode sandbox tests
+        self.agents_sandbox_image = agents_sandbox_image
+        self.agent_sandbox_command = agent_sandbox_command  # optional override for fake CLI sandbox tests
         self.on_permission_wait = on_permission_wait
         self.permission_notify_after = max(0.0, float(permission_notify_after))
         self._chats: dict[str, Any] = {}
@@ -664,11 +677,17 @@ class AgentChats:
 
         chat.emit = _wrapped_emit
 
-    def sandbox_ready(self) -> bool:
-        """True if an isolated Docker sandbox (or injected test sandbox) can launch."""
-        if self.sandbox_command is not None:
-            return True
-        return docker_available(self.sandbox_image)
+    def sandbox_ready(self, agent: str = "opencode") -> bool:
+        """True if an isolated Docker sandbox (or injected test sandbox) can launch for `agent`."""
+        if agent == "opencode":
+            if self.sandbox_command is not None:
+                return True
+            return docker_available(self.sandbox_image)
+        if agent in ("claude-code", "codex", "gemini"):
+            if self.agent_sandbox_command is not None:
+                return True
+            return agent_sandbox_available(agent, self.agents_sandbox_image)
+        return False
 
     def sessions(self, agent: str, *, limit: int = 15) -> list[dict]:
         """Recent resumable sessions saved for `agent` in baton.sqlite3."""
@@ -748,6 +767,21 @@ class AgentChats:
         if self.data_dir is not None:
             record_gemini(self.data_dir, model, tokens, "chat")
 
+    def _wrap_agent_sandbox(
+        self, agent: str, folder: Path, chat_id: str, inner_cmd: list[str],
+    ) -> tuple[list[str], str, str]:
+        """Build command, container_name, and session_cwd for an isolated CLI sandbox."""
+        cname = safe_container_name(chat_id)
+        if self.agent_sandbox_command is not None:
+            command = self.agent_sandbox_command(agent, folder, cname, inner_cmd)
+            if not command:
+                raise ChatError("ag_full_off_agent")
+            return command, "", ""
+        command = sandbox_agent_docker_command(
+            agent, folder, self.agents_sandbox_image, inner_cmd, container_name=cname,
+        )
+        return command, cname, CONTAINER_WORKSPACE
+
     def create(self, folder: Path, folder_label: str, model: str, effort: str,
                mode: str = "confirm", agent: str = "opencode", *,
                local_models: list[dict] | None = None,
@@ -758,8 +792,20 @@ class AgentChats:
         chat_id = secrets.token_urlsafe(12)
 
         if agent in ("claude-code", "codex"):
-            if mode != "confirm":
-                raise ChatError("ag_full_off")
+            session_cwd = ""
+            container_name = ""
+            isolated = False
+            if mode == "full":
+                if is_abliterated(model, local_models or []):
+                    raise ChatError("ag_full_abliterated")
+                if not self.sandbox_ready(agent):
+                    raise ChatError("ag_full_off_agent")
+                hardlinks = find_hardlinks(folder)
+                if hardlinks:
+                    raise ChatError("ag_full_hardlink", ", ".join(hardlinks))
+                isolated = True
+            elif mode != "confirm":
+                raise ChatError("ag_full_off_agent")
             self._reap()
             env = agent_env()
 
@@ -768,26 +814,37 @@ class AgentChats:
 
             if agent == "claude-code":
                 from .chat_claude import ClaudeChat, claude_chat_command
-                cmd_fn = self.claude_command or (lambda m, e, r: claude_chat_command(m, e, r))
-                command = cmd_fn(model, effort, resume_id)
-                if not command:
-                    raise ChatError("ag_unavailable_claude")
+                if mode == "full":
+                    inner = claude_chat_command(model, effort, resume_id, binary="claude", mode="full")
+                    assert inner is not None
+                    command, container_name, session_cwd = self._wrap_agent_sandbox(agent, folder, chat_id, inner)
+                else:
+                    cmd_fn = self.claude_command or (lambda m, e, r: claude_chat_command(m, e, r))
+                    command = cmd_fn(model, effort, resume_id)
+                    if not command:
+                        raise ChatError("ag_unavailable_claude")
                 chat: Any = ClaudeChat(
                     id=chat_id, folder=folder, folder_label=folder_label,
                     model=model, effort=effort, mode=mode, agent=agent,
                     folder_key=folder_key, resume_id=resume_id, on_session=_on_session,
+                    container_name=container_name, isolated=isolated,
                     permission_timeout=self.permission_timeout, turn_timeout=self.turn_timeout,
                 )
             else:
                 from .chat_codex import CodexChat, codex_chat_command
-                cmd_fn = self.codex_command or codex_chat_command
-                command = cmd_fn()
-                if not command:
-                    raise ChatError("ag_unavailable_codex")
+                if mode == "full":
+                    inner = ["codex", "app-server"]
+                    command, container_name, session_cwd = self._wrap_agent_sandbox(agent, folder, chat_id, inner)
+                else:
+                    cmd_fn = self.codex_command or codex_chat_command
+                    command = cmd_fn()
+                    if not command:
+                        raise ChatError("ag_unavailable_codex")
                 chat = CodexChat(
                     id=chat_id, folder=folder, folder_label=folder_label,
                     model=model, effort=effort, mode=mode, agent=agent,
                     folder_key=folder_key, resume_id=resume_id, on_session=_on_session,
+                    session_cwd=session_cwd, container_name=container_name, isolated=isolated,
                     permission_timeout=self.permission_timeout, turn_timeout=self.turn_timeout,
                 )
             self._attach_permission_notifier(chat)
@@ -808,27 +865,38 @@ class AgentChats:
         if mode == "full":
             if is_abliterated(model, local_models or []):
                 raise ChatError("ag_full_abliterated")
-            if agent != "opencode" or not self.sandbox_ready():
-                raise ChatError("ag_full_off")
-            if not is_local_opencode_model(model):
-                raise ChatError("ag_full_local_only")
-            hardlinks = find_hardlinks(folder)
-            if hardlinks:
-                raise ChatError("ag_full_hardlink", ", ".join(hardlinks))
-            config_json = json.dumps(sandbox_opencode_config(local_models or [], mode="full"))
-            if self.sandbox_command is not None:
-                command = self.sandbox_command(folder, safe_container_name(chat_id), config_json)
-                env = {**agent_env(), "OPENCODE_CONFIG_CONTENT": config_json}
-            else:
-                container_name = safe_container_name(chat_id)
-                command = sandbox_docker_command(
-                    folder, self.sandbox_image, config_json, container_name=container_name
-                )
+            if agent == "gemini":
+                if not self.sandbox_ready("gemini"):
+                    raise ChatError("ag_full_off_agent")
+                hardlinks = find_hardlinks(folder)
+                if hardlinks:
+                    raise ChatError("ag_full_hardlink", ", ".join(hardlinks))
+                inner = ["agy", "acp", "--dangerously-skip-permissions"]
+                command, container_name, session_cwd = self._wrap_agent_sandbox(agent, folder, chat_id, inner)
                 env = agent_env()
-                session_cwd = CONTAINER_WORKSPACE
-            if not command:
-                raise ChatError("ag_full_off")
-            isolated = True
+                isolated = True
+            else:
+                if agent != "opencode" or not self.sandbox_ready("opencode"):
+                    raise ChatError("ag_full_off")
+                if not is_local_opencode_model(model):
+                    raise ChatError("ag_full_local_only")
+                hardlinks = find_hardlinks(folder)
+                if hardlinks:
+                    raise ChatError("ag_full_hardlink", ", ".join(hardlinks))
+                config_json = json.dumps(sandbox_opencode_config(local_models or [], mode="full"))
+                if self.sandbox_command is not None:
+                    command = self.sandbox_command(folder, safe_container_name(chat_id), config_json)
+                    env = {**agent_env(), "OPENCODE_CONFIG_CONTENT": config_json}
+                else:
+                    container_name = safe_container_name(chat_id)
+                    command = sandbox_docker_command(
+                        folder, self.sandbox_image, config_json, container_name=container_name
+                    )
+                    env = agent_env()
+                    session_cwd = CONTAINER_WORKSPACE
+                if not command:
+                    raise ChatError("ag_full_off")
+                isolated = True
         elif mode == "confirm":
             command = (self.gemini_command if agent == "gemini" else self.command)()
             if not command:

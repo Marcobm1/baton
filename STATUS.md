@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
 updated: 2026-11-27
-updated_by: antigravity
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -93,6 +93,7 @@ links:
 ## Log
 - 2026-11-27 (antigravity): Extended the Claude Code desktop UI across the entire app + mobile PWA: warm off-white light palette (`#faf9f5`), neutral `--primary`/`--on-primary` primary buttons & active chips, persistent collapsible global sidebar rail (`220 px` ↔ `56 px`, collapsed by default on `/chat`), horizontally scrollable mobile `.tab-bar`, unified page headers/back links, dynamic auth-exempt `/manifest.webmanifest` + PNG Huo icons, and regression tests (`tests/test_design.py`, `docs/design.md`).
 - 2026-11-27 (antigravity): Mounted **Town Hall** Phase 4 inside Huo (`/townhall`, `/townhall/{id}`, `/api/townhall/*`): pinned `ai-townhall` commit in `pyproject.toml`, added `TownHallService`, allowlisted workspaces, live SSE progress, recurring schedules ticked in `_quota_tick()`, Telegram completion alerts (`Notifier.notify_townhall`), **Convert to task →** (`/tasks/new?from_townhall=...`), **Open in Chat**, Markdown export, `tests/test_townhall.py`, and `docs/townhall.md`.
+- 2026-11-27 (codex): Recorded the proposed interactive project task map in docs/ideas.md as an unscheduled idea.
 - 2026-11-27 (antigravity): Renamed the visible UI, alerts, and notifications to **Huo** (`DEFAULT_TITLE = "Huo"`, dynamic `{app}` strings in `baton/i18n.py`, `Notifier` & `AlertEngine` `app_name=settings.title`), replaced the `◆` brand mark with the fused Mr. Tail + Taoist talisman (`☲`) SVG icon & favicon (`baton/static/huo-icon.svg`), and captured future ideas in `docs/ideas.md` (`tests/test_i18n.py`, `tests/test_notify.py`, `tests/test_alerts.py`, `tests/test_design.py`, `docs/design.md`).
 - 2026-11-27 (claude-code): Reviewed UI-1…UI-5 and shipped UI-6 polish (14 fixes, tool persistence + migration, search fallback, SearXNG digest pin); started SearXNG on Marco's PC and set `BATON_SEARCH_URL`.
 - 2026-11-27 (gemini): Completed UI-5 unified `/chat` component for local models and ACP agents (merged the two branches of `baton/templates/chat.html` into one composer & message shell with `_chat_strings()`, extracted shared assistant bubble / tool-row / read-group / diff / `1`/`2` approval renderer into `baton/static/chat-common.js`, reduced `chat.js` and `agents-chat.js` to thin transport adapters, `tests/test_design.py`, `docs/design.md`).

@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "UI-1: Near-black dark theme (Claude Code desktop look)"
 updated: 2026-11-26
-updated_by: claude-code
+updated_by: gemini
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -13,6 +13,7 @@ links:
 ---
 
 ## Done recently
+- 2026-11-26: Local harness hardening & UX fixes: streaming `<tool_call>` sanitizer + Qwen3.8 XML/JSON fallback parser, explicit synthesis closing prompt (`tool_choice: "none"` with HTTP 400 retry), honest DuckDuckGo anti-bot error reporting + local SearXNG Docker setup (`docker/searxng/`) + Brave/Tavily API support, older tool-output context compaction + live per-round context meter, and collapsible `.ag-tool-group` for read/search calls (`baton/local_harness.py`, `baton/static/chat.js`, `docs/local-harness.md`).
 - 2026-11-26: UI-0: fixed invisible buttons in `/chat` (suggestion chips, attach `＋`, Sign out) and the "Convert to task" link showing on an empty chat; guarded by `tests/test_design.py`.
 - 2026-11-26: Local model tool-calling harness in `/chat`: opt-in **Internet + tools** mode (off by default) with OpenAI-compatible multi-round tool loop (`baton/local_harness.py`), `web_search` (DuckDuckGo HTML or optional `BATON_SEARCH_URL` SearXNG JSON), SSRF-guarded `fetch_url`, `get_datetime`, AST `calculate`, optional allowlisted-folder file/command tools, and mandatory one-shot **Allow / Deny** confirmation on writes, commands, and `.env` reads (`docs/local-harness.md`, `tests/test_local_harness.py`).
 - 2026-11-26: Chat-3 overhaul: magic-byte validated raster image attachments & `Ctrl+V` paste for both local vision models and agent chats (auto-cleaned on close), selectable system prompt presets + custom system prompt, and subtle context-window usage meter in local chat (`baton/models.py`, `baton/routes/chat.py`, `tests/test_chat_vision_presets.py`).
@@ -73,7 +74,7 @@ links:
 
 ## Decisions
 - 2026-11-26 (Marco): UI reference for `/chat` and the app is the Claude Code desktop app; the dark theme becomes near-black like Claude Code across the whole app (replaces "blue-grey, never pure black"). Plan: UI-0 … UI-5 under Next.
-- 2026-11-26: Native local-model tool-calling harness (`baton/local_harness.py`, [docs/local-harness.md](docs/local-harness.md)): opt-in per conversation (Offline by default), built-in DuckDuckGo HTML search + optional `BATON_SEARCH_URL` SearXNG JSON, SSRF-guarded `fetch_url`, `get_datetime`, AST `calculate`, and optional allowlisted-folder tools (`list_files`, `read_file`, `search_files`, `write_file`, `run_command`). Writes, commands, and `.env` reads ALWAYS require one-shot CSRF-protected Allow/Deny confirmation (never unattended, including for abliterated models).
+- 2026-11-26: Native local-model tool-calling harness (`baton/local_harness.py`, [docs/local-harness.md](docs/local-harness.md)): opt-in per conversation (Offline by default), reliable search backends (`BATON_SEARCH_URL` local SearXNG in `docker/searxng/`, `BATON_BRAVE_API_KEY`, `BATON_TAVILY_API_KEY`, or honest DuckDuckGo anti-bot error), SSRF-guarded `fetch_url` (6K default), `get_datetime`, AST `calculate`, older tool-output compaction, streaming `<tool_call>` sanitizer/fallback parser, collapsible `.ag-tool-group`, and optional allowlisted-folder tools (`list_files`, `read_file`, `search_files`, `write_file`, `run_command`). Writes, commands, and `.env` reads ALWAYS require one-shot CSRF-protected Allow/Deny confirmation (never unattended, including for abliterated models).
 - 2026-11-26: Three-phase Chat overhaul completed (Chat-1 SQLite history sidebar + upgraded Markdown + sticky scroll, Chat-2 tool grouping + Chat-to-Task bridge + Telegram approval pings, Chat-3 validated image attachments + system presets + context usage meter).
 - 2026-11-26: Three-phase UX overhaul completed (UX-1 global decluttering, UX-2 Projects & Tasks remodel + automatic git diff stats, UX-3 structured agent reports + local `.baton-artifacts/` image gallery + optional Telegram `sendPhoto`, [docs/project-detail.md](docs/project-detail.md)).
 - 2026-11-26: Hardening Phase 4 open-source cleanup: `(Owner)` is now the generic default for `BATON_OWNER_TAG` (plain names auto-wrapped), `BATON_CHAT_SCRATCH` defaults to empty on all OSes, and `BATON_SCHEDULED_TASK` defaults to `Baton` with strict allowlist validation against PowerShell injection ([docs/hardening-roadmap.md](docs/hardening-roadmap.md)).
@@ -82,6 +83,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-26 (gemini): Hardened local chat harness (Blocks 1–4): streaming `<tool_call>` sanitizer + Qwen3.8 XML/JSON fallback parser, explicit synthesis closing prompt, honest DDG anti-bot detection + `docker/searxng/` + Brave/Tavily support, tool-output context compaction + live timings, and `.ag-tool-group` collapsing (`tests/test_local_harness.py`).
 - 2026-11-26 (claude-code): UI-0 CSS fix for invisible buttons and `[hidden]`; added UI-1…UI-5 plan (Claude Code look) and the Windows CI fix to Next.
 - 2026-11-26 (gemini): Added opt-in local model tool-calling harness in `/chat` (`baton/local_harness.py`, `/api/chat/{model_id}/harness`, `/api/chat-harness/{run_id}/{permission,cancel}`, `BATON_SEARCH_URL`, `docs/local-harness.md`, `tests/test_local_harness.py`).
 - 2026-11-26 (gemini): Completed Chat-3 overhaul (magic-byte validated image attachments & `Ctrl+V` paste for local vision and agent chats with auto-cleanup on close, system prompt presets + custom system prompt, context usage meter in local chat, `tests/test_chat_vision_presets.py`).

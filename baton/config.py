@@ -109,9 +109,11 @@ class Settings:
     telegram_chat_id: str = ""
     alert_webhook_url: str = field(default="", repr=False)
     notify_tasks: bool = True
-    # Optional SearXNG-compatible JSON search URL for local chat harness
-    # (empty = built-in DuckDuckGo HTML search).
+    # Optional SearXNG-compatible JSON search URL or API keys for local chat harness
+    # (all BATON_* vars are stripped from agent subprocesses by agent_env()).
     search_url: str = ""
+    brave_api_key: str = field(default="", repr=False)
+    tavily_api_key: str = field(default="", repr=False)
     env_file: str = ""
 
     @classmethod
@@ -170,5 +172,7 @@ class Settings:
             alert_webhook_url=os.environ.get("BATON_ALERT_WEBHOOK_URL", "").strip(),
             notify_tasks=os.environ.get("BATON_NOTIFY_TASKS", "1") != "0",
             search_url=os.environ.get("BATON_SEARCH_URL", "").strip(),
+            brave_api_key=os.environ.get("BATON_BRAVE_API_KEY", "").strip(),
+            tavily_api_key=os.environ.get("BATON_TAVILY_API_KEY", "").strip(),
             env_file=loaded_env,
         )

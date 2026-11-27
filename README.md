@@ -507,7 +507,8 @@ All settings are environment variables (or a `.env` file); see
 | `BATON_LOCAL_PATHS` | — | `owner/repo=path;...` when a clone isn't found automatically. |
 | `BATON_CHAT_SCRATCH` | — | Optional scratch folder offered by the Agents chat next to your clones (empty = clones only). |
 | `BATON_SANDBOX_IMAGE` | `baton-opencode-sandbox:latest` | Docker image for isolated Agents chat ("All permissions" mode with local models). |
-| `BATON_SEARCH_URL` | — | Optional SearXNG-compatible JSON search URL for the local chat harness (empty = built-in DuckDuckGo HTML search). |
+| `BATON_SEARCH_URL` | — | Optional SearXNG-compatible JSON search URL for the local chat harness (see `docker/searxng/docker-compose.yml`). |
+| `BATON_BRAVE_API_KEY`, `BATON_TAVILY_API_KEY` | — | Optional Brave Search or Tavily API key for the local chat harness (fallback if `BATON_SEARCH_URL` is empty; stripped by `agent_env()`). |
 | `BATON_LOCAL_MODEL` | — | Model for the Local AI agent (e.g. an Ollama model name). |
 | `BATON_TASK_TIMEOUT_MINUTES` | `60` | Stop a local task after this long. |
 | `BATON_GIT_NAME` / `BATON_GIT_EMAIL` | Baton | Commit identity when the clone has none. |

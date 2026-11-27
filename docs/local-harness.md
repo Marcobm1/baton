@@ -22,10 +22,15 @@ A local LLM never executes code or makes HTTP requests itself. Instead:
    Baton validates the arguments, pauses for interactive **Allow / Deny** on any
    sensitive action, executes the tool on the server, and appends each result as
    a `{"role": "tool", "tool_call_id": ..., "content": ...}` message.
-4. **Next round:** Baton calls `llama-server` again with the updated message
-   list so the model can inspect the tool results and either call another tool
-   or write its final answer (capped at `MAX_TOOL_ROUNDS = 10` plus one final
-   synthesis round without tools).
+4. **Next round & synthesis:** Baton calls `llama-server` again with the updated
+   message list (compacting older `role: "tool"` outputs beyond the most recent
+   4 so 32K local contexts do not overflow) until the model writes its final
+   answer, capped at `MAX_TOOL_ROUNDS = 8` plus one closing synthesis round with
+   an explicit instruction to stop calling tools (`tool_choice: "none"`, with
+   automatic fallback if a build rejects `"none"`). A streaming `<tool_call>`
+   filter strips any leaked/truncated XML/JSON tool tags from plain text and can
+   parse complete Qwen3.8 XML or JSON `<tool_call>` blocks as a fallback during
+   normal rounds.
 
 > **Note for `llama-server`:** modern `llama.cpp` builds parse tool calls using
 > the model's Jinja chat template (`--jinja`, enabled by default on recent
@@ -39,8 +44,8 @@ A local LLM never executes code or makes HTTP requests itself. Instead:
 
 | Tool | Kind | Confirmation | What it does |
 |---|---|---|---|
-| `web_search` | search | Direct | Searches the public web via DuckDuckGo HTML (or an optional owner-configured SearXNG JSON endpoint via `BATON_SEARCH_URL`). |
-| `fetch_url` | fetch | Direct | Downloads a public `http://` or `https://` page (up to 512 KiB, text/HTML/JSON/XML only) and extracts clean readable text. |
+| `web_search` | search | Direct | Searches the web using (in priority order): `BATON_SEARCH_URL` (local SearXNG JSON), `BATON_BRAVE_API_KEY` (Brave Search API), `BATON_TAVILY_API_KEY` (Tavily API), or DuckDuckGo HTML fallback (fails honestly on HTTP 202/anti-bot challenges). |
+| `fetch_url` | fetch | Direct | Downloads a public `http://` or `https://` page (up to 512 KiB, text/HTML/JSON/XML only; default 6,000 chars, max 12,000) and extracts clean readable text. |
 | `get_datetime` | utility | Direct | Returns the current local and UTC date, time, weekday, and timezone. |
 | `calculate` | utility | Direct | Evaluates mathematical expressions using Python's `ast` module (zero `eval()`, strict node/exponent limits). |
 
@@ -57,6 +62,10 @@ browser never sends arbitrary filesystem paths.
 | `search_files` | search | Direct | Searches text or regex across files inside the folder (skips `.git`, `node_modules`, `.venv`, `__pycache__`, and `.env*`). |
 | `write_file` | edit | **Always Allow / Deny** | Shows a line-by-line diff preview; writes UTF-8 content inside the folder only after approval. |
 | `run_command` | execute | **Always Allow / Deny** | Shows the exact command; executes inside the folder with `agent_env()`, 60 s timeout, 64 KiB output cap, and process-tree teardown. |
+
+Consecutive read-only / search / fetch / utility calls are collapsed into a
+single expandable `.ag-tool-group` summary in `/chat`, while writes, commands,
+and **Allow / Deny** cards stay prominent.
 
 ## Security boundaries and honest limits
 
@@ -107,16 +116,40 @@ browser never sends arbitrary filesystem paths.
   request; a sophisticated attacker controlling a TTL=0 authoritative DNS server
   could still attempt a race, so always keep `BATON_ACCESS_KEY` set in `.env`.
 
-## Optional search backend (`BATON_SEARCH_URL`)
+## Reliable web search backends
 
-By default `web_search` uses DuckDuckGo's HTML endpoint with zero setup. If you
-run a self-hosted SearXNG instance (or hit rate limits on public search), set
-`BATON_SEARCH_URL` in `.env`:
+Public DuckDuckGo HTML frequently rate-limits automated requests with HTTP 202
+anti-bot challenges. Baton detects this honestly (failing the tool instead of
+returning empty green results) and supports three reliable backends, checked in
+this order:
+
+### 1. Local SearXNG in Docker (recommended, free, zero API keys)
+
+Start the hardened localhost-only SearXNG container shipped with Baton:
+
+```bash
+docker compose -f docker/searxng/docker-compose.yml up -d
+```
+
+Then add this line to Baton's `.env` and restart Baton:
 
 ```dotenv
 BATON_SEARCH_URL=http://127.0.0.1:8888/search?format=json&q={query}
 ```
 
-Baton queries that owner-configured JSON endpoint (`results[].title`, `url`,
-`content`) instead of DuckDuckGo. `BATON_SEARCH_URL` is stripped from all child
+SearXNG listens strictly on `127.0.0.1:8888` with JSON output enabled
+(`docker/searxng/settings.yml`).
+
+### 2. Brave Search API or Tavily API (optional, without Docker)
+
+If you prefer a cloud search API instead of running SearXNG locally, set one of
+these in `.env`:
+
+```dotenv
+BATON_BRAVE_API_KEY=...
+# or:
+BATON_TAVILY_API_KEY=...
+```
+
+All `BATON_*` variables are masked in errors and stripped from all child
 processes by `agent_env()`.

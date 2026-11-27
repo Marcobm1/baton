@@ -452,3 +452,175 @@ def test_harness_routes_require_auth_when_access_key_is_set(tmp_path: Path, monk
         assert client.post("/api/chat/one/harness", json={"messages": []}).status_code == 401
         assert client.post("/api/chat-harness/abc/permission", json={"id": "1", "allow": True}).status_code == 401
         assert client.post("/api/chat-harness/abc/cancel", json={}).status_code == 401
+
+
+def test_web_search_ddg_antibot_fails_honestly_and_brave_tavily_work():
+    # DuckDuckGo HTTP 202 anti-bot challenge MUST raise ToolError (never green success).
+    ddg_202 = lambda req: httpx.Response(202, text="<html><div class='anomaly-modal'>Bots use DuckDuckGo</div></html>")  # noqa: E731
+    with pytest.raises(local_harness.ToolError, match="anti-bot"):
+        local_harness.web_search(
+            "test query",
+            client_factory=lambda t: httpx.Client(transport=httpx.MockTransport(ddg_202)),
+        )
+
+    # Brave Search API
+    def brave_handler(req: httpx.Request) -> httpx.Response:
+        assert req.headers.get("X-Subscription-Token") == "brave-secret-key"
+        return httpx.Response(200, json={
+            "web": {"results": [{"title": "Brave Hit", "url": "https://brave.example/1", "description": "Fast search"}]}
+        })
+
+    out_brave = local_harness.web_search(
+        "hello",
+        brave_api_key="brave-secret-key",
+        client_factory=lambda t: httpx.Client(transport=httpx.MockTransport(brave_handler)),
+    )
+    assert "Brave Hit" in out_brave and "https://brave.example/1" in out_brave
+
+    # Tavily Search API + error key masking
+    def tavily_handler(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content)
+        assert body["api_key"] == "tvly-secret-key"
+        return httpx.Response(200, json={
+            "results": [{"title": "Tavily Hit", "url": "https://tavily.example/2", "content": "Clean result"}]
+        })
+
+    out_tavily = local_harness.web_search(
+        "hello",
+        tavily_api_key="tvly-secret-key",
+        client_factory=lambda t: httpx.Client(transport=httpx.MockTransport(tavily_handler)),
+    )
+    assert "Tavily Hit" in out_tavily and "https://tavily.example/2" in out_tavily
+
+    def leaking_err(_req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection failed with tvly-secret-key")
+
+    with pytest.raises(local_harness.ToolError) as exc_info:
+        local_harness.web_search(
+            "hello",
+            tavily_api_key="tvly-secret-key",
+            client_factory=lambda t: httpx.Client(transport=httpx.MockTransport(leaking_err)),
+        )
+    assert "tvly-secret-key" not in str(exc_info.value) and "***" in str(exc_info.value)
+
+
+def test_tool_call_stream_filter_and_fallback_parser():
+    flt = local_harness._ToolCallStreamFilter()
+    chunks = [
+        "Checking ",
+        "now.<to",
+        "ol_call>\n<function=fetch_url>\n<parameter=url>\nhttps://example.com\n</parameter>\n"
+        "<parameter=max_chars>\n3000\n</parameter>\n</function>\n</tool_call>",
+        " Done.<tool_call>\n<function=fetch_url>",  # truncated at EOF
+    ]
+    visible = "".join(flt.feed(c) for c in chunks) + flt.flush()
+    assert visible == "Checking now. Done."
+    assert "<tool_call>" not in visible and "<function=" not in visible
+    assert flt.had_truncated_block is True
+    assert len(flt.blocks) == 1
+
+    calls = local_harness.parse_fallback_tool_calls(flt.blocks)
+    assert len(calls) == 1 and calls[0]["name"] == "fetch_url"
+    assert json.loads(calls[0]["arguments"]) == {"url": "https://example.com", "max_chars": 3000}
+
+    json_calls = local_harness.parse_fallback_tool_calls(['{"name": "calculate", "arguments": {"expression": "2+2"}}'])
+    assert len(json_calls) == 1 and json_calls[0]["name"] == "calculate"
+    assert json.loads(json_calls[0]["arguments"]) == {"expression": "2+2"}
+
+
+def test_compact_tool_messages_preserves_recent_and_trims_old():
+    msgs = [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
+    for i in range(6):
+        msgs.append({"role": "tool", "tool_call_id": f"c{i}", "name": "fetch_url", "content": f"P{i}:" + ("x" * 2000)})
+
+    compacted = local_harness.compact_tool_messages(msgs, keep_recent=4, max_old_chars=200)
+    tool_msgs = [m for m in compacted if m["role"] == "tool"]
+    assert "older tool output compacted" in tool_msgs[0]["content"]
+    assert "older tool output compacted" in tool_msgs[1]["content"]
+    assert len(tool_msgs[0]["content"]) < 300
+    # Last 4 tool outputs remain intact.
+    for recent in tool_msgs[2:]:
+        assert len(recent["content"]) > 2000
+
+
+def test_harness_fallback_xml_tool_execution_and_synthesis_strips_raw_tags(tmp_path: Path, monkeypatch):
+    # Round 1: model emits Qwen3.8 XML <tool_call> in plain delta.content (no structured tool_calls).
+    # Round 2 (synthesis, max_rounds=1): server rejects tool_choice="none" with 400 once,
+    # then retries without tools and model still emits a stray <tool_call> before answering.
+    seen: list[dict] = []
+
+    class CustomHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200 if self.path == "/health" else 404)
+            self.end_headers()
+            if self.path == "/health":
+                self.wfile.write(b'{"status":"ok"}')
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            seen.append(body)
+            if body.get("tool_choice") == "none":
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b'{"error":"tool_choice none unsupported"}')
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            if len(seen) == 1:
+                chunks = [
+                    {"choices": [{"delta": {"content": "<tool_call>\n<function=calculate>\n<parameter=expression>\n9 * 9\n</parameter>\n</function>\n</tool_call>"}}],
+                     "timings": {"prompt_n": 50, "predicted_n": 10, "predicted_per_second": 40.0}},
+                ]
+            else:
+                # Synthesis round: closing instruction must be present.
+                assert any("reached the tool limit" in str(m.get("content", "")) for m in body["messages"])
+                chunks = [
+                    {"choices": [{"delta": {"content": "Final result is 81.<tool_call><function=fetch_url>"}}],
+                     "timings": {"prompt_n": 80, "predicted_n": 8, "predicted_per_second": 42.0}},
+                ]
+            for c in chunks:
+                self.wfile.write(f"data: {json.dumps(c)}\n\n".encode("utf-8"))
+            self.wfile.write(b"data: [DONE]\n\n")
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), CustomHandler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        monkeypatch.setattr(local_harness, "MAX_TOOL_ROUNDS", 1)
+
+        async def no_projects(self, force=False):
+            return [], []
+
+        monkeypatch.setattr(github.Hub, "load", no_projects)
+        monkeypatch.setattr(models, "_is_llama_server", lambda proc: True)
+        write_config(tmp_path, [model_item(tmp_path, "qwen", port=port)])
+        app = web.create_app(Settings(data_dir=tmp_path, lang="es", self_update=False))
+        # Override route default max_rounds via monkeypatch on run_harness_stream default.
+        orig = local_harness.run_harness_stream
+
+        def _patched(**kw):
+            kw.setdefault("max_rounds", 1)
+            return orig(**kw)
+
+        monkeypatch.setattr("baton.routes.chat.run_harness_stream", _patched)
+
+        with TestClient(app) as client:
+            resp = client.post(
+                "/api/chat/qwen/harness",
+                json={"messages": [{"role": "user", "content": "9*9"}]},
+                headers={"X-Baton-CSRF": app.state.ctx.csrf_token},
+            )
+            assert resp.status_code == 200
+            events = _parse_sse(resp.text)
+            assert any(e.get("type") == "tool" and e.get("name") == "calculate" and "81" in e.get("output", "") for e in events)
+            assert any(e.get("type") == "timings" for e in events)
+            text = "".join(e["text"] for e in events if e.get("type") == "text")
+            assert text == "Final result is 81."
+            assert "<tool_call>" not in text and "<function=" not in text
+    finally:
+        server.shutdown()
+

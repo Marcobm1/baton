@@ -116,10 +116,29 @@ that both dark blocks match, and the contrast below.
   the alternate mode is disabled, explaining why), and `Esc` closes any open
   popover/menu/drawer or stops an active generation.
 
+## `/chat` messages, tools, diffs & approvals (UI-4, 2026-11-26)
+
+- **Cardless assistant prose:** `.msg-assistant` renders directly on the canvas
+  (no card border, fill, or shadow) with comfortable line height (`1.62`) and
+  subtle hover action buttons; `.msg-user` uses an understated inset pill.
+- **Compact one-line tool rows with status dots:** `.ag-tool` and grouped
+  `.ag-tool-group` render as sleek expandable rows led by an 8 px `.ag-dot`
+  (pulsing amber while running, green on completion, red on failure; respects
+  `prefers-reduced-motion`) and a subtle status text label.
+- **Inline diffs with line numbers:** `BatonChat.diffBlock()` renders old/new
+  tabular line-number gutters, `+added` / `-removed` header counts, and
+  collapses unchanged stretches (>3 context lines from edits) cleanly.
+- **Inline approvals with `1` / `2` shortcuts:** Allow/Deny buttons display
+  `1` / `2` key caps; pressing `1` or `2` settles the active pending approval
+  when focus is outside any text input or textarea.
+- **Live `"Thinking… Ns"` timer & status line:** reasoning blocks stay
+  collapsed by default with a live elapsed timer (`Thinking… Ns` → `Thought for Ns`),
+  and `.composer-status` pairs keyboard/live status on the left with the context
+  usage meter (or model/turn status) on the right.
+
 ## Planned (decided 2026-11-26)
 
-The reference look is the Claude Code desktop app. UI-1 (near-black dark tokens),
-UI-2 (full-height `/chat` layout), and UI-3 (composer control centre) are
-complete; remaining stages UI-4 and UI-5 in `STATUS.md` restyle messages/tools
-and merge the local/agent chat branches. The contrast and "both dark blocks
-match" tests stay as they are.
+The reference look is the Claude Code desktop app. UI-1 … UI-4 are complete;
+UI-5 in `STATUS.md` merges the two branches of `templates/chat.html` into a
+single shared chat component. The contrast and "both dark blocks match" tests
+stay as they are.

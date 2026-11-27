@@ -448,14 +448,34 @@
   });
 
   // ------------------------------------------------------------ drawing
+  var diffBlockShared = window.BatonChat.diffBlock;
+  var registerPendingPerm = window.BatonChat.registerPendingPerm;
+  var unregisterPendingPerm = window.BatonChat.unregisterPendingPerm;
+  var setPermButton = window.BatonChat.setPermButton;
+  var createThinkTimer = window.BatonChat.createThinkTimer;
+  var statusTextEl = $("[data-status-text]");
+  var statusMetaEl = $("[data-status-meta]");
+
+  function setStatus(liveMsg) {
+    if (statusTextEl) statusTextEl.textContent = liveMsg || T.kbd_hint || "";
+    if (statusMetaEl) {
+      var turnCount = log.querySelectorAll(".msg").length;
+      statusMetaEl.textContent = turnCount ? (selectedLabel(modelSel) + " · " + turnCount) : selectedLabel(modelSel);
+    }
+  }
+  function stopCurrentThink() {
+    if (current && current.thinkTimer) current.thinkTimer.stop();
+  }
   function assistant() {
     if (current) return current;
     activeGroup = null;
     var a = add(el("article", "msg msg-assistant"));
     a.innerHTML = '<details class="msg-think" hidden><summary></summary><div class="msg-think-text"></div></details>' +
                   '<div class="msg-body"></div><p class="msg-meta muted small"></p>';
-    a.querySelector("summary").textContent = T.reasoning;
-    current = { el: a, text: "", thought: "", queued: false };
+    var sum = a.querySelector("summary");
+    sum.textContent = T.reasoning;
+    var timer = createThinkTimer(sum, { thinkingS: T.thinking_s, thoughtFor: T.thought_for });
+    current = { el: a, text: "", thought: "", queued: false, thinkTimer: timer };
     return current;
   }
   function paint(m) {
@@ -475,38 +495,6 @@
     d.appendChild(el("span", "label", label));
     d.appendChild(el("pre", cls || "", body));
     return d;
-  }
-  function diff(oldText, newText) {
-    var a = (oldText || "").split("\n"), b = (newText || "").split("\n"), out = [];
-    if (oldText == null || oldText === "") return b.map(function (l) { return ["+", l]; });
-    if (a.length * b.length > 250000) {
-      return a.map(function (l) { return ["-", l]; }).concat(b.map(function (l) { return ["+", l]; }));
-    }
-    var n = a.length, m = b.length, L = [];
-    for (var i = 0; i <= n; i++) { L.push(new Uint32Array(m + 1)); }
-    for (i = n - 1; i >= 0; i--) for (var j = m - 1; j >= 0; j--) {
-      L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
-    }
-    i = 0; j = 0;
-    while (i < n && j < m) {
-      if (a[i] === b[j]) { out.push([" ", a[i]]); i++; j++; }
-      else if (L[i + 1][j] >= L[i][j + 1]) { out.push(["-", a[i++]]); }
-      else { out.push(["+", b[j++]]); }
-    }
-    while (i < n) out.push(["-", a[i++]]);
-    while (j < m) out.push(["+", b[j++]]);
-    return out;
-  }
-  function diffBlock(d) {
-    var wrap = el("div", "ag-block");
-    wrap.appendChild(el("span", "ag-path", d.path));
-    var pre = el("pre", "ag-diff");
-    diff(d.old, d.new).slice(0, 2000).forEach(function (row) {
-      var line = el("span", row[0] === "+" ? "add" : row[0] === "-" ? "del" : "", row[0] + " " + row[1] + "\n");
-      pre.appendChild(line);
-    });
-    wrap.appendChild(pre);
-    return wrap;
   }
   function readToolCategory(ev) {
     if ((ev.diffs || []).length) return null;
@@ -531,6 +519,7 @@
     if (!parts.length) parts.push((T.grp_steps || "{n} steps").replace("{n}", String(grp.items.length)));
     grp.titleEl.textContent = parts.join(" · ");
     var st = running ? "in_progress" : (failed ? "failed" : "completed");
+    grp.dotEl.className = "ag-dot ag-" + st;
     grp.statusEl.className = "ag-status ag-" + st;
     grp.statusEl.textContent = T["st_" + st] || st;
   }
@@ -538,17 +527,21 @@
     if (activeGroup) return activeGroup;
     var box = add(el("details", "ag-tool-group"));
     var sum = el("summary");
+    var dotEl = el("span", "ag-dot ag-in_progress");
+    dotEl.setAttribute("aria-hidden", "true");
     var titleEl = el("span", "ag-group-title", "");
     var statusEl = el("span", "ag-status", "");
+    sum.appendChild(dotEl);
     sum.appendChild(titleEl);
     sum.appendChild(statusEl);
     var list = el("div", "ag-tool-group-list");
     box.appendChild(sum);
     box.appendChild(list);
-    activeGroup = { el: box, list: list, titleEl: titleEl, statusEl: statusEl, items: new Map() };
+    activeGroup = { el: box, list: list, dotEl: dotEl, titleEl: titleEl, statusEl: statusEl, items: new Map() };
     return activeGroup;
   }
   function tool(ev) {
+    stopCurrentThink();
     var cat = readToolCategory(ev);
     var card = tools[ev.id];
     var grp = card && card._group ? card._group : null;
@@ -574,47 +567,62 @@
       activeGroup = null;
       log.appendChild(card);
     }
+    var st = ev.status || "pending";
     card.innerHTML = "";
     var sum = el("summary");
+    var dot = el("span", "ag-dot ag-" + st);
+    dot.setAttribute("aria-hidden", "true");
+    sum.appendChild(dot);
     sum.appendChild(el("span", "ag-kind", ev.kind || "tool"));
     sum.appendChild(el("span", "ag-title", ev.title || ev.name || ev.id));
-    sum.appendChild(el("span", "ag-status ag-" + (ev.status || "pending"), T["st_" + ev.status] || ev.status || ""));
+    sum.appendChild(el("span", "ag-status ag-" + st, T["st_" + st] || st));
     card.appendChild(sum);
-    if (ev.name) card.appendChild(block("tool", ev.name));
-    if (ev.input) card.appendChild(block(T.input, ev.input));
-    (ev.diffs || []).forEach(function (d) { card.appendChild(diffBlock(d)); });
-    if (ev.output) card.appendChild(block(T.output, ev.output));
+    var body = el("div", "ag-tool-body");
+    if (ev.name) body.appendChild(block("tool", ev.name));
+    if (ev.input) body.appendChild(block(T.input, ev.input));
+    (ev.diffs || []).forEach(function (d) { body.appendChild(diffBlockShared(d, T.diff_unchanged)); });
+    if (ev.output) body.appendChild(block(T.output, ev.output));
+    if (body.childNodes.length) card.appendChild(body);
     if (grp) {
-      grp.items.set(ev.id, { cat: cat || "read", status: ev.status || "pending" });
+      grp.items.set(ev.id, { cat: cat || "read", status: st });
       updateGroupSummary(grp);
     }
+    if (st === "in_progress" || st === "pending") setStatus((ev.kind || "tool") + ": " + (ev.title || ev.name || ""));
   }
   function permission(ev) {
+    stopCurrentThink();
     activeGroup = null;
     var box = perms[ev.id] = add(el("div", "ag-perm"));
     current = null;
-    box.appendChild(el("strong", "", T.perm_title + ": " + (ev.title || ev.kind)));
+    box.appendChild(el("strong", "ag-perm-head", T.perm_title + ": " + (ev.title || ev.kind)));
     if (ev.command) box.appendChild(block(T.command, ev.command, "ag-cmd"));
-    (ev.diffs || []).forEach(function (d) { box.appendChild(diffBlock(d)); });
+    (ev.diffs || []).forEach(function (d) { box.appendChild(diffBlockShared(d, T.diff_unchanged)); });
     if (!ev.command && !(ev.diffs || []).length && ev.input) box.appendChild(block(T.input, ev.input));
     if ((ev.locations || []).length) box.appendChild(el("p", "muted small", ev.locations.join("\n")));
     var row = el("div", "ag-perm-actions");
-    var yes = el("button", "btn small", T.allow), no = el("button", "btn small danger", T.deny);
+    var yes = el("button", "btn small"), no = el("button", "btn small danger");
     yes.type = no.type = "button";
+    setPermButton(yes, "1", T.allow);
+    setPermButton(no, "2", T.deny);
     yes.disabled = !ev.can_allow;
     [[yes, true], [no, false]].forEach(function (b) {
       b[0].addEventListener("click", function () {
         yes.disabled = no.disabled = true;
+        unregisterPendingPerm(ev.id);
         api("/api/agents/" + encodeURIComponent(chat.id) + "/permission", { id: ev.id, allow: b[1] })
           .catch(function (e) { settle(ev.id, e.status === 404 ? "expired" : "error", e.message); });
       });
     });
+    registerPendingPerm(ev.id, yes, no);
     row.appendChild(yes); row.appendChild(no);
     var when = new Date(ev.expires * 1000).toLocaleTimeString(T.lang, { hour: "2-digit", minute: "2-digit" });
-    row.appendChild(el("span", "muted small", T.expires.replace("{time}", when)));
+    var metaHint = [T.perm_keys, T.expires.replace("{time}", when)].filter(Boolean).join(" · ");
+    row.appendChild(el("span", "muted small", metaHint));
     box.appendChild(row);
+    setStatus(T.perm_title + " · " + (T.perm_keys || "1 / 2"));
   }
   function settle(id, outcome, detail) {
+    unregisterPendingPerm(id);
     var box = perms[id];
     if (!box) return;
     var row = box.querySelector(".ag-perm-actions");
@@ -626,13 +634,14 @@
   }
   function handle(ev) {
     after = ev.seq + 1;
-    if (ev.type === "user") { current = null; activeGroup = null; refused = false; add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", ev.text)); scroller.follow(true); return; }
-    else if (ev.type === "text") { var m = assistant(); m.text += ev.text; paint(m); return; }
-    else if (ev.type === "thought") { var t = assistant(); t.thought += ev.text; paint(t); return; }
+    if (ev.type === "user") { stopCurrentThink(); current = null; activeGroup = null; refused = false; add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", ev.text)); setStatus(T.thinking); scroller.follow(true); return; }
+    else if (ev.type === "text") { var m = assistant(); m.thinkTimer.stop(); m.text += ev.text; paint(m); return; }
+    else if (ev.type === "thought") { var t = assistant(); t.thinkTimer.start(); t.thought += ev.text; setStatus(T.thinking); paint(t); return; }
     else if (ev.type === "tool") tool(ev);
     else if (ev.type === "permission") permission(ev);
     else if (ev.type === "permission_done") { settle(ev.id, ev.outcome); refused = refused || ev.outcome !== "allowed"; }
     else if (ev.type === "plan") {
+      stopCurrentThink();
       current = null;
       activeGroup = null;
       note("muted small", T.plan + ": " + ev.entries.map(function (e) { return (e.status === "completed" ? "☑ " : "☐ ") + e.content; }).join(" · "));
@@ -640,21 +649,24 @@
     else if (ev.type === "notice") {
       note("muted small", (T[ev.key] || ev.key).replace("{effort}", ev.effort || "").replace("{session}", ev.session || ""));
     }
-    else if (ev.type === "error") { current = null; activeGroup = null; note("warn", T.error + " " + ev.text); }
+    else if (ev.type === "error") { stopCurrentThink(); current = null; activeGroup = null; note("warn", T.error + " " + ev.text); }
     else if (ev.type === "done") {
+      stopCurrentThink();
       current = null;
       activeGroup = null;
       if (ev.reason !== "end_turn" && ev.reason !== "completed" && !(ev.reason === "cancelled" && refused)) {
         note("muted small", ev.reason === "cancelled" ? T.stopped : T.done_reason.replace("{reason}", ev.reason));
       }
+      setStatus("");
       sidebar.refresh(threadId);
     }
-    else if (ev.type === "closed") { closed(); }
+    else if (ev.type === "closed") { stopCurrentThink(); closed(); }
     scroller.follow(false);
   }
   function closed() {
     note("warn", T.closed);
     setBusy(false);
+    setStatus("");
     text.disabled = true;
     send.disabled = true;
   }
@@ -666,7 +678,9 @@
     source.onmessage = function (e) { try { handle(JSON.parse(e.data)); } catch (err) {} };
     source.addEventListener("idle", function () {
       source.close(); source = null;
+      stopCurrentThink();
       setBusy(false);
+      setStatus("");
       sidebar.refresh(threadId);
     });
     source.onerror = function () {
@@ -740,6 +754,7 @@
 
   showPayg();
   syncHeaderContext();
+  setStatus("");
   if (boot.active_thread && boot.active_thread.agent === agent) {
     renderSavedThread(boot.active_thread);
   } else {

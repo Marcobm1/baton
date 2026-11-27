@@ -324,3 +324,147 @@ def test_townhall_telegram_notification_formatting_and_delivery():
     fail_title, fail_body = notifier_es.format_townhall(rec)
     assert fail_title == "❌ Huo · Town Hall fallido"
     assert "CLI timed out" in fail_body
+
+
+def test_build_participants_validation_and_duplicate_family_disambiguation():
+    from baton.townhall_bridge import build_participants, format_provider_quotas, resolve_moderator_id
+
+    # 2–4 participants across mixed or repeated families work cleanly.
+    p2 = build_participants([("gemini", "gemini-4-neon"), ("codex", "gpt-5.6-astra")])
+    assert [(p.id, p.name, p.provider, p.model) for p in p2] == [
+        ("gemini", "Gemini", "gemini", "gemini-4-neon"),
+        ("codex", "Codex", "codex", "gpt-5.6-astra"),
+    ]
+    assert resolve_moderator_id("1", p2) == "codex"
+    assert resolve_moderator_id("gemini", p2) == "gemini"
+    assert resolve_moderator_id("claude", p2) == "gemini"  # falls back to first active participant
+
+    p4 = build_participants([
+        ("gemini", "gemini-4-neon"),
+        ("opencode", "opencode-go/deepseek-v4-pro"),
+        ("opencode", "opencode-go/qwen4-max"),
+        ("codex", "gpt-5.6-astra"),
+    ])
+    assert len(p4) == 4
+    assert [p.id for p in p4] == ["gemini", "opencode_1", "opencode_2", "codex"]
+    assert "deepseek-v4-pro" in p4[1].name and "qwen4-max" in p4[2].name
+
+    # <2, >4, unknown provider, or empty model raise ValueError.
+    with pytest.raises(ValueError):
+        build_participants([("gemini", "gemini-4-neon")])
+    with pytest.raises(ValueError):
+        build_participants([("gemini", "g")] * 5)
+    with pytest.raises(ValueError):
+        build_participants([("gemini", "g"), ("unknown", "m")])
+    with pytest.raises(ValueError):
+        build_participants([("gemini", "g"), ("codex", "")])
+
+    q = format_provider_quotas([
+        {"provider": "claude", "kind": "5h", "left": 82.4, "age_s": 10, "source": "statusline"},
+        {"provider": "claude", "kind": "week", "left": 65.0, "age_s": 10, "source": "statusline"},
+        {"provider": "codex", "kind": "5h", "left": 3.0, "age_s": 10, "source": "codex-logs"},
+    ])
+    assert q["claude-code"]["summary"] == "5h 82% · 7d 65%"
+    assert q["claude-code"]["exhausted"] is False
+    assert q["codex"]["summary"] == "5h 3%"
+    assert q["codex"]["exhausted"] is True
+
+
+def test_townhall_dynamic_picker_page_quotas_validation_and_custom_sessions(tmp_path, monkeypatch):
+    from baton import quotas
+
+    monkeypatch.setattr(
+        quotas,
+        "all_windows",
+        lambda data_dir, codex_home: [
+            {"provider": "claude", "kind": "5h", "left": 74.0, "age_s": 5, "source": "statusline"},
+            {"provider": "codex", "kind": "5h", "left": 100.0, "age_s": 5, "source": "codex-logs"},
+        ],
+    )
+    app = _make_app(tmp_path, monkeypatch, lang="es")
+    client = TestClient(app, follow_redirects=False)
+    csrf = app.state.ctx.csrf_token
+
+    # Initial page renders 2 empty slots per form (4 total across session + schedule forms),
+    # with no model preselected and live quota percentages visible in family options.
+    html = client.get("/townhall").text
+    assert html.count("data-th-picker") == 2
+    assert html.count('class="th-slot"') == 4
+    assert "5h 74%" in html
+    assert "5h 100%" in html
+    assert 'data-th-model' in html
+    assert 'data-th-add' in html
+
+    # Validation: 1 participant -> 400, 5 participants -> 400, missing model -> 400.
+    r1 = client.post("/townhall", data={
+        "csrf": csrf, "topic": "Solo uno", "demo_mode": "1",
+        "participant_provider": ["gemini"], "participant_model": ["gemini-4-neon"],
+    })
+    assert r1.status_code == 400
+
+    r5 = client.post("/townhall", data={
+        "csrf": csrf, "topic": "Demasiados", "demo_mode": "1",
+        "participant_provider": ["gemini", "codex", "claude-code", "opencode", "opencode"],
+        "participant_model": [
+            "gemini-4-neon", "gpt-5.6-astra", "claude-opus",
+            "opencode-go/deepseek-v4-pro", "opencode-go/qwen4-max",
+        ],
+    })
+    assert r5.status_code == 400
+
+    r_empty = client.post("/townhall", data={
+        "csrf": csrf, "topic": "Sin elegir",
+        "participant_provider": ["", ""], "participant_model": ["", ""],
+    })
+    assert r_empty.status_code == 400
+
+    # 2-model debate without Claude (e.g. when Claude has no quota) + no guest.
+    r_two = client.post("/townhall", data={
+        "csrf": csrf, "topic": "Debate de dos sin Claude", "mode": "council",
+        "rounds": "1", "moderator": "1", "guest_scope": "none", "demo_mode": "1",
+        "participant_provider": ["gemini", "codex"],
+        "participant_model": ["gemini-4-neon", "gpt-5.6-astra"],
+    })
+    assert r_two.status_code == 303
+    sid2 = r_two.headers["location"].rsplit("/", 1)[-1]
+    d2 = _wait_session_done(client, sid2)
+    assert d2["status"] == "completed"
+    assert [p["id"] for p in d2["participants"]] == ["gemini", "codex"]
+    assert d2["guest_selection"] is None
+    assert d2["conclusion"]["moderator_id"] == "codex"
+
+    # 4-model debate + optional consensus guest still works (4 core + 1 guest).
+    r_four = client.post("/townhall", data={
+        "csrf": csrf, "topic": "Debate de cuatro mas invitado", "mode": "council",
+        "rounds": "0", "moderator": "2", "guest_scope": "go", "demo_mode": "1",
+        "participant_provider": ["gemini", "codex", "opencode", "opencode"],
+        "participant_model": [
+            "gemini-4-neon", "gpt-5.6-astra",
+            "opencode-go/deepseek-v4-pro", "opencode-go/qwen4-max",
+        ],
+    })
+    assert r_four.status_code == 303
+    sid4 = r_four.headers["location"].rsplit("/", 1)[-1]
+    d4 = _wait_session_done(client, sid4)
+    assert d4["status"] == "completed"
+    assert len(d4["participants"]) == 5  # 4 chosen + 1 optional consensus guest
+    assert d4["guest_selection"]["chosen_model"] in DEFAULT_GUEST_POOL
+    assert d4["conclusion"]["moderator_id"] == "opencode_1"
+
+    # Schedule with custom 2 participants and no consensus guest.
+    r_sc = client.post("/townhall/schedules", data={
+        "csrf": csrf, "name": "Sin Claude", "topic": "Auditoria ligera",
+        "interval_hours": "24", "moderator": "0", "guest_scope": "none",
+        "participant_provider": ["gemini", "opencode"],
+        "participant_model": ["gemini-4-neon", "opencode-go/qwen4-max"],
+    })
+    assert r_sc.status_code == 303
+    sched = client.get("/api/townhall").json()["schedules"][0]
+    assert [(p["provider"], p["model"]) for p in sched["participants"]] == [
+        ("gemini", "gemini-4-neon"),
+        ("opencode", "opencode-go/qwen4-max"),
+    ]
+    assert sched["guest_pool"] == []
+    assert sched["moderator_id"] == "gemini"
+    assert "opencode-go/qwen4-max" in client.get("/townhall").text
+

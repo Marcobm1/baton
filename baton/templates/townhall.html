@@ -11,10 +11,42 @@
   </div>
 </div>
 
+{% macro participant_picker(prefix, moderator_id) %}
+<div class="th-picker" data-th-picker data-min="{{ min_participants }}" data-max="{{ max_participants }}" data-moderator-target="{{ moderator_id }}">
+  <div class="th-picker-head">
+    <span class="th-picker-label">{{ t.th_participants }}</span>
+    <span class="th-picker-count muted small" data-th-count>{{ min_participants }}/{{ max_participants }}</span>
+  </div>
+  <div class="th-slots" data-th-slots>
+    {% for idx in range(min_participants) %}
+    <div class="th-slot" data-th-slot>
+      <span class="th-slot-num" data-th-num>{{ idx + 1 }}</span>
+      <select name="participant_provider" required data-th-family aria-label="{{ t.th_choose_family }}">
+        <option value="" selected>{{ t.th_choose_family }}</option>
+        {% for fam in families %}
+        {% set q = fam.quota.summary %}
+        <option value="{{ fam.id }}"{% if not fam.available and not fam.models %} disabled{% endif %}>
+          {{ fam.label }}{% if q %} ({{ q }}){% elif not fam.available %} ({{ t.th_not_installed }}){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <select name="participant_model" required disabled data-th-model aria-label="{{ t.th_choose_model }}">
+        <option value="" selected>{{ t.th_choose_family_first }}</option>
+      </select>
+      <button type="button" class="btn ghost small th-slot-rm" data-th-remove disabled aria-label="{{ t.th_remove_model }}" title="{{ t.th_remove_model }}">×</button>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="th-picker-bar">
+    <button type="button" class="btn ghost small" data-th-add>{{ t.th_add_model }}</button>
+  </div>
+</div>
+{% endmacro %}
+
 <div class="th-grid">
   <section class="th-card">
     <h2>{{ t.th_new }}</h2>
-    <form class="th-form" method="post" action="/townhall">
+    <form class="th-form" method="post" action="/townhall" data-th-form>
       <input type="hidden" name="csrf" value="{{ csrf }}">
 
       <label for="th-topic">{{ t.th_topic }}</label>
@@ -27,6 +59,8 @@
         <option value="{{ f.key }}">{{ f.label }}{% if f.branch %} ({{ f.branch }}){% endif %}</option>
         {% endfor %}
       </select>
+
+      {{ participant_picker('th', 'th-moderator') }}
 
       <div class="th-row">
         <div>
@@ -46,53 +80,9 @@
         </div>
         <div>
           <label for="th-moderator">{{ t.th_moderator }}</label>
-          <select id="th-moderator" name="moderator">
-            <option value="claude">Claude</option>
-            <option value="gemini">Gemini</option>
-            <option value="codex">Codex</option>
+          <select id="th-moderator" name="moderator" data-th-moderator>
+            <option value="0">{{ t.th_moderator_pick }}</option>
           </select>
-        </div>
-      </div>
-
-      <div class="th-models-row">
-        <div>
-          <label for="th-gemini">Gemini</label>
-          {% set g_cat = catalogs.get('gemini', {}) %}
-          {% if g_cat %}
-          <select id="th-gemini" name="gemini_model">
-            {% for mid, meta in g_cat.items() %}
-            <option value="{{ mid }}" {% if mid == defaults.gemini %}selected{% endif %}>{{ meta.label or mid }}</option>
-            {% endfor %}
-          </select>
-          {% else %}
-          <input id="th-gemini" name="gemini_model" type="text" value="{{ defaults.gemini }}" placeholder="default">
-          {% endif %}
-        </div>
-        <div>
-          <label for="th-codex">Codex</label>
-          {% set x_cat = catalogs.get('codex', {}) %}
-          {% if x_cat %}
-          <select id="th-codex" name="codex_model">
-            {% for mid, meta in x_cat.items() %}
-            <option value="{{ mid }}" {% if mid == defaults.codex %}selected{% endif %}>{{ meta.label or mid }}</option>
-            {% endfor %}
-          </select>
-          {% else %}
-          <input id="th-codex" name="codex_model" type="text" value="{{ defaults.codex }}" placeholder="default">
-          {% endif %}
-        </div>
-        <div>
-          <label for="th-claude">Claude</label>
-          {% set c_cat = catalogs.get('claude-code', {}) %}
-          {% if c_cat %}
-          <select id="th-claude" name="claude_model">
-            {% for mid, meta in c_cat.items() %}
-            <option value="{{ mid }}" {% if mid == defaults.claude %}selected{% endif %}>{{ meta.label or mid }}</option>
-            {% endfor %}
-          </select>
-          {% else %}
-          <input id="th-claude" name="claude_model" type="text" value="{{ defaults.claude }}" placeholder="default">
-          {% endif %}
         </div>
       </div>
 
@@ -113,7 +103,7 @@
 
       <div class="th-actions">
         <label class="th-check">
-          <input type="checkbox" name="demo_mode" value="1">
+          <input type="checkbox" name="demo_mode" value="1" data-th-demo>
           <span>{{ t.th_demo }}</span>
         </label>
         <button type="submit" class="btn primary">{{ t.th_start }}</button>
@@ -123,7 +113,7 @@
 
   <section class="th-card">
     <h2>{{ t.th_sched_new }}</h2>
-    <form class="th-form" method="post" action="/townhall/schedules">
+    <form class="th-form" method="post" action="/townhall/schedules" data-th-form>
       <input type="hidden" name="csrf" value="{{ csrf }}">
 
       <label for="sc-name">{{ t.th_sched_name }}</label>
@@ -139,6 +129,25 @@
         <option value="{{ f.key }}">{{ f.label }}</option>
         {% endfor %}
       </select>
+
+      {{ participant_picker('sc', 'sc-moderator') }}
+
+      <div class="th-row">
+        <div>
+          <label for="sc-moderator">{{ t.th_moderator }}</label>
+          <select id="sc-moderator" name="moderator" data-th-moderator>
+            <option value="0">{{ t.th_moderator_pick }}</option>
+          </select>
+        </div>
+        <div>
+          <label for="sc-guest">{{ t.th_guest_pool }}</label>
+          <select id="sc-guest" name="guest_scope">
+            <option value="go">{{ t.th_guest_go }}{% if go_count %} ({{ go_count }}){% endif %}</option>
+            <option value="all">{{ t.th_guest_all }}{% if oc_count %} ({{ oc_count }}){% endif %}</option>
+            <option value="none">{{ t.th_guest_none }}</option>
+          </select>
+        </div>
+      </div>
 
       <div class="th-row">
         <div>
@@ -173,7 +182,7 @@
         <a href="/townhall/{{ s.id }}"><strong>{{ s.topic }}</strong></a>
         <div class="muted small">
           {{ s.started_at|when }} · {{ s.mode }}
-          {% if s.guest_model %} · 4º: <code>{{ s.guest_model }}</code>{% endif %}
+          {% if s.guest_model %} · + <code>{{ s.guest_model }}</code>{% endif %}
         </div>
       </div>
       <span class="th-pill is-{{ s.status }}">{{ s.status }}</span>
@@ -197,6 +206,7 @@
         <div class="muted small">
           {{ sc.topic }} · {{ sc.interval_hours|int }}h
           {% if sc.allowed_hours %} · {{ sc.allowed_hours }}{% endif %}
+          {% if sc.participants %} · {% for p in sc.participants %}{{ p.name }}{% if p.model %} (<code>{{ p.model }}</code>){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
           {% if sc.last_session_id %} · <a href="/townhall/{{ sc.last_session_id }}">{{ sc.last_session_id }}</a>{% endif %}
         </div>
       </div>
@@ -221,4 +231,8 @@
   <p class="muted">{{ t.th_sched_empty }}</p>
   {% endif %}
 </section>
+
+<script type="application/json" id="th-families-data">{{ families|tojson }}</script>
+<script type="application/json" id="th-picker-i18n">{{ picker_i18n|tojson }}</script>
+<script src="/static/townhall.js?v={{ css_v }}" defer></script>
 {% endblock %}

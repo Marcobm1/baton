@@ -504,6 +504,37 @@ def test_web_search_ddg_antibot_fails_honestly_and_brave_tavily_work():
     assert "tvly-secret-key" not in str(exc_info.value) and "***" in str(exc_info.value)
 
 
+def test_web_search_falls_back_when_local_searxng_is_down():
+    # Docker closed or the container stopped: search must still work through
+    # the next backend, and say that it did.
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.host == "127.0.0.1":
+            raise httpx.ConnectError("connection refused")
+        return httpx.Response(200, json={
+            "web": {"results": [{"title": "Brave Hit", "url": "https://brave.example/1", "description": "ok"}]}
+        })
+
+    out = local_harness.web_search(
+        "hello",
+        search_url="http://127.0.0.1:8888/search?format=json&q={query}",
+        brave_api_key="brave-secret-key",
+        client_factory=lambda t: httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    assert out.startswith("[Local SearXNG unavailable")
+    assert "Brave Hit" in out
+
+    # Both down: one honest error that names both failures.
+    def all_down(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down")
+
+    with pytest.raises(local_harness.ToolError, match="Local SearXNG failed .*fallback also failed"):
+        local_harness.web_search(
+            "hello",
+            search_url="http://127.0.0.1:8888/search?q={query}",
+            client_factory=lambda t: httpx.Client(transport=httpx.MockTransport(all_down)),
+        )
+
+
 def test_tool_call_stream_filter_and_fallback_parser():
     flt = local_harness._ToolCallStreamFilter()
     chunks = [

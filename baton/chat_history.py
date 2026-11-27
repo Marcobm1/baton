@@ -7,6 +7,8 @@ survive reloads or restarts.
 
 from __future__ import annotations
 
+import json
+import re
 import secrets
 import time
 from pathlib import Path
@@ -21,6 +23,15 @@ MAX_CONTENT_CHARS = 200_000
 MAX_REASONING_CHARS = 200_000
 MAX_META_CHARS = 300
 MAX_MESSAGES_PER_REPLACE = 200
+# Tool rows saved with an assistant turn (UI-6). Bounded so one noisy turn
+# can't bloat the database: long outputs are clipped, big diffs dropped.
+MAX_TOOLS_PER_MESSAGE = 80
+MAX_TOOL_FIELD_CHARS = 4_000
+MAX_TOOL_DIFF_CHARS = 20_000
+MAX_TOOLS_JSON_CHARS = 250_000
+_TOOL_TEXT_FIELDS = ("id", "kind", "name", "title", "status")
+# Never keep what a tool printed after touching an env file: it may hold keys.
+_SECRET_HINT = re.compile(r"\.env\b", re.IGNORECASE)
 
 
 def _clip_title(text: str) -> str:
@@ -28,6 +39,54 @@ def _clip_title(text: str) -> str:
     if len(clean) <= MAX_TITLE_CHARS:
         return clean
     return clean[: MAX_TITLE_CHARS - 1].rstrip() + "…"
+
+
+def clean_tools(tools: Any) -> list[dict[str, Any]]:
+    """Keep only the fields the chat renders, clipped to safe sizes."""
+    if not isinstance(tools, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for ev in tools[:MAX_TOOLS_PER_MESSAGE]:
+        if not isinstance(ev, dict):
+            continue
+        item: dict[str, Any] = {k: str(ev.get(k) or "")[:300] for k in _TOOL_TEXT_FIELDS if ev.get(k)}
+        if not item.get("id"):
+            continue
+        secret = any(_SECRET_HINT.search(str(ev.get(k) or "")) for k in ("title", "input", "name"))
+        if ev.get("input"):
+            item["input"] = str(ev["input"])[:MAX_TOOL_FIELD_CHARS]
+        if ev.get("output") and not secret:
+            item["output"] = str(ev["output"])[:MAX_TOOL_FIELD_CHARS]
+        diffs = []
+        for d in (ev.get("diffs") or [])[:5]:
+            if not isinstance(d, dict) or secret:
+                continue
+            old, new = str(d.get("old") or ""), str(d.get("new") or "")
+            if len(old) + len(new) <= MAX_TOOL_DIFF_CHARS:
+                diffs.append({"path": str(d.get("path") or "")[:300], "old": old, "new": new})
+        if diffs:
+            item["diffs"] = diffs
+        out.append(item)
+    # Last resort: drop outputs, then diffs, until the JSON fits.
+    for field in ("output", "diffs"):
+        if len(json.dumps(out)) <= MAX_TOOLS_JSON_CHARS:
+            break
+        for item in out:
+            item.pop(field, None)
+    return out
+
+
+def _tools_json(tools: Any) -> str:
+    cleaned = clean_tools(tools)
+    return json.dumps(cleaned, ensure_ascii=False) if cleaned else ""
+
+
+def _tools_from_db(raw: str) -> list[dict[str, Any]]:
+    try:
+        value = json.loads(raw) if raw else []
+    except ValueError:
+        return []
+    return value if isinstance(value, list) else []
 
 
 class ChatHistory:
@@ -72,14 +131,14 @@ class ChatHistory:
             if row is None:
                 return None
             msgs = conn.execute(
-                """SELECT id, role, content, reasoning, meta, created_at
+                """SELECT id, role, content, reasoning, meta, created_at, tools
                    FROM chat_messages
                    WHERE thread_id = ?
                    ORDER BY id ASC""",
                 (tid,),
             ).fetchall()
         out = dict(row)
-        out["messages"] = [dict(m) for m in msgs]
+        out["messages"] = [{**dict(m), "tools": _tools_from_db(m["tools"])} for m in msgs]
         return out
 
     def create_thread(
@@ -143,6 +202,7 @@ class ChatHistory:
         *,
         reasoning: str = "",
         meta: str = "",
+        tools: Any = None,
     ) -> dict[str, Any] | None:
         if role not in VALID_ROLES:
             raise ValueError(f"Unknown role: {role}")
@@ -150,14 +210,15 @@ class ChatHistory:
         clean_content = str(content or "")[:MAX_CONTENT_CHARS]
         clean_reasoning = str(reasoning or "")[:MAX_REASONING_CHARS]
         clean_meta = str(meta or "")[:MAX_META_CHARS]
+        tools_json = _tools_json(tools) if role == "assistant" else ""
         with db.connect(self.data_dir) as conn:
             row = conn.execute("SELECT title FROM chat_threads WHERE id = ?", (thread_id,)).fetchone()
             if row is None:
                 return None
             cur = conn.execute(
-                """INSERT INTO chat_messages (thread_id, role, content, reasoning, meta, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (thread_id, role, clean_content, clean_reasoning, clean_meta, now),
+                """INSERT INTO chat_messages (thread_id, role, content, reasoning, meta, created_at, tools)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (thread_id, role, clean_content, clean_reasoning, clean_meta, now, tools_json),
             )
             new_title = row["title"]
             if not new_title and role == "user" and clean_content.strip():
@@ -173,6 +234,7 @@ class ChatHistory:
             "content": clean_content,
             "reasoning": clean_reasoning,
             "meta": clean_meta,
+            "tools": _tools_from_db(tools_json),
             "created_at": now,
             "thread_title": new_title,
         }
@@ -186,7 +248,7 @@ class ChatHistory:
         effort: str | None = None,
     ) -> dict[str, Any] | None:
         """Replace a thread's message list atomically (used by local-chat edit/regenerate)."""
-        cleaned: list[tuple[str, str, str, str]] = []
+        cleaned: list[tuple[str, str, str, str, str]] = []
         for m in messages[-MAX_MESSAGES_PER_REPLACE:]:
             if not isinstance(m, dict):
                 continue
@@ -196,9 +258,10 @@ class ChatHistory:
             content = str(m.get("content") or "")[:MAX_CONTENT_CHARS]
             reasoning = str(m.get("reasoning") or "")[:MAX_REASONING_CHARS]
             meta = str(m.get("meta") or "")[:MAX_META_CHARS]
-            if not content and not reasoning:
+            tools_json = _tools_json(m.get("tools")) if role == "assistant" else ""
+            if not content and not reasoning and not tools_json:
                 continue
-            cleaned.append((role, content, reasoning, meta))
+            cleaned.append((role, content, reasoning, meta, tools_json))
 
         now = time.time()
         with db.connect(self.data_dir) as conn:
@@ -208,15 +271,15 @@ class ChatHistory:
             if row is None:
                 return None
             conn.execute("DELETE FROM chat_messages WHERE thread_id = ?", (thread_id,))
-            for role, content, reasoning, meta in cleaned:
+            for role, content, reasoning, meta, tools_json in cleaned:
                 conn.execute(
-                    """INSERT INTO chat_messages (thread_id, role, content, reasoning, meta, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (thread_id, role, content, reasoning, meta, now),
+                    """INSERT INTO chat_messages (thread_id, role, content, reasoning, meta, created_at, tools)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (thread_id, role, content, reasoning, meta, now, tools_json),
                 )
             title = row["title"]
             if not title:
-                first_user = next((c for r, c, _, _ in cleaned if r == "user" and c.strip()), "")
+                first_user = next((c for r, c, _, _, _ in cleaned if r == "user" and c.strip()), "")
                 if first_user:
                     title = _clip_title(first_user.splitlines()[0])
             new_model = str(model)[:120] if model is not None else row["model"]

@@ -454,8 +454,43 @@ body.page-chat main { flex: 1; min-height: 0; max-width: none; margin: 0;
 .msg-tools { display: flex; flex-direction: column; gap: .2rem; margin-bottom: .45rem; }
 .msg-tools:empty { display: none; }
 
+/* UI-6 polish (Claude Code desktop look). */
+/* One "new chat": the history column on desktop, an icon in the header only
+   where the history is a drawer (narrow screens). */
+.chat-new-icon { width: 2rem; height: 1.9rem; padding: 0; justify-content: center; font-size: 1rem; }
+@media (min-width: 960px) { .chat-new-icon { display: none; } }
+
+/* Round send button: the single accent action of the composer. The text stays
+   for screen readers (aria-label) but is not drawn. */
+.cc-send { width: 2rem; height: 2rem; padding: 0; border-radius: 999px; justify-content: center; }
+.cc-send-icon { font-size: 1rem; line-height: 1; font-weight: 700; }
+.cc-send-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
+                clip-path: inset(50%); white-space: nowrap; }
+
+/* "Thought for 12 s" looks clickable: a chevron that turns when open. */
+.msg-think summary::before { content: "›"; display: inline-block; width: .6rem; font-size: .95rem;
+                             transition: transform .15s ease; }
+.msg-think[open] summary::before { transform: rotate(90deg); }
+
+/* Keys hint only while typing with a keyboard; live status ("Thinking…") always shows. */
+.composer-status .status-left.is-hint { opacity: 0; transition: opacity .15s ease; }
+.chat-dock:focus-within .composer-status .status-left.is-hint { opacity: 1; }
+@media (hover: none) {
+  .composer-status .status-left.is-hint, .ag-kbd { display: none; }
+}
+
+@media (max-width: 599px) {
+  /* Header: menu, title, new, more. The folder already shows in its composer chip. */
+  .chat-topbar-meta { display: none; }
+  /* Chips in one row that scrolls sideways instead of three wrapped rows. */
+  .composer-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .composer-chips::-webkit-scrollbar { display: none; }
+  .cc-chip { flex: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ag-dot.ag-pending, .ag-dot.ag-in_progress { animation: none; }
+  .msg-think summary::before { transition: none; }
 }
 
 

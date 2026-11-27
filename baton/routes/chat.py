@@ -77,6 +77,8 @@ def _sync_agent_thread(ctx: AppContext, chat, *, force_partial: bool = False) ->
 
         buf_text: list[str] = []
         buf_thought: list[str] = []
+        # Latest state of each tool call in the turn (events repeat per update).
+        buf_tools: dict[str, dict] = {}
         last_persisted = start
 
         for idx in range(start, len(events)):
@@ -89,23 +91,29 @@ def _sync_agent_thread(ctx: AppContext, chat, *, force_partial: bool = False) ->
                 buf_text.append(str(ev.get("text") or ""))
             elif kind == "thought":
                 buf_thought.append(str(ev.get("text") or ""))
+            elif kind == "tool" and ev.get("id"):
+                buf_tools[str(ev["id"])] = {**buf_tools.get(str(ev["id"]), {}), **ev}
             elif kind in ("done", "error", "closed"):
                 content = "".join(buf_text).strip()
                 thought = "".join(buf_thought).strip()
-                if content or thought:
+                if content or thought or buf_tools:
                     ctx.chat_history.append_message(
                         tid, "assistant", content, reasoning=thought,
                         meta=str(ev.get("reason") or "") if kind == "done" else "",
+                        tools=list(buf_tools.values()),
                     )
                 buf_text.clear()
                 buf_thought.clear()
+                buf_tools.clear()
                 last_persisted = idx + 1
 
-        if force_partial and (buf_text or buf_thought):
+        if force_partial and (buf_text or buf_thought or buf_tools):
             content = "".join(buf_text).strip()
             thought = "".join(buf_thought).strip()
-            if content or thought:
-                ctx.chat_history.append_message(tid, "assistant", content, reasoning=thought)
+            if content or thought or buf_tools:
+                ctx.chat_history.append_message(
+                    tid, "assistant", content, reasoning=thought, tools=list(buf_tools.values()),
+                )
             last_persisted = len(events)
 
         chat._persisted_seq = last_persisted
@@ -200,6 +208,9 @@ def _chat_strings(t: dict[str, str], lang: str, agent: str) -> dict:
         "st_pending": t["ag_st_pending"], "st_in_progress": t["ag_st_in_progress"],
         "st_completed": t["ag_st_completed"], "st_failed": t["ag_st_failed"],
         "grp_read": t["ag_grp_read"], "grp_search": t["ag_grp_search"], "grp_steps": t["ag_grp_steps"],
+        "grp_read_one": t["ag_grp_read_one"], "grp_search_one": t["ag_grp_search_one"],
+        "kinds": {k: t["ag_kind_" + k] for k in (
+            "read", "edit", "delete", "move", "search", "execute", "think", "fetch", "utility", "other")},
         "lbl_agent": t["ag_agent"], "lbl_model": t["chat_model"], "lbl_effort": t["chat_effort"],
         "lbl_folder": t["ag_folder"], "locked": t["chat_locked"], "filter_models": t["chat_filter_models"],
         "thinking_s": t["chat_thinking_s"], "thought_for": t["chat_thought_for"],
@@ -294,10 +305,14 @@ async def chat_threads_messages(request: Request, thread_id: str, ctx: AppContex
     content = str(body.get("content") or "")
     reasoning = str(body.get("reasoning") or "")
     meta = str(body.get("meta") or "")
-    if role not in ("user", "assistant", "system") or (not content.strip() and not reasoning.strip()):
+    tools = body.get("tools") if isinstance(body.get("tools"), list) else None
+    if role not in ("user", "assistant", "system") or (
+        not content.strip() and not reasoning.strip() and not tools
+    ):
         raise HTTPException(400, "Valid role and content are required.")
     msg = await asyncio.to_thread(
-        ctx.chat_history.append_message, thread_id, role, content, reasoning=reasoning, meta=meta
+        ctx.chat_history.append_message, thread_id, role, content,
+        reasoning=reasoning, meta=meta, tools=tools,
     )
     if msg is None:
         raise HTTPException(404, "Unknown thread")

@@ -164,3 +164,61 @@ def test_agent_chat_persists_user_and_assistant_turns_to_sqlite(tmp_path: Path, 
         boot = json.loads(boot_json)
         assert boot["active_thread"]["id"] == tid
         assert len(boot["active_thread"]["messages"]) == 2
+
+        # UI-6: a turn that used a tool saves the tool row with its final state.
+        (scratch / "notes.txt").write_text("hello notes\n", encoding="utf-8")
+        assert client.post(f"/api/agents/{info['id']}/prompt", json={"text": "read notes.txt"},
+                           headers=headers).status_code == 202
+        deadline = time.time() + 15
+        while chat.busy and time.time() < deadline:
+            time.sleep(0.05)
+        client.get(f"/api/agents/{info['id']}/events?after=0")
+        last = client.get(f"/api/chat-threads/{tid}").json()["messages"][-1]
+        assert last["role"] == "assistant" and "hello notes" in last["content"]
+        assert [(x["id"], x["kind"], x["status"]) for x in last["tools"]] == [("t-read", "read", "completed")]
+
+
+def test_tool_rows_survive_reload_and_are_bounded(tmp_path: Path):
+    # UI-6: a reopened chat must show the same tool rows and diffs it showed live.
+    h = ChatHistory(tmp_path)
+    t = h.create_thread(agent="gemini", model="gemini-4-neon")
+    tools = [
+        {"id": "1", "kind": "read", "title": "baton/web.py", "status": "completed", "output": "x" * 10_000,
+         "locations": ["ignored"], "raw": {"ignored": True}},
+        {"id": "2", "kind": "edit", "title": "README.md", "status": "completed",
+         "diffs": [{"path": "README.md", "old": "projets", "new": "projects"}]},
+        {"id": "3", "kind": "read", "title": "read_file: .env", "status": "completed", "output": "BATON_KEY=abc"},
+        {"kind": "read", "title": "no id: dropped"},
+    ]
+    h.append_message(t["id"], "assistant", "Done.", tools=tools)
+    h.append_message(t["id"], "user", "thanks", tools=tools)  # only assistant turns keep tools
+
+    msgs = h.get_thread(t["id"])["messages"]
+    saved = msgs[0]["tools"]
+    assert [x["id"] for x in saved] == ["1", "2", "3"]
+    assert len(saved[0]["output"]) == 4_000 and "locations" not in saved[0] and "raw" not in saved[0]
+    assert saved[1]["diffs"] == [{"path": "README.md", "old": "projets", "new": "projects"}]
+    assert "output" not in saved[2]  # never keep what came out of an env file
+    assert msgs[1]["tools"] == []
+
+    # Local chat saves through replace_messages: tools survive that too.
+    h.replace_messages(t["id"], [{"role": "user", "content": "q"},
+                                 {"role": "assistant", "content": "", "tools": tools[1:2]}])
+    assert h.get_thread(t["id"])["messages"][1]["tools"][0]["kind"] == "edit"
+
+
+def test_old_database_gets_tools_column(tmp_path: Path):
+    import sqlite3
+
+    from baton import db
+
+    path = tmp_path / "baton.sqlite3"
+    with sqlite3.connect(path) as conn:  # chat_messages as it was before UI-6
+        conn.execute("""CREATE TABLE chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL,
+                        role TEXT NOT NULL, content TEXT NOT NULL, reasoning TEXT NOT NULL, meta TEXT NOT NULL,
+                        created_at REAL NOT NULL)""")
+    db._initialized.clear()
+    h = ChatHistory(tmp_path)
+    t = h.create_thread(agent="local", model="m")
+    h.append_message(t["id"], "assistant", "hi", tools=[{"id": "a", "kind": "search", "title": "q"}])
+    assert h.get_thread(t["id"])["messages"][0]["tools"][0]["id"] == "a"

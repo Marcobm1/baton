@@ -150,7 +150,7 @@
     if (!messages.length) return Promise.resolve();
     var payload = {
       replace: messages.map(function (m) {
-        return { role: m.role, content: m.content || "", reasoning: m.reasoning || "", meta: m.meta || "" };
+        return { role: m.role, content: m.content || "", reasoning: m.reasoning || "", meta: m.meta || "", tools: m.tools || [] };
       }),
       model: modelSel.value,
       effort: effortSel.value
@@ -207,7 +207,7 @@
       effortSel.value = th.effort;
     }
     messages = (th.messages || []).map(function (m) {
-      return { role: m.role, content: m.content || "", reasoning: m.reasoning || "", meta: m.meta || "" };
+      return { role: m.role, content: m.content || "", reasoning: m.reasoning || "", meta: m.meta || "", tools: m.tools || [] };
     });
     sidebar.setActive(threadId);
     renderAll();
@@ -256,7 +256,11 @@
   // ----------------------------------------------------------- messages & tools
   var statusTextEl = root.querySelector("[data-status-text]");
   function setStatus(liveMsg) {
-    if (statusTextEl) statusTextEl.textContent = liveMsg || T.kbd_hint || "";
+    if (statusTextEl) {
+      statusTextEl.textContent = liveMsg || T.kbd_hint || "";
+      // The keys hint only shows while typing on a keyboard (CSS); live status always shows.
+      statusTextEl.classList.toggle("is-hint", !liveMsg);
+    }
   }
 
   function bubble(role, idx) {
@@ -391,8 +395,7 @@
       .catch(function () {});
   }
   function setBusy(on) {
-    send.textContent = on ? T.stop : T.send;
-    if (on) send.setAttribute("data-busy", ""); else send.removeAttribute("data-busy");
+    BC.setSendState(send, on, T);
     modelSel.disabled = on;
     harnessRadios.forEach(function (r) { r.disabled = on; });
     if (harnessFolderSel) harnessFolderSel.disabled = on;

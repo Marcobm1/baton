@@ -4,6 +4,15 @@
 //  - Collapsible thread history sidebar (SQLite-backed, synced across desktop & mobile)
 //  - Agent switcher
 (function () {
+  // Page strings (i18n) from <script id="chat-strings">, read once.
+  var STR = null;
+  function str(key, fallback) {
+    if (STR === null) {
+      try { STR = JSON.parse(document.getElementById("chat-strings").textContent) || {}; } catch (e) { STR = {}; }
+    }
+    return STR[key] || fallback;
+  }
+
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -56,7 +65,7 @@
         for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) code.push(lines[i]);
         i++;
         var head = '<div class="code-head"><span class="code-lang">' + esc(lang || "code") +
-                   '</span><button type="button" class="code-copy" data-code-copy>Copy</button></div>';
+                   '</span><button type="button" class="code-copy" data-code-copy>' + esc(str("copy", "Copy")) + '</button></div>';
         out.push('<div class="code-block">' + head + '<pre><code>' + esc(code.join("\n")) + '</code></pre></div>');
         continue;
       }
@@ -409,9 +418,19 @@
       }
     }
 
+    // "/tmp/x/scratch (pruebas)" or "C:\Users\me\scratch (pruebas)" -> "scratch (pruebas)".
+    // Repo labels like "owner/repo" stay as they are; the full value goes in the tooltip.
+    function shortPath(label) {
+      var txt = String(label || "").trim();
+      if (!/^(\/|[A-Za-z]:[\\\/]|\\\\)/.test(txt)) return txt;
+      var m = txt.match(/^(.*?)(\s+\([^()]*\))?$/);
+      var parts = m[1].split(/[\\\/]+/).filter(Boolean);
+      return (parts[parts.length - 1] || m[1]) + (m[2] || "");
+    }
+
     function setContext(folder, branch) {
       if (folderBadge) {
-        folderBadge.textContent = folder || "";
+        folderBadge.textContent = shortPath(folder);
         folderBadge.title = folder || "";
         folderBadge.hidden = !folder;
       }
@@ -949,8 +968,10 @@
       }
       if (ev.key === "Tab" && ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
         if (!opts.onCycleMode) return;
+        // Only from the message box, like Claude Code: anywhere else Shift+Tab
+        // must keep moving focus backwards for keyboard users.
         var active = document.activeElement;
-        if (active && root.contains(active)) {
+        if (active && active.matches && active.matches("[data-text]") && root.contains(active)) {
           ev.preventDefault();
           opts.onCycleMode(function (id) { open(id); });
         }
@@ -986,6 +1007,18 @@
       return parts[parts.length - 1] || txt;
     }
     return txt;
+  }
+
+  // Send button: round arrow icon (stop square while busy), text kept for screen readers.
+  function setSendState(btn, busy, T) {
+    if (!btn) return;
+    var label = busy ? (T.stop || "Stop") : (T.send || "Send");
+    var icon = btn.querySelector(".cc-send-icon"), text = btn.querySelector(".cc-send-text");
+    if (icon && text) { icon.textContent = busy ? "■" : "↑"; text.textContent = label; }
+    else btn.textContent = label;
+    btn.setAttribute("aria-label", label);
+    btn.title = label;
+    if (busy) btn.setAttribute("data-busy", ""); else btn.removeAttribute("data-busy");
   }
 
   function bindAutosize(textarea) {
@@ -1081,8 +1114,8 @@
         else if (it.status === "failed") failed++;
       });
       var parts = [];
-      if (reads) parts.push((T.grp_read || "{n} read").replace("{n}", String(reads)));
-      if (searches) parts.push((T.grp_search || "{n} search").replace("{n}", String(searches)));
+      if (reads) parts.push(((reads === 1 && T.grp_read_one) || T.grp_read || "{n} read").replace("{n}", String(reads)));
+      if (searches) parts.push(((searches === 1 && T.grp_search_one) || T.grp_search || "{n} search").replace("{n}", String(searches)));
       if (!parts.length) parts.push((T.grp_steps || "{n} steps").replace("{n}", String(grp.items.length)));
       grp.titleEl.textContent = parts.join(" · ");
       var st = running ? "in_progress" : (failed ? "failed" : "completed");
@@ -1117,16 +1150,21 @@
       var dot = el("span", "ag-dot ag-" + st);
       dot.setAttribute("aria-hidden", "true");
       sum.appendChild(dot);
-      sum.appendChild(el("span", "ag-kind", ev.kind || "tool"));
+      var kindKey = String(ev.kind || "other").toLowerCase();
+      sum.appendChild(el("span", "ag-kind", (T.kinds && T.kinds[kindKey]) || ev.kind || "tool"));
       sum.appendChild(el("span", "ag-title", ev.title || ev.name || ev.id));
       sum.appendChild(el("span", "ag-status ag-" + st, T["st_" + st] || st));
       card.appendChild(sum);
       var body = el("div", "ag-tool-body");
-      if (showToolName && ev.name) body.appendChild(toolBlock("tool", ev.name));
-      if (ev.input) body.appendChild(toolBlock(T.input || "Arguments", ev.input));
+      if (showToolName && ev.name && ev.name !== ev.title) body.appendChild(toolBlock("tool", ev.name));
+      var shown = String(ev.title || "").trim();
+      if (ev.input && String(ev.input).trim() !== shown) body.appendChild(toolBlock(T.input || "Arguments", ev.input));
       (ev.diffs || []).forEach(function (d) { body.appendChild(diffBlock(d, T.diff_unchanged)); });
       if (ev.output) body.appendChild(toolBlock(T.output || "Result", ev.output));
       if (body.childNodes.length) card.appendChild(body);
+      // Like Claude Code: an edit shows its diff straight away; reads and commands stay folded.
+      // Only once, so a later status update never reopens a diff the user folded.
+      if ((ev.diffs || []).length && !card._autoOpened) { card.open = true; card._autoOpened = true; }
     }
 
     function onTool(ev, toolList) {
@@ -1193,7 +1231,7 @@
       if ((ev.locations || []).length) box.appendChild(el("p", "muted small", ev.locations.join("\n")));
       var row = el("div", "ag-perm-actions");
       var yes = el("button", "btn small");
-      var no = el("button", "btn small danger");
+      var no = el("button", "btn small ghost");
       yes.type = no.type = "button";
       setPermButton(yes, "1", T.allow || "Allow");
       setPermButton(no, "2", T.deny || "Deny");
@@ -1211,7 +1249,6 @@
       row.appendChild(yes);
       row.appendChild(no);
       var metaParts = [];
-      if (T.perm_keys) metaParts.push(T.perm_keys);
       if (ev.expires) {
         var when = new Date(ev.expires * 1000).toLocaleTimeString(T.lang, { hour: "2-digit", minute: "2-digit" });
         metaParts.push((T.expires || "").replace("{time}", when));
@@ -1264,6 +1301,7 @@
     selectedLabel: selectedLabel,
     shortFolder: shortFolder,
     bindAutosize: bindAutosize,
+    setSendState: setSendState,
     attachCopyButton: attachCopyButton,
     createAssistantBubble: createAssistantBubble,
     createToolsView: createToolsView

@@ -266,8 +266,7 @@
   }
   function setBusy(on) {
     busy = on;
-    send.textContent = on ? T.stop : T.send;
-    if (on) send.setAttribute("data-busy", ""); else send.removeAttribute("data-busy");
+    BC.setSendState(send, on, T);
   }
 
   composer = window.BatonChat.initComposerControls({
@@ -374,6 +373,11 @@
           b.think.hidden = false;
           b.thinkText.textContent = m.reasoning;
         }
+        if (m.tools && m.tools.length) {
+          // Saved tool rows (UI-6): the same compact rows and diffs as live.
+          var saved = BC.createToolsView(b.tools, { T: T, showToolName: true });
+          m.tools.forEach(function (ev) { saved.onTool(ev); });
+        }
         b.body.innerHTML = md(m.content || "");
         if (m.content) b.attachCopy(function () { return m.content; });
       }
@@ -418,11 +422,13 @@
   var statusMetaEl = $("[data-status-meta]");
 
   function setStatus(liveMsg) {
-    if (statusTextEl) statusTextEl.textContent = liveMsg || T.kbd_hint || "";
-    if (statusMetaEl) {
-      var turnCount = log.querySelectorAll(".msg").length;
-      statusMetaEl.textContent = turnCount ? (selectedLabel(modelSel) + " · " + turnCount) : selectedLabel(modelSel);
+    if (statusTextEl) {
+      statusTextEl.textContent = liveMsg || T.kbd_hint || "";
+      // The keys hint only shows while typing on a keyboard (CSS); live status always shows.
+      statusTextEl.classList.toggle("is-hint", !liveMsg);
     }
+    // The model is already on its chip: no need to repeat it here.
+    if (statusMetaEl) statusMetaEl.textContent = "";
   }
   function stopCurrentThink() {
     if (current && current.thinkTimer) current.thinkTimer.stop();

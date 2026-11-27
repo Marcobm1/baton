@@ -1,5 +1,5 @@
-// Theme buttons: Auto (follow the system), Light, Dark. The choice is kept in
-// localStorage; the inline script in <head> applies it before the first paint.
+// Theme buttons (Auto / Light / Dark) and collapsible desktop sidebar rail.
+// Choices are persisted in localStorage and applied before first paint in <head>.
 (function () {
   var d = document.documentElement, order = ["auto", "light", "dark"];
   function current() { return d.dataset.theme || "auto"; }
@@ -22,4 +22,29 @@
     b.addEventListener("click", function () { apply(order[(order.indexOf(current()) + 1) % order.length]); });
   });
   paint();
+
+  function isCollapsed() { return d.dataset.sidebar === "collapsed"; }
+  function paintSidebar() {
+    var collapsed = isCollapsed();
+    document.querySelectorAll("[data-sidebar-toggle]").forEach(function (b) {
+      var label = collapsed ? (b.dataset.labelExpand || "Expand sidebar") : (b.dataset.labelCollapse || "Collapse sidebar");
+      b.setAttribute("aria-expanded", String(!collapsed));
+      b.setAttribute("aria-label", label);
+      b.title = label;
+    });
+  }
+  document.querySelectorAll("[data-sidebar-toggle]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var next = isCollapsed() ? "expanded" : "collapsed";
+      d.dataset.sidebar = next;
+      try { localStorage.setItem("baton-sidebar", next); } catch (e) {}
+      paintSidebar();
+    });
+  });
+  paintSidebar();
+
+  var activeTab = document.querySelector('.tab-bar a[aria-current="page"]');
+  if (activeTab && typeof activeTab.scrollIntoView === "function") {
+    try { activeTab.scrollIntoView({ inline: "center", block: "nearest" }); } catch (e) {}
+  }
 })();

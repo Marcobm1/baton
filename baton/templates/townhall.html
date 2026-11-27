@@ -4,8 +4,12 @@
 {% block styles %}<link rel="stylesheet" href="/static/townhall.css?v={{ css_v }}">{% endblock %}
 
 {% block main %}
-<h1>{{ t.th_title }}</h1>
-<p class="muted">{{ t.th_sub }}</p>
+<div class="page-head">
+  <div>
+    <h2>{{ t.th_title }}</h2>
+    <p class="muted small">{{ t.th_sub }}</p>
+  </div>
+</div>
 
 <div class="th-grid">
   <section class="th-card">

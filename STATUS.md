@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
 updated: 2026-11-27
-updated_by: human
+updated_by: antigravity
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -14,6 +14,7 @@ links:
 ---
 
 ## Done recently
+- 2026-11-27: Global Claude Code desktop UI & mobile PWA: extended the Claude Code desktop aesthetic across every page (warm off-white `#faf9f5` light palette, neutral `--primary`/`--on-primary` primary buttons and active filter chips reserving blue for links/status, unified `.page-head` headers & quiet `.back-link` bars, non-wrapping card actions, horizontally scrollable mobile `.tab-bar` fixing 8-tab collisions), added a persistent collapsible global sidebar rail (`220 px` ↔ `56 px` icon rail via `localStorage` `baton-sidebar`, defaulting collapsed on `/chat`), and shipped mobile PWA support (dynamic auth-exempt `/manifest.webmanifest`, 180/192/512 PNG Huo icons, light/dark `theme-color`; `tests/test_design.py`, `docs/design.md`).
 - 2026-11-27: Town Hall Phase 4: mounted the open-source [`ai-townhall`](https://github.com/Marcobm1/townhall) deliberation engine inside Huo at `/townhall` and `/townhall/{id}` (`baton/townhall_bridge.py`, `baton/routes/townhall.py`, `baton/templates/townhall*.html`, `baton/static/townhall.{css,js}`) with allowlisted workspaces, Neon/Astra/Opus + OpenCode Go defaults, live SSE progress, recurring schedules in `_quota_tick()`, Telegram completion alerts (`Notifier.notify_townhall`), **Convert to task →** (`/tasks/new?from_townhall=...`), and **Open in Chat** (`tests/test_townhall.py`, `docs/townhall.md`).
 - 2026-11-27: Rebranded the visible UI and notifications/alerts to **Huo** with a custom Mr. Tail + Taoist talisman (`☲`) SVG icon & favicon (`baton/static/huo-icon.svg`): set `DEFAULT_TITLE = "Huo"`, replaced hardcoded visible `"Baton"` prose in `baton/i18n.py` with `{app}` and parameterized `Notifier` and `AlertEngine` with `app_name=settings.title` so `BATON_TITLE` updates every page, alert, and Telegram message cleanly without breaking CLI, `.env`, `~/.baton`, or scheduled tasks (`tests/test_i18n.py`, `tests/test_notify.py`, `tests/test_alerts.py`, `tests/test_design.py`, `docs/design.md`, `docs/ideas.md`).
 - 2026-11-27: UI-5: unified `/chat` component for local models and ACP agents (merged the duplicated Agent/Local branches of `baton/templates/chat.html` into one root, topbar, log, composer, status bar, and `#chat-strings` payload built by `_chat_strings()`; moved assistant bubbles, copy buttons, tool rows, read-only tool groups, diffs, inline `1`/`2` approvals, and composer helpers into `baton/static/chat-common.js` so `chat.js` and `agents-chat.js` are thin transport adapters; `tests/test_design.py`, `docs/design.md`).
@@ -53,6 +54,7 @@ links:
 - [x] 2026-11-26 Fix flaky Windows test `tests/test_models.py::test_thermal_guard_without_page_visits[False]` (`LocalModels._state()` now retries transient Windows `PermissionError` during `os.replace`, and `_save()` uses a PID/thread-scoped temp file)
 - [x] 2026-11-27 Local SearXNG running on Marco's PC (`baton-searxng` on `127.0.0.1:8888`), `BATON_SEARCH_URL` in `.env`, Baton restarted; `web_search` verified with Baton's own code (Docker Desktop needed stale sockets removed, see docs/local-harness.md)
 - [x] 2026-11-27 UI-6: `/chat` polish after review (Shift+Tab only from the message box, short folder name in the header, translated tool kinds/plurals/Copy, tool rows and diffs saved in SQLite and restored on reload, search falls back when SearXNG is down, SearXNG image pinned by digest, one "new chat", round send button, neutral Deny, no keys prose, edits open, think chevron, quieter status line, cleaner empty state, mobile header and one-row chips)
+- [x] 2026-11-27 UI-8: Claude Code desktop look across the whole app + collapsible global sidebar rail + mobile PWA (warm off-white light palette, neutral `--primary`/`--on-primary` actions, collapsible `56 px` rail defaulting collapsed on `/chat`, horizontally scrollable mobile `.tab-bar`, dynamic auth-exempt `/manifest.webmanifest` + PNG Huo icons; `tests/test_design.py`, `docs/design.md`)
 - [ ] UI-7: Visual smoke test for /chat (screenshots + button contrast)
   Turn the review harness into an opt-in test: start the app with a fake Gemini agent (as in
   `tests/test_gemini.py`), inject a conversation with Baton's own renderers, screenshot desktop and
@@ -61,9 +63,8 @@ links:
   that reintroduces `button { color: … !important }`.
   Recommended: claude-code, opus, medium
 - [x] 2026-11-27 (Marco) Try `web_search` from `/chat` with a local model in **Internet + tools** mode (needs your sign-in)
-- [ ] (Marco) Decide two layout questions from the UI review
-  (a) collapse the global menu to icons on `/chat` to give the conversation more width;
-  (b) local chat without models: show the same composer with a setup notice instead of the old "Agent" form.
+- [ ] (Marco) Decide remaining layout question from the UI review: local chat without models showing the same composer with a setup notice instead of the old "Agent" form
+- [ ] (Marco) Install Huo as a PWA on your phone over Tailscale ("Add to Home Screen") and verify standalone launch and icon
 - [ ] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify
   Allow/Deny on a harmless command, restart Baton or start a new chat, and resume the saved session.
@@ -76,6 +77,7 @@ links:
 - Confirm mode on the host runs approved commands as the host Windows user (Gemini Confirm covers commands only; Codex approved commands write even under `sandbox: "read-only"`).
 
 ## Decisions
+- 2026-11-27 (Marco): Extended the Claude Code desktop aesthetic to the entire app + mobile PWA ([docs/design.md](docs/design.md)): warm off-white `#faf9f5` light palette, neutral primary buttons & active chips (`--primary`/`--on-primary`, blue reserved for links/focus/progress), global collapsible sidebar rail (`220 px` ↔ `56 px`, persisted in `localStorage` `baton-sidebar`, defaulting collapsed on `/chat`), scrollable mobile `.tab-bar`, and auth-exempt dynamic `/manifest.webmanifest` + PNG Huo icons.
 - 2026-11-27 (Marco): Multi-agent deliberation lives in its own standalone open-source library (`Marcobm1/townhall`, pinned by exact commit SHA in `pyproject.toml`) and is mounted inside Huo at `/townhall` (`baton/townhall_bridge.py`, [docs/townhall.md](docs/townhall.md)). Workspaces are restricted to `ctx.chat_folders()`, deliberations stay read-only inside disposable git worktrees, and conclusions bridge directly into `/tasks/new?from_townhall=...`, `/chat`, Markdown export, and Telegram notices.
 - 2026-11-27 (Marco): Visible UI and notification brand renamed to **Huo** (`DEFAULT_TITLE = "Huo"`, inspired by Huohuo / Mr. Tail from *Honkai: Star Rail*) with a single-source SVG brand mark & favicon (`baton/static/huo-icon.svg`) and dynamic `{app}` substitution via `BATON_TITLE`. Internal package (`baton/`), CLI, `BATON_*` env vars, `~/.baton`, and Windows scheduled task stay unchanged for compatibility.
 - 2026-11-27: Chat tool rows are saved with each assistant turn (`chat_messages.tools`, JSON): only rendered fields, outputs clipped to 4,000 chars, big diffs dropped, and never the output of anything touching an `.env` file. `web_search` falls back to the next backend when local SearXNG is down. The SearXNG image is pinned by digest.
@@ -89,6 +91,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-27 (antigravity): Extended the Claude Code desktop UI across the entire app + mobile PWA: warm off-white light palette (`#faf9f5`), neutral `--primary`/`--on-primary` primary buttons & active chips, persistent collapsible global sidebar rail (`220 px` ↔ `56 px`, collapsed by default on `/chat`), horizontally scrollable mobile `.tab-bar`, unified page headers/back links, dynamic auth-exempt `/manifest.webmanifest` + PNG Huo icons, and regression tests (`tests/test_design.py`, `docs/design.md`).
 - 2026-11-27 (antigravity): Mounted **Town Hall** Phase 4 inside Huo (`/townhall`, `/townhall/{id}`, `/api/townhall/*`): pinned `ai-townhall` commit in `pyproject.toml`, added `TownHallService`, allowlisted workspaces, live SSE progress, recurring schedules ticked in `_quota_tick()`, Telegram completion alerts (`Notifier.notify_townhall`), **Convert to task →** (`/tasks/new?from_townhall=...`), **Open in Chat**, Markdown export, `tests/test_townhall.py`, and `docs/townhall.md`.
 - 2026-11-27 (antigravity): Renamed the visible UI, alerts, and notifications to **Huo** (`DEFAULT_TITLE = "Huo"`, dynamic `{app}` strings in `baton/i18n.py`, `Notifier` & `AlertEngine` `app_name=settings.title`), replaced the `◆` brand mark with the fused Mr. Tail + Taoist talisman (`☲`) SVG icon & favicon (`baton/static/huo-icon.svg`), and captured future ideas in `docs/ideas.md` (`tests/test_i18n.py`, `tests/test_notify.py`, `tests/test_alerts.py`, `tests/test_design.py`, `docs/design.md`).
 - 2026-11-27 (claude-code): Reviewed UI-1…UI-5 and shipped UI-6 polish (14 fixes, tool persistence + migration, search fallback, SearXNG digest pin); started SearXNG on Marco's PC and set `BATON_SEARCH_URL`.

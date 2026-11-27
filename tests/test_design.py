@@ -70,9 +70,10 @@ def _contrast(a: str, b: str) -> float:
 @pytest.mark.parametrize("theme", [LIGHT, DARK], ids=["light", "dark"])
 def test_text_contrast_is_wcag_aa(theme):
     for fg in ("ink", "muted", "faint", "accent", "ok", "warn", "bad"):
-        for bg in ("panel", "panel-2", "bg"):
+        for bg in ("panel", "panel-2", "bg", "sidebar", "selected"):
             assert _contrast(theme[fg], theme[bg]) >= 4.5, (fg, bg)
     assert _contrast(theme["on-accent"], theme["accent"]) >= 4.5
+    assert _contrast(theme["on-primary"], theme["primary"]) >= 4.5
 
 
 def _rules(css: str):
@@ -370,4 +371,63 @@ def test_huo_brand_favicon_and_dynamic_title(tmp_path, monkeypatch):
     assert "Reiniciar MiHuo" in page
     assert "Actualizaciones de MiHuo" in page
     assert "reinicia MiHuo" in page
+
+
+def test_collapsible_sidebar_rail_and_chat_default_collapsed(tmp_path, monkeypatch):
+    async def no_projects(self, force=False):
+        return [], []
+
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    client = TestClient(create_app(Settings(data_dir=tmp_path, lang="es", self_update=False)))
+
+    home = client.get("/").text
+    home_head = home[:home.index("</head>")]
+    assert home_head.index('localStorage.getItem("baton-sidebar")') < home_head.index("/static/style.css")
+    assert 'if (!side) side = "expanded";' in home_head
+    assert "data-sidebar-toggle" in home
+    assert "side-theme-cycle" in home
+
+    chat = client.get("/chat").text
+    chat_head = chat[:chat.index("</head>")]
+    assert 'if (!side) side = "collapsed";' in chat_head
+    assert "data-sidebar-toggle" in chat
+
+    assert ':root[data-sidebar="collapsed"] { --side-w: 56px; }' in CSS
+
+
+def test_pwa_manifest_icons_and_unauthenticated_access(tmp_path, monkeypatch):
+    async def no_projects(self, force=False):
+        return [], []
+
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    app = create_app(Settings(data_dir=tmp_path, lang="es", self_update=False, title="HuoLab", access_key="secret-k"))
+    client = TestClient(app)
+
+    # Manifest and icons must stay reachable without a session cookie so mobile browsers can install the PWA.
+    manifest_resp = client.get("/manifest.webmanifest")
+    assert manifest_resp.status_code == 200
+    assert "application/manifest+json" in manifest_resp.headers.get("content-type", "")
+    manifest = manifest_resp.json()
+    assert manifest["name"] == "HuoLab"
+    assert manifest["short_name"] == "HuoLab"
+    assert manifest["display"] == "standalone"
+    assert manifest["start_url"] == "/"
+    icon_srcs = [item["src"] for item in manifest["icons"]]
+    assert "/static/huo-icon-192.png" in icon_srcs
+    assert "/static/huo-icon-512.png" in icon_srcs
+    assert "/static/huo-icon.svg" in icon_srcs
+
+    for png in ("/static/apple-touch-icon.png", "/static/huo-icon-192.png", "/static/huo-icon-512.png"):
+        r = client.get(png)
+        assert r.status_code == 200, png
+        assert r.content.startswith(b"\x89PNG\r\n\x1a\n"), png
+
+    # Login and normal pages expose PWA manifest, apple-touch-icon, and light/dark theme-color tags.
+    open_client = TestClient(create_app(Settings(data_dir=tmp_path, lang="es", self_update=False)))
+    for html in (client.get("/login").text, open_client.get("/").text):
+        assert '<link rel="manifest" href="/manifest.webmanifest">' in html
+        assert '<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=' in html
+        assert 'name="theme-color" content="#faf9f5"' in html
+        assert 'name="theme-color" content="#0c0c0d"' in html
+
 

@@ -1,0 +1,27 @@
+# Local-only SearXNG metasearch engine for Baton's local chat harness.
+# Start once:
+#   docker compose -f docker/searxng/docker-compose.yml up -d
+# Then set in Baton's .env:
+#   BATON_SEARCH_URL=http://127.0.0.1:8888/search?format=json&q={query}
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: baton-searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://127.0.0.1:8888/
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-baton-local-searxng-127-0-0-1-only}
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m

@@ -254,57 +254,137 @@
     if (ev.output) card.appendChild(toolBlock(T.output || "Result", ev.output));
   }
 
-  function renderToolEvent(container, toolMap, toolList, ev) {
-    var card = toolMap[ev.id];
-    if (!card) {
-      card = toolMap[ev.id] = mkEl("details", "ag-tool");
-      container.appendChild(card);
-    }
-    populateToolCard(card, ev);
-    var idx = toolList.findIndex(function (x) { return x.id === ev.id; });
-    if (idx >= 0) toolList[idx] = ev;
-    else toolList.push(ev);
+  function readToolCategory(ev) {
+    if ((ev.diffs || []).length) return null;
+    var k = String(ev.kind || "").toLowerCase();
+    if (k === "edit" || k === "execute" || k === "write" || k === "delete") return null;
+    if (k === "search") return "search";
+    if (k === "fetch" || k === "read" || k === "utility") return "read";
+    return null;
   }
 
-  function settlePermCard(permMap, id, outcome, detail) {
-    var box = permMap[id];
-    if (!box) return;
-    var row = box.querySelector(".ag-perm-actions");
-    if (row) row.remove();
-    box.classList.add("ag-perm-" + outcome);
-    var label = {
-      allowed: T.allowed, denied: T.denied, timeout: T.timeout,
-      cancelled: T.cancelled, expired: T.expired
-    }[outcome] || ((T.error || "Error:") + " " + (detail || ""));
-    if (!box.querySelector(".ag-outcome")) box.appendChild(mkEl("p", "ag-outcome", label));
-  }
-
-  function renderPermEvent(container, permMap, runId, ev) {
-    var box = permMap[ev.id] = mkEl("div", "ag-perm");
-    box.appendChild(mkEl("strong", "", (T.perm_title || "Asks for permission") + ": " + (ev.title || ev.kind)));
-    if (ev.command) box.appendChild(toolBlock(T.command || "Command", ev.command, "ag-cmd"));
-    (ev.diffs || []).forEach(function (d) { box.appendChild(diffBlock(d)); });
-    if (!ev.command && !(ev.diffs || []).length && ev.input) box.appendChild(toolBlock(T.input || "Arguments", ev.input));
-    if ((ev.locations || []).length) box.appendChild(mkEl("p", "muted small", ev.locations.join("\n")));
-    var row = mkEl("div", "ag-perm-actions");
-    var yes = mkEl("button", "btn small", T.allow || "Allow");
-    var no = mkEl("button", "btn small danger", T.deny || "Deny");
-    yes.type = no.type = "button";
-    [[yes, true], [no, false]].forEach(function (pair) {
-      pair[0].addEventListener("click", function () {
-        yes.disabled = no.disabled = true;
-        api("/api/chat-harness/" + encodeURIComponent(runId) + "/permission", "POST", { id: ev.id, allow: pair[1] })
-          .catch(function (err) { settlePermCard(permMap, ev.id, "expired", err.message); });
-      });
+  function updateToolGroupSummary(grp) {
+    var reads = 0, searches = 0, running = 0, failed = 0;
+    grp.items.forEach(function (it) {
+      if (it.cat === "search") searches++;
+      else reads++;
+      if (it.status === "pending" || it.status === "in_progress") running++;
+      else if (it.status === "failed") failed++;
     });
-    row.appendChild(yes);
-    row.appendChild(no);
-    if (ev.expires) {
-      var when = new Date(ev.expires * 1000).toLocaleTimeString(T.lang, { hour: "2-digit", minute: "2-digit" });
-      row.appendChild(mkEl("span", "muted small", (T.expires || "").replace("{time}", when)));
+    var parts = [];
+    if (reads) parts.push((T.grp_read || "{n} read").replace("{n}", String(reads)));
+    if (searches) parts.push((T.grp_search || "{n} search").replace("{n}", String(searches)));
+    if (!parts.length) parts.push((T.grp_steps || "{n} steps").replace("{n}", String(grp.items.length)));
+    grp.titleEl.textContent = parts.join(" · ");
+    var st = running ? "in_progress" : (failed ? "failed" : "completed");
+    grp.statusEl.className = "ag-status ag-" + st;
+    grp.statusEl.textContent = T["st_" + st] || st;
+  }
+
+  function createToolsView(container) {
+    var toolMap = {}, permMap = {}, activeGroup = null;
+
+    function ensureGroup() {
+      if (activeGroup) return activeGroup;
+      var box = mkEl("details", "ag-tool-group");
+      var sum = mkEl("summary");
+      var titleEl = mkEl("span", "ag-group-title", "");
+      var statusEl = mkEl("span", "ag-status", "");
+      sum.appendChild(titleEl);
+      sum.appendChild(statusEl);
+      var list = mkEl("div", "ag-tool-group-list");
+      box.appendChild(sum);
+      box.appendChild(list);
+      container.appendChild(box);
+      activeGroup = { el: box, list: list, titleEl: titleEl, statusEl: statusEl, items: new Map() };
+      return activeGroup;
     }
-    box.appendChild(row);
-    container.appendChild(box);
+
+    function onTool(ev, toolList) {
+      var cat = readToolCategory(ev);
+      var card = toolMap[ev.id];
+      var grp = card && card._group ? card._group : null;
+      if (!card) {
+        if (cat) {
+          grp = ensureGroup();
+          card = toolMap[ev.id] = mkEl("details", "ag-tool");
+          card._group = grp;
+          grp.list.appendChild(card);
+        } else {
+          activeGroup = null;
+          card = toolMap[ev.id] = mkEl("details", "ag-tool");
+          container.appendChild(card);
+        }
+      } else if (!cat && grp) {
+        grp.items.delete(ev.id);
+        if (grp.items.size === 0) grp.el.remove();
+        else updateToolGroupSummary(grp);
+        card._group = null;
+        grp = null;
+        activeGroup = null;
+        container.appendChild(card);
+      }
+      populateToolCard(card, ev);
+      if (grp) {
+        grp.items.set(ev.id, { cat: cat || "read", status: ev.status || "pending" });
+        updateToolGroupSummary(grp);
+      }
+      if (toolList) {
+        var idx = toolList.findIndex(function (x) { return x.id === ev.id; });
+        if (idx >= 0) toolList[idx] = ev;
+        else toolList.push(ev);
+      }
+    }
+
+    function settlePerm(id, outcome, detail) {
+      var box = permMap[id];
+      if (!box) return;
+      var row = box.querySelector(".ag-perm-actions");
+      if (row) row.remove();
+      box.classList.add("ag-perm-" + outcome);
+      var label = {
+        allowed: T.allowed, denied: T.denied, timeout: T.timeout,
+        cancelled: T.cancelled, expired: T.expired
+      }[outcome] || ((T.error || "Error:") + " " + (detail || ""));
+      if (!box.querySelector(".ag-outcome")) box.appendChild(mkEl("p", "ag-outcome", label));
+    }
+
+    function onPermission(runId, ev) {
+      activeGroup = null;
+      var box = permMap[ev.id] = mkEl("div", "ag-perm");
+      box.appendChild(mkEl("strong", "", (T.perm_title || "Asks for permission") + ": " + (ev.title || ev.kind)));
+      if (ev.command) box.appendChild(toolBlock(T.command || "Command", ev.command, "ag-cmd"));
+      (ev.diffs || []).forEach(function (d) { box.appendChild(diffBlock(d)); });
+      if (!ev.command && !(ev.diffs || []).length && ev.input) box.appendChild(toolBlock(T.input || "Arguments", ev.input));
+      if ((ev.locations || []).length) box.appendChild(mkEl("p", "muted small", ev.locations.join("\n")));
+      var row = mkEl("div", "ag-perm-actions");
+      var yes = mkEl("button", "btn small", T.allow || "Allow");
+      var no = mkEl("button", "btn small danger", T.deny || "Deny");
+      yes.type = no.type = "button";
+      [[yes, true], [no, false]].forEach(function (pair) {
+        pair[0].addEventListener("click", function () {
+          yes.disabled = no.disabled = true;
+          api("/api/chat-harness/" + encodeURIComponent(runId) + "/permission", "POST", { id: ev.id, allow: pair[1] })
+            .catch(function (err) { settlePerm(ev.id, "expired", err.message); });
+        });
+      });
+      row.appendChild(yes);
+      row.appendChild(no);
+      if (ev.expires) {
+        var when = new Date(ev.expires * 1000).toLocaleTimeString(T.lang, { hour: "2-digit", minute: "2-digit" });
+        row.appendChild(mkEl("span", "muted small", (T.expires || "").replace("{time}", when)));
+      }
+      box.appendChild(row);
+      container.appendChild(box);
+    }
+
+    function onNotice(noteText, noticeList) {
+      activeGroup = null;
+      container.appendChild(mkEl("p", "ag-note muted small", noteText));
+      if (noticeList) noticeList.push(noteText);
+    }
+
+    return { onTool: onTool, onPermission: onPermission, settlePerm: settlePerm, onNotice: onNotice };
   }
 
   function bubble(role, idx) {
@@ -392,13 +472,10 @@
     messages.forEach(function (m, idx) {
       var el = bubble(m.role, idx);
       if (m.role === "assistant") {
-        if (m.tools && m.tools.length) {
-          var toolsBox = el.querySelector(".msg-tools");
-          m.tools.forEach(function (ev) {
-            var card = mkEl("details", "ag-tool");
-            populateToolCard(card, ev);
-            toolsBox.appendChild(card);
-          });
+        if ((m.tools && m.tools.length) || (m.notices && m.notices.length)) {
+          var view = createToolsView(el.querySelector(".msg-tools"));
+          (m.tools || []).forEach(function (ev) { view.onTool(ev); });
+          (m.notices || []).forEach(function (nt) { view.onNotice(nt); });
         }
         fill(el, m, idx === messages.length - 1);
       } else {
@@ -479,10 +556,9 @@
 
   // --------------------------------------------------------------- send
   async function streamHarnessReply(restoreOnFail) {
-    var m = { role: "assistant", content: "", reasoning: "", meta: T.thinking, tools: [] };
+    var m = { role: "assistant", content: "", reasoning: "", meta: T.thinking, tools: [], notices: [] };
     var el = bubble("assistant");
-    var toolsBox = el.querySelector(".msg-tools");
-    var toolMap = {}, permMap = {};
+    var toolsView = createToolsView(el.querySelector(".msg-tools"));
     fill(el, m, false);
     scroller.follow(true);
     busy = new AbortController();
@@ -540,20 +616,24 @@
               m.meta = T.writing;
               schedulePaint();
             } else if (j.type === "tool") {
-              renderToolEvent(toolsBox, toolMap, m.tools, j);
+              toolsView.onTool(j, m.tools);
               m.meta = j.status === "in_progress" ? (T.lh_running_tools || T.thinking) : T.thinking;
               schedulePaint();
             } else if (j.type === "permission") {
-              renderPermEvent(toolsBox, permMap, j.run_id || activeRunId, j);
+              toolsView.onPermission(j.run_id || activeRunId, j);
               m.meta = T.lh_waiting_perm || T.thinking;
               fill(el, m, false);
               scroller.follow(true);
             } else if (j.type === "permission_done") {
-              settlePermCard(permMap, j.id, j.outcome);
+              toolsView.settlePerm(j.id, j.outcome);
               m.meta = T.lh_running_tools || T.thinking;
               schedulePaint();
+            } else if (j.type === "timings" && j.timings) {
+              timings = j.timings;
+              var liveUsed = (j.timings.prompt_n || 0) + (j.timings.predicted_n || 0);
+              if (liveUsed > 0) { lastUsedTokens = liveUsed; updateContextMeter(); }
             } else if (j.type === "notice" && j.text) {
-              toolsBox.appendChild(mkEl("p", "ag-note muted small", j.text));
+              toolsView.onNotice(j.text, m.notices);
               scroller.follow(false);
             } else if (j.type === "done") {
               if (j.timings) timings = j.timings;
@@ -580,7 +660,7 @@
       done = true;
       busy = null;
       activeRunId = "";
-      if (m.content || m.reasoning || (m.tools && m.tools.length)) {
+      if (m.content || m.reasoning || (m.tools && m.tools.length) || (m.notices && m.notices.length)) {
         messages.push(m);
       } else if (failed && restoreOnFail != null) {
         messages.pop();

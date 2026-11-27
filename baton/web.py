@@ -114,6 +114,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
     local_harness = LocalHarnessManager(
         on_permission_wait=notifier.notify_permission,
         search_url=settings.search_url,
+        brave_api_key=settings.brave_api_key,
+        tavily_api_key=settings.tavily_api_key,
     )
     chat_history = ChatHistory(settings.data_dir)
     ranking = store.ranking

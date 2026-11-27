@@ -1,0 +1,14 @@
+# Minimal local-only SearXNG configuration for Baton's local chat harness.
+# Bound strictly to 127.0.0.1:8888 by docker-compose.yml.
+use_default_settings: true
+
+server:
+  limiter: false
+  image_proxy: false
+  method: "GET"
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json

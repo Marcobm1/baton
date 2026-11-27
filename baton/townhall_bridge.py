@@ -43,6 +43,29 @@ DEFAULT_GUEST_POOL = (
     "opencode-go/glm-5.3",
 )
 
+MIN_PARTICIPANTS = 2
+MAX_PARTICIPANTS = 4
+VALID_PROVIDERS = ("claude-code", "codex", "gemini", "opencode")
+PROVIDER_LABELS = {
+    "claude-code": "Claude Code",
+    "codex": "Codex",
+    "gemini": "Gemini",
+    "opencode": "OpenCode",
+}
+_SHORT_NAMES = {
+    "claude-code": ("claude", "Claude"),
+    "codex": ("codex", "Codex"),
+    "gemini": ("gemini", "Gemini"),
+    "opencode": ("opencode", "OpenCode"),
+}
+_QUOTA_PROVIDER_TO_FAMILY = {
+    "claude": "claude-code",
+    "codex": "codex",
+    "gemini": "gemini",
+    "opencode": "opencode",
+}
+_WINDOW_LABELS = {"5h": "5h", "week": "7d", "month": "30d"}
+
 
 @dataclass
 class ActiveTownHall:
@@ -92,6 +115,92 @@ def build_core_participants(
         Participant(id="codex", name="Codex", provider="codex", model=codex_model, role="core"),
         Participant(id="claude", name="Claude", provider="claude-code", model=claude_model, role="core"),
     ]
+
+
+def build_participants(entries: list[tuple[str, str]]) -> list[Participant]:
+    """Build 2–4 validated core participants from user-selected `(provider, model)` pairs.
+
+    Supports any mix of families (including multiple models from the same family)
+    while assigning unique participant IDs and readable names.
+    """
+    cleaned: list[tuple[str, str]] = []
+    for raw_provider, raw_model in entries:
+        provider = (raw_provider or "").strip()
+        model = (raw_model or "").strip()
+        if provider not in VALID_PROVIDERS:
+            raise ValueError(f"Unsupported participant family: {provider!r}")
+        if not model:
+            raise ValueError("Every participant must select a model.")
+        cleaned.append((provider, model))
+    if not (MIN_PARTICIPANTS <= len(cleaned) <= MAX_PARTICIPANTS):
+        raise ValueError(
+            f"Choose between {MIN_PARTICIPANTS} and {MAX_PARTICIPANTS} participants."
+        )
+
+    counts: dict[str, int] = {}
+    for prov, _ in cleaned:
+        counts[prov] = counts.get(prov, 0) + 1
+
+    seen: dict[str, int] = {}
+    participants: list[Participant] = []
+    for prov, model in cleaned:
+        base_id, base_name = _SHORT_NAMES[prov]
+        seen[prov] = seen.get(prov, 0) + 1
+        if counts[prov] == 1:
+            pid = base_id
+            name = base_name
+        else:
+            idx = seen[prov]
+            short_model = model.rsplit("/", 1)[-1]
+            pid = f"{base_id}_{idx}"
+            name = f"{base_name} #{idx} ({short_model})"
+        participants.append(
+            Participant(id=pid, name=name, provider=prov, model=model, role="core")
+        )
+    return participants
+
+
+def resolve_moderator_id(moderator: str, participants: list[Participant]) -> str:
+    """Resolve a moderator selection (participant id or 0-based index) to an active participant id."""
+    if not participants:
+        return ""
+    raw = (moderator or "").strip()
+    by_id = {p.id: p.id for p in participants}
+    if raw in by_id:
+        return by_id[raw]
+    if raw.isdigit():
+        idx = int(raw)
+        if 0 <= idx < len(participants):
+            return participants[idx].id
+    return participants[0].id
+
+
+def format_provider_quotas(views: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Summarize remaining quota per Town Hall family from `quotas.all_windows()` views."""
+    from . import quotas
+
+    out: dict[str, dict[str, Any]] = {}
+    for entry in quotas.by_provider(views):
+        family = _QUOTA_PROVIDER_TO_FAMILY.get(entry.get("provider", ""))
+        if not family:
+            continue
+        windows = entry.get("windows") or {}
+        parts: list[str] = []
+        min_left: float | None = None
+        for kind in ("5h", "week", "month"):
+            w = windows.get(kind)
+            if not isinstance(w, dict) or w.get("left") is None:
+                continue
+            left = float(w["left"])
+            if min_left is None or left < min_left:
+                min_left = left
+            parts.append(f"{_WINDOW_LABELS[kind]} {int(round(left))}%")
+        out[family] = {
+            "summary": " · ".join(parts),
+            "min_left": round(min_left, 1) if min_left is not None else None,
+            "exhausted": min_left is not None and min_left <= 5.0,
+        }
+    return out
 
 
 def townhall_task_draft(

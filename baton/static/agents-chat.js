@@ -77,14 +77,15 @@
       return;
     }
     var m = modelSel.value || "";
-    var allowed = sandboxReady && agent === "opencode" && isLocalModel(m) && !isAbliteratedName(m);
+    var isOC = agent === "opencode";
+    var allowed = sandboxReady && !isAbliteratedName(m) && (!isOC || isLocalModel(m));
     fullRadio.disabled = !allowed;
     if (!allowed && fullRadio.checked && confirmRadio) confirmRadio.checked = true;
     if (fullNote) {
-      if (!sandboxReady || agent !== "opencode") fullNote.textContent = T.full_off;
+      if (!sandboxReady) fullNote.textContent = isOC ? T.full_off : (T.full_off_agent || T.full_off);
       else if (isAbliteratedName(m)) fullNote.textContent = T.full_abliterated;
-      else if (!isLocalModel(m)) fullNote.textContent = T.full_local_only;
-      else fullNote.textContent = T.full_help;
+      else if (isOC && !isLocalModel(m)) fullNote.textContent = T.full_local_only;
+      else fullNote.textContent = isOC ? T.full_help : (T.full_help_agent || T.full_help);
     }
     if (fullWarn) fullWarn.hidden = !(allowed && fullRadio.checked);
   }

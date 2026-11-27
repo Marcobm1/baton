@@ -27,6 +27,7 @@ def read_msg() -> dict | None:
 def main() -> None:
     cwd = Path.cwd()
     thread_id = ""
+    approval_policy = "untrusted"
     next_srv_id = 100
 
     def ask_approval(method: str, params: dict) -> str:
@@ -59,17 +60,20 @@ def main() -> None:
         elif method == "initialized":
             continue
         elif method == "thread/start":
-            assert params.get("sandbox") == "read-only"
-            assert params.get("approvalPolicy") == "untrusted"
+            pair = (params.get("sandbox"), params.get("approvalPolicy"))
+            assert pair in (("read-only", "untrusted"), ("danger-full-access", "never")), pair
+            approval_policy = str(pair[1])
             thread_id = f"codex-thread-{uuid.uuid4().hex[:8]}"
             send({"jsonrpc": "2.0", "id": rid, "result": {"thread": {"id": thread_id}}})
         elif method == "thread/resume":
             assert params.get("excludeTurns") is True
-            assert params.get("sandbox") == "read-only"
-            assert params.get("approvalPolicy") == "untrusted"
+            pair = (params.get("sandbox"), params.get("approvalPolicy"))
+            assert pair in (("read-only", "untrusted"), ("danger-full-access", "never")), pair
+            approval_policy = str(pair[1])
             thread_id = str(params.get("threadId") or "")
             send({"jsonrpc": "2.0", "id": rid, "result": {"thread": {"id": thread_id}}})
         elif method == "turn/start":
+            assert params.get("approvalPolicy") == approval_policy
             turn_id = f"turn-{uuid.uuid4().hex[:6]}"
             send({"jsonrpc": "2.0", "id": rid, "result": {"turn": {"id": turn_id}}})
             items = params.get("input") or []
@@ -92,10 +96,13 @@ def main() -> None:
                 item_id = f"cmd-{uuid.uuid4().hex[:6]}"
                 send({"jsonrpc": "2.0", "method": "item/started",
                       "params": {"item": {"id": item_id, "type": "commandExecution", "command": cmd, "status": "inProgress"}}})
-                decision = ask_approval("item/commandExecution/requestApproval", {
-                    "threadId": thread_id, "turnId": turn_id, "itemId": item_id,
-                    "kind": "command", "command": cmd, "cwd": str(cwd), "reason": "Run shell command",
-                })
+                if approval_policy == "never":
+                    decision = "accept"
+                else:
+                    decision = ask_approval("item/commandExecution/requestApproval", {
+                        "threadId": thread_id, "turnId": turn_id, "itemId": item_id,
+                        "kind": "command", "command": cmd, "cwd": str(cwd), "reason": "Run shell command",
+                    })
                 if decision == "accept":
                     (cwd / "accepted.txt").write_text(cmd + "\n", encoding="utf-8")
                     send({"jsonrpc": "2.0", "method": "item/commandExecution/outputDelta",
@@ -121,10 +128,13 @@ def main() -> None:
                 send({"jsonrpc": "2.0", "method": "item/started",
                       "params": {"item": {"id": item_id, "type": "fileChange", "changes": [{"path": str(target)}],
                                           "status": "inProgress"}}})
-                decision = ask_approval("item/fileChange/requestApproval", {
-                    "threadId": thread_id, "turnId": turn_id, "itemId": item_id,
-                    "changes": [{"path": str(target)}], "reason": f"Edit {name}",
-                })
+                if approval_policy == "never":
+                    decision = "accept"
+                else:
+                    decision = ask_approval("item/fileChange/requestApproval", {
+                        "threadId": thread_id, "turnId": turn_id, "itemId": item_id,
+                        "changes": [{"path": str(target)}], "reason": f"Edit {name}",
+                    })
                 if decision == "accept":
                     target.write_text(body + "\n", encoding="utf-8")
                     send({"jsonrpc": "2.0", "method": "item/completed",

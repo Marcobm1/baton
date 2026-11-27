@@ -40,12 +40,14 @@ def main() -> None:
     ap.add_argument("--effort", default="default")
     ap.add_argument("--resume", default="")
     ap.add_argument("--unsafe-mode", action="store_true")
+    ap.add_argument("--dangerously-skip-permissions", action="store_true")
     args, _ = ap.parse_known_args()
 
     cwd = Path.cwd()
     session_id = args.resume or f"claude-sess-{uuid.uuid4().hex[:8]}"
     state_file = cwd / f".fake-claude-{session_id}.txt"
-    pmode = "bypassPermissions" if args.unsafe_mode else "default"
+    skip_perms = bool(args.dangerously_skip_permissions)
+    pmode = "bypassPermissions" if (args.unsafe_mode or skip_perms) else "default"
 
     def ask_permission(tool_name: str, tool_input: dict, desc: str, tid: str, blocked: str = "") -> tuple[bool, dict]:
         rid = f"perm-{uuid.uuid4().hex[:8]}"
@@ -146,7 +148,10 @@ def main() -> None:
             send({"type": "assistant", "message": {"content": [
                 {"type": "tool_use", "id": tid, "name": "Write", "input": inp},
             ]}})
-            allowed, inner = ask_permission("Write", inp, f"Write {name}", tid, blocked=str(target))
+            if skip_perms:
+                allowed, inner = True, {"updatedInput": inp}
+            else:
+                allowed, inner = ask_permission("Write", inp, f"Write {name}", tid, blocked=str(target))
             if allowed:
                 updated = inner.get("updatedInput") or inp
                 Path(updated["file_path"]).write_text(updated["content"], encoding="utf-8")
@@ -166,7 +171,7 @@ def main() -> None:
             send({"type": "assistant", "message": {"content": [
                 {"type": "tool_use", "id": tid, "name": "PowerShell", "input": inp},
             ]}})
-            allowed, _ = ask_permission("PowerShell", inp, f"Run {command}", tid)
+            allowed = True if skip_perms else ask_permission("PowerShell", inp, f"Run {command}", tid)[0]
             if allowed:
                 send({"type": "user", "message": {"content": [
                     {"type": "tool_result", "tool_use_id": tid, "content": f"ran: {command}"},

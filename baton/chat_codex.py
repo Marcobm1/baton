@@ -41,6 +41,7 @@ from .agent_chat import (
     _clip,
 )
 from .ping import find_codex
+from .sandbox import stop_container
 
 _APPROVAL_METHODS = frozenset({
     "item/commandExecution/requestApproval",
@@ -129,6 +130,8 @@ class CodexChat:
     alive: bool = True
     session_id: str = ""
     resumed: bool = False
+    session_cwd: str = ""
+    container_name: str = ""
     isolated: bool = False
     permission_timeout: float = PERMISSION_TIMEOUT
     turn_timeout: float = TURN_TIMEOUT
@@ -176,8 +179,19 @@ class CodexChat:
             except Exception:
                 pass
 
+    def _policy(self) -> tuple[str, str, str]:
+        cwd = self.session_cwd or str(self.folder)
+        if self.mode == "full":
+            if not self.isolated:
+                raise AcpError("Codex full permissions requires an isolated Docker container.")
+            # Inside --cap-drop=ALL Docker, nested Landlock/userns sandboxing is unavailable;
+            # Docker itself is the isolation boundary.
+            return cwd, "danger-full-access", "never"
+        return cwd, "read-only", "untrusted"
+
     # ------------------------------------------------------------- start
     def start(self, command: list[str], env: dict[str, str]) -> None:
+        cwd, sandbox_mode, approval = self._policy()
         self.client = AcpClient(command, self.folder, env, self._on_message, self._on_exit)
         req = self.client.request
         req("initialize", {"clientInfo": {"name": "baton", "version": __version__}}, START_TIMEOUT)
@@ -185,17 +199,17 @@ class CodexChat:
         if self.resume_id:
             res = req("thread/resume", {
                 "threadId": self.resume_id,
-                "cwd": str(self.folder),
-                "sandbox": "read-only",
-                "approvalPolicy": "untrusted",
+                "cwd": cwd,
+                "sandbox": sandbox_mode,
+                "approvalPolicy": approval,
                 "excludeTurns": True,
             }, START_TIMEOUT)
             self.resumed = True
         else:
             params: dict[str, Any] = {
-                "cwd": str(self.folder),
-                "sandbox": "read-only",
-                "approvalPolicy": "untrusted",
+                "cwd": cwd,
+                "sandbox": sandbox_mode,
+                "approvalPolicy": approval,
             }
             if self.model:
                 params["model"] = self.model
@@ -228,11 +242,12 @@ class CodexChat:
         self._cancelled = False
         self._turn_id = ""
         try:
+            cwd, _sandbox_mode, approval = self._policy()
             params: dict[str, Any] = {
                 "threadId": self.session_id,
                 "input": [{"type": "text", "text": text}],
-                "approvalPolicy": "untrusted",
-                "cwd": str(self.folder),
+                "approvalPolicy": approval,
+                "cwd": cwd,
             }
             if self.effort and self.effort != "default":
                 params["effort"] = self.effort
@@ -276,6 +291,8 @@ class CodexChat:
         self._resolve_all("cancelled")
         if self.client:
             self.client.close()
+        if self.container_name:
+            stop_container(self.container_name)
         if was:
             self.emit("closed")
 

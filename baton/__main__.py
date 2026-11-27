@@ -207,6 +207,28 @@ def cmd_monitor_agent(args) -> int:
     return run_agent(url, token, interval=args.interval, once=args.once)
 
 
+def cmd_sandbox_login(args) -> int:
+    from .sandbox import AGENT_SANDBOX_PROFILES, docker_available, find_docker, sandbox_login_command
+
+    s = _settings()
+    image = args.image or s.agents_sandbox_image
+    if not find_docker():
+        print("Docker CLI was not found on PATH. Install Docker Desktop first.", file=sys.stderr)
+        return 1
+    if not docker_available(image):
+        print(
+            f"Sandbox image '{image}' is not built locally yet.\n"
+            f"Build it from the repository root with:\n"
+            f"  docker build -f docker/agents-sandbox.Dockerfile -t {image} .",
+            file=sys.stderr,
+        )
+        return 1
+    profile = AGENT_SANDBOX_PROFILES[args.agent]
+    print(f"Starting isolated login container for {args.agent} (volume: {profile.volume})...")
+    cmd = sandbox_login_command(args.agent, image)
+    return subprocess.run(cmd).returncode
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="baton", description="A shared project hub for you and your AI agents.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -269,6 +291,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--interval", type=float, default=30.0, help="seconds between heartbeats (default 30)")
     p.add_argument("--once", action="store_true", help="send one heartbeat and exit")
     p.set_defaults(fn=cmd_monitor_agent)
+
+    p = sub.add_parser(
+        "sandbox-login",
+        help="sign in once inside an agent's isolated Docker auth volume for /chat All permissions",
+    )
+    p.add_argument("agent", choices=["claude-code", "codex", "gemini"])
+    p.add_argument("--image", default="", help="override Docker image (default: BATON_AGENTS_SANDBOX_IMAGE)")
+    p.set_defaults(fn=cmd_sandbox_login)
 
     args = ap.parse_args(argv)
     return args.fn(args)

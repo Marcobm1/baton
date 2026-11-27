@@ -12,6 +12,7 @@ Runs OpenCode ACP inside a disposable Linux container with:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import os
 import re
 import shutil
@@ -24,8 +25,46 @@ from .agents import ALWAYS_DENIED, NO_GIT_CHANGES, _rule
 from .ping import _NO_WINDOW
 
 DEFAULT_SANDBOX_IMAGE = "baton-opencode-sandbox:latest"
+DEFAULT_AGENTS_SANDBOX_IMAGE = "baton-agents-sandbox:latest"
 CONTAINER_WORKSPACE = "/workspace"
 CHAT_AGENT_FULL = "baton-chat-full"
+
+
+@dataclass(frozen=True)
+class AgentSandboxProfile:
+    """Isolated Docker named auth volume and runtime paths for one CLI agent."""
+    volume: str
+    mount_dst: str
+    env: dict[str, str]
+    login_cmd: tuple[str, ...]
+
+
+# Each CLI gets its own isolated Docker named volume (created when the owner runs
+# `baton sandbox-login <agent>`). Baton never reads, stores, or copies credentials
+# from the host, and one agent's container never sees another agent's auth volume.
+AGENT_SANDBOX_PROFILES: dict[str, AgentSandboxProfile] = {
+    "claude-code": AgentSandboxProfile(
+        volume="baton-sandbox-claude-auth",
+        mount_dst="/home/agent/.claude",
+        env={"CLAUDE_CONFIG_DIR": "/home/agent/.claude", "DISABLE_AUTOUPDATER": "1"},
+        login_cmd=("claude",),
+    ),
+    "codex": AgentSandboxProfile(
+        volume="baton-sandbox-codex-auth",
+        mount_dst="/home/agent/.codex",
+        env={"CODEX_HOME": "/home/agent/.codex"},
+        login_cmd=("codex", "login", "--device-auth"),
+    ),
+    "gemini": AgentSandboxProfile(
+        volume="baton-sandbox-gemini-auth",
+        mount_dst="/home/agent/.gemini",
+        env={
+            "XDG_CONFIG_HOME": "/home/agent/.gemini/xdg-config",
+            "XDG_DATA_HOME": "/home/agent/.gemini/xdg-data",
+        },
+        login_cmd=("agy",),
+    ),
+}
 
 # Allowed inside the isolated Docker container only: read, edit, and run shell
 # commands in /workspace without asking, while still denying git push/commit,
@@ -99,6 +138,32 @@ def docker_available(image: str = DEFAULT_SANDBOX_IMAGE) -> bool:
         return r.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def docker_volume_exists(volume: str) -> bool:
+    """True only if Docker daemon is reachable AND the named volume exists."""
+    if not volume:
+        return False
+    exe = find_docker()
+    if not exe:
+        return False
+    try:
+        r = subprocess.run(
+            [exe, "volume", "inspect", volume],
+            capture_output=True, text=True, timeout=10,
+            stdin=subprocess.DEVNULL, **_NO_WINDOW,
+        )
+        return r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def agent_sandbox_available(agent: str, image: str = DEFAULT_AGENTS_SANDBOX_IMAGE) -> bool:
+    """True when the multi-CLI Docker sandbox image AND this agent's auth volume exist."""
+    profile = AGENT_SANDBOX_PROFILES.get(agent)
+    if profile is None or not image:
+        return False
+    return docker_available(image) and docker_volume_exists(profile.volume)
 
 
 def local_provider_config(local_models: list[dict[str, Any]], *,
@@ -185,6 +250,73 @@ def sandbox_docker_command(
         image,
         *(cmd or ["opencode", "acp"]),
     ])
+    return args
+
+
+def sandbox_agent_docker_command(
+    agent: str,
+    folder: Path,
+    image: str,
+    cmd: list[str],
+    *,
+    container_name: str,
+    docker_bin: str | None = None,
+) -> list[str]:
+    """Hardened `docker run` argv for Claude Code, Codex, or Gemini inside Docker.
+
+    Mounts ONLY the canonical workspace folder at `/workspace` plus the single
+    agent's dedicated Docker named auth volume (never host profiles, Baton data,
+    other agents' volumes, Docker socket, or host secrets).
+    """
+    profile = AGENT_SANDBOX_PROFILES.get(agent)
+    if profile is None:
+        raise ValueError(f"Unsupported sandbox agent: {agent!r}")
+    exe = docker_bin or find_docker() or "docker"
+    src = os.path.realpath(folder)
+    args = [
+        exe, "run", "--rm", "-i", "--init",
+        "--name", container_name,
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges:true",
+        "--pids-limit=256",
+        "--memory=4g",
+        "--mount", f"type=bind,src={src},dst={CONTAINER_WORKSPACE}",
+        "--mount", f"type=volume,src={profile.volume},dst={profile.mount_dst}",
+        "-w", CONTAINER_WORKSPACE,
+    ]
+    for k, v in profile.env.items():
+        args.extend(["-e", f"{k}={v}"])
+    args.append(image)
+    args.extend(cmd)
+    return args
+
+
+def sandbox_login_command(
+    agent: str,
+    image: str = DEFAULT_AGENTS_SANDBOX_IMAGE,
+    *,
+    docker_bin: str | None = None,
+) -> list[str]:
+    """Interactive one-time `docker run -it` command to sign in inside an agent's auth volume.
+
+    Mounts NO host workspace or host profile; only the agent's dedicated Docker named volume.
+    """
+    profile = AGENT_SANDBOX_PROFILES.get(agent)
+    if profile is None:
+        raise ValueError(f"Unsupported sandbox agent: {agent!r}")
+    exe = docker_bin or find_docker() or "docker"
+    args = [
+        exe, "run", "--rm", "-it", "--init",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges:true",
+        "--pids-limit=256",
+        "--memory=4g",
+        "--mount", f"type=volume,src={profile.volume},dst={profile.mount_dst}",
+    ]
+    for k, v in profile.env.items():
+        args.extend(["-e", f"{k}={v}"])
+    args.append(image)
+    args.extend(profile.login_cmd)
     return args
 
 

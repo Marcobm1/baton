@@ -168,10 +168,11 @@ async def chat_page(
     elif agent in ("gemini", "claude-code", "codex"):
         finder = {"gemini": ctx.find_agy_fn, "claude-code": ctx.find_claude_fn, "codex": ctx.find_codex_fn}[agent]
         if finder():
-            cat, folders, sessions = await asyncio.gather(
+            cat, folders, sessions, sandbox_ready = await asyncio.gather(
                 asyncio.to_thread(ctx.catalog_fn, agent),
                 asyncio.to_thread(ctx.chat_folders),
                 asyncio.to_thread(ctx.agent_chats.sessions, agent),
+                asyncio.to_thread(ctx.agent_chats.sandbox_ready, agent),
             )
             oc = {
                 "available": True,
@@ -180,7 +181,7 @@ async def chat_page(
                             "models": list(cat)}] if cat else [],
                 "model_labels": {m: readable_model_name(m, v.get("label", "")) for m, v in cat.items()},
                 "efforts": {m: v["efforts"] for m, v in cat.items()},
-                "sandbox_ready": False,
+                "sandbox_ready": sandbox_ready,
                 "sessions": sessions,
             }
     local_folders = await asyncio.to_thread(ctx.chat_folders) if agent == "local" else []
@@ -224,6 +225,7 @@ def _chat_strings(t: dict[str, str], lang: str, agent: str) -> dict:
             "done_reason": t["ag_done_reason"], "closed": t["ag_closed"],
             "ag_effort_missing": t["ag_effort_missing"], "ag_resumed": t["ag_resumed"],
             "full_off": t["ag_full_off"], "full_help": t["ag_full_help"],
+            "full_off_agent": t["ag_full_off_agent"], "full_help_agent": t["ag_full_help_agent"],
             "full_local_only": t["ag_full_local_only"], "full_abliterated": t["ag_full_abliterated"],
             "full_badge": t["ag_full_badge"], "confirm_label": t["ag_confirm"], "full_label": t["ag_full"],
             "confirm_help": t["ag_confirm_help" + suffix],
@@ -383,9 +385,10 @@ async def agents_create(request: Request, ctx: AppContext = CTX):
         local_models = view["models"]
         if is_abliterated(model, local_models):
             raise HTTPException(403, ctx.t["ag_full_abliterated"])
-        if agent != "opencode" or not await asyncio.to_thread(ctx.agent_chats.sandbox_ready):
-            raise HTTPException(403, ctx.t["ag_full_off"])
-        if not is_local_opencode_model(model):
+        if not await asyncio.to_thread(ctx.agent_chats.sandbox_ready, agent):
+            err_key = "ag_full_off" if agent == "opencode" else "ag_full_off_agent"
+            raise HTTPException(403, ctx.t[err_key])
+        if agent == "opencode" and not is_local_opencode_model(model):
             raise HTTPException(403, ctx.t["ag_full_local_only"])
     folders = {f["key"]: f for f in await asyncio.to_thread(ctx.chat_folders)}
     folder = folders.get(str(body.get("folder") or ""))
@@ -403,7 +406,7 @@ async def agents_create(request: Request, ctx: AppContext = CTX):
         )
     except ChatError as exc:
         status = 403 if exc.key in (
-            "ag_full_off", "ag_full_abliterated", "ag_full_local_only", "ag_full_hardlink"
+            "ag_full_off", "ag_full_off_agent", "ag_full_abliterated", "ag_full_local_only", "ag_full_hardlink"
         ) else (502 if exc.key == "ag_err_start" else 409)
         raise _agent_error(ctx, exc, status) from exc
 

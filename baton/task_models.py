@@ -81,6 +81,66 @@ def opencode_groups(models: list[str], t: dict[str, str] | None = None,
     return groups
 
 
+_MODEL_BRANDS = {
+    "gpt": "GPT", "glm": "GLM", "hy": "HY", "deepseek": "DeepSeek",
+    "minimax": "MiniMax", "qwen": "Qwen", "claude": "Claude", "gemini": "Gemini",
+    "grok": "Grok", "kimi": "Kimi", "llama": "Llama", "mistral": "Mistral",
+    "codestral": "Codestral", "devstral": "Devstral", "mimo": "MiMo",
+    "longcat": "LongCat", "openai": "OpenAI", "phi": "Phi", "gemma": "Gemma",
+}
+
+
+def readable_model_name(model_id: str, label: str = "") -> str:
+    """Turn a raw CLI model slug into a short human-readable display name.
+
+    Prefers an explicit catalog display label when the CLI provides one
+    (e.g. "Gemini 4 Neon", "Claude Opus 4.6"). Otherwise strips any
+    ``provider/`` prefix and formats hyphenated tokens cleanly.
+    """
+    clean_label = (label or "").strip()
+    if clean_label and clean_label != model_id:
+        return clean_label
+    slug = (model_id or "").strip()
+    if not slug:
+        return ""
+    if "/" in slug:
+        slug = slug.split("/", 1)[1]
+    raw_parts = [p for p in re.split(r"[-_]+", slug) if p]
+    if not raw_parts:
+        return model_id
+    out: list[str] = []
+    i = 0
+    while i < len(raw_parts):
+        part = raw_parts[i]
+        low = part.lower()
+        # Merge adjacent short numeric parts like `claude-haiku-5-5` -> `5.5`.
+        if part.isdigit() and len(part) <= 2 and i + 1 < len(raw_parts) and raw_parts[i + 1].isdigit() and len(raw_parts[i + 1]) <= 2:
+            out.append(f"{part}.{raw_parts[i + 1]}")
+            i += 2
+            continue
+        m_brand = re.fullmatch(r"([a-z]{2,})(\d+(?:\.\d+)*)", low)
+        if m_brand:
+            head, ver = m_brand.groups()
+            out.append(_MODEL_BRANDS.get(head, head.capitalize()))
+            out.append(ver)
+            i += 1
+            continue
+        m_ver = re.fullmatch(r"([a-z])(\d+(?:\.\d+)*)", low)
+        if m_ver:
+            letter, ver = m_ver.groups()
+            out.append((letter if letter == "o" else letter.upper()) + ver)
+            i += 1
+            continue
+        if low in _MODEL_BRANDS:
+            out.append(_MODEL_BRANDS[low])
+        elif part.isdigit() or re.fullmatch(r"\d+(?:\.\d+)+", part):
+            out.append(part)
+        else:
+            out.append(part[:1].upper() + part[1:])
+        i += 1
+    return " ".join(out)
+
+
 def _model_tokens(slug: str) -> list[str]:
     return re.findall(r"[a-z]+|\d+(?:\.\d+)?", slug.lower())
 

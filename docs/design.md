@@ -100,10 +100,26 @@ that both dark blocks match, and the contrast below.
   slide-over history drawer (`.chat-sidebar` + backdrop) while keeping the
   composer anchored cleanly above `.tab-bar`.
 
+## `/chat` composer control centre (UI-3, 2026-11-26)
+
+- **Single bottom-row control bar:** agent, model (human-readable names from
+  CLI catalogs or `readable_model_name()`), effort, folder, permission/tool
+  mode, and local style/session resume live as compact chips in the bottom row
+  of the `.composer` card with upward popovers (`.cc-popover`, clamped to the
+  composer width on desktop and full-width on phones).
+- **Locked, not hidden:** once an agent conversation starts (or while a local
+  reply is streaming), the chips stay visible in the composer in a muted
+  `.is-locked` state with a lock glyph so the active configuration always
+  remains legible without pushing a separate banner into the message column.
+- **Keyboard shortcuts:** `Enter` sends, `Shift+Enter` adds a newline,
+  `Shift+Tab` cycles the permission/tool mode (or opens the mode popover if
+  the alternate mode is disabled, explaining why), and `Esc` closes any open
+  popover/menu/drawer or stops an active generation.
+
 ## Planned (decided 2026-11-26)
 
-The reference look is the Claude Code desktop app. UI-1 (near-black dark tokens)
-and UI-2 (full-height `/chat` layout) are complete; remaining stages UI-3 … UI-5
-in `STATUS.md` move controls into composer chips, restyle messages/tools, and
-merge the local/agent chat branches. The contrast and "both dark blocks match"
-tests stay as they are.
+The reference look is the Claude Code desktop app. UI-1 (near-black dark tokens),
+UI-2 (full-height `/chat` layout), and UI-3 (composer control centre) are
+complete; remaining stages UI-4 and UI-5 in `STATUS.md` restyle messages/tools
+and merge the local/agent chat branches. The contrast and "both dark blocks
+match" tests stay as they are.

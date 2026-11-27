@@ -561,23 +561,156 @@
     return out;
   }
 
-  function diffBlock(d) {
+  function diffBlock(d, unchangedTpl) {
     var wrap = document.createElement("div");
-    wrap.className = "ag-block";
+    wrap.className = "ag-block ag-diff-card";
+    var raw = diffLines(d.old, d.new).slice(0, 2000);
+    var oldNo = 0, newNo = 0, added = 0, removed = 0;
+    var rows = raw.map(function (r) {
+      var kind = r[0];
+      if (kind === "+") { newNo++; added++; return { kind: "+", oldNo: "", newNo: String(newNo), text: r[1] }; }
+      if (kind === "-") { oldNo++; removed++; return { kind: "-", oldNo: String(oldNo), newNo: "", text: r[1] }; }
+      oldNo++; newNo++;
+      return { kind: " ", oldNo: String(oldNo), newNo: String(newNo), text: r[1] };
+    });
+
+    // Keep +/- lines and 3 lines of context around each change; collapse long unchanged stretches.
+    var keep = new Uint8Array(rows.length);
+    var hasChanges = added > 0 || removed > 0;
+    for (var i = 0; i < rows.length; i++) {
+      if (!hasChanges || rows[i].kind !== " ") {
+        var lo = Math.max(0, i - 3), hi = Math.min(rows.length - 1, i + 3);
+        for (var k = lo; k <= hi; k++) keep[k] = 1;
+      }
+    }
+
+    var head = document.createElement("div");
+    head.className = "ag-diff-head";
     var pathEl = document.createElement("span");
     pathEl.className = "ag-path";
     pathEl.textContent = d.path || "";
-    wrap.appendChild(pathEl);
-    var pre = document.createElement("pre");
-    pre.className = "ag-diff";
-    diffLines(d.old, d.new).slice(0, 2000).forEach(function (row) {
-      var line = document.createElement("span");
-      line.className = row[0] === "+" ? "add" : row[0] === "-" ? "del" : "";
-      line.textContent = row[0] + " " + row[1] + "\n";
-      pre.appendChild(line);
+    head.appendChild(pathEl);
+    if (added || removed) {
+      var stats = document.createElement("span");
+      stats.className = "ag-diff-stats";
+      if (added) {
+        var sa = document.createElement("span");
+        sa.className = "ag-stat-add";
+        sa.textContent = "+" + added;
+        stats.appendChild(sa);
+      }
+      if (removed) {
+        var sd = document.createElement("span");
+        sd.className = "ag-stat-del";
+        sd.textContent = "-" + removed;
+        stats.appendChild(sd);
+      }
+      head.appendChild(stats);
+    }
+    wrap.appendChild(head);
+
+    var table = document.createElement("div");
+    table.className = "ag-diff ag-diff-table";
+    var hiddenRun = 0;
+    function flushGap() {
+      if (hiddenRun <= 0) return;
+      var gap = document.createElement("div");
+      gap.className = "ag-diff-gap";
+      gap.textContent = "··· " + (unchangedTpl || "{n} unchanged lines").replace("{n}", String(hiddenRun)) + " ···";
+      table.appendChild(gap);
+      hiddenRun = 0;
+    }
+    rows.forEach(function (row, idx) {
+      if (!keep[idx]) { hiddenRun++; return; }
+      flushGap();
+      var line = document.createElement("div");
+      line.className = "ag-diff-row " + (row.kind === "+" ? "add" : row.kind === "-" ? "del" : "ctx");
+      var ln1 = document.createElement("span");
+      ln1.className = "ag-ln";
+      ln1.textContent = row.oldNo;
+      var ln2 = document.createElement("span");
+      ln2.className = "ag-ln";
+      ln2.textContent = row.newNo;
+      var sign = document.createElement("span");
+      sign.className = "ag-sign";
+      sign.textContent = row.kind;
+      var code = document.createElement("span");
+      code.className = "ag-diff-code";
+      code.textContent = row.text;
+      line.appendChild(ln1);
+      line.appendChild(ln2);
+      line.appendChild(sign);
+      line.appendChild(code);
+      table.appendChild(line);
     });
-    wrap.appendChild(pre);
+    flushGap();
+    wrap.appendChild(table);
     return wrap;
+  }
+
+  // Inline approval 1/2 keyboard shortcuts (never fires while typing in an input/textarea).
+  var pendingPerms = [];
+  document.addEventListener("keydown", function (ev) {
+    if (!pendingPerms.length) return;
+    if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
+    if (ev.key !== "1" && ev.key !== "2") return;
+    var active = document.activeElement;
+    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.isContentEditable)) {
+      return;
+    }
+    var top = pendingPerms[pendingPerms.length - 1];
+    if (!top) return;
+    var target = ev.key === "1" ? top.allowBtn : top.denyBtn;
+    if (target && !target.disabled) {
+      ev.preventDefault();
+      target.click();
+    }
+  });
+  function registerPendingPerm(id, allowBtn, denyBtn) {
+    unregisterPendingPerm(id);
+    pendingPerms.push({ id: id, allowBtn: allowBtn, denyBtn: denyBtn });
+  }
+  function unregisterPendingPerm(id) {
+    pendingPerms = pendingPerms.filter(function (item) { return item.id !== id; });
+  }
+  function setPermButton(btn, keyLabel, text) {
+    btn.innerHTML = "";
+    var kbd = document.createElement("kbd");
+    kbd.className = "ag-kbd";
+    kbd.textContent = keyLabel;
+    var span = document.createElement("span");
+    span.textContent = text;
+    btn.appendChild(kbd);
+    btn.appendChild(span);
+  }
+
+  // Collapsed "Thinking… Ns" -> "Thought for Ns" live timer for reasoning blocks.
+  function createThinkTimer(summaryEl, labels) {
+    var started = 0, timer = null, finalSec = null;
+    function renderLive() {
+      if (!summaryEl || !started) return;
+      var s = Math.max(0, Math.floor((Date.now() - started) / 1000));
+      summaryEl.textContent = (labels.thinkingS || "Thinking… {s}s").replace("{s}", String(s));
+    }
+    return {
+      start: function () {
+        if (started || finalSec !== null) return;
+        started = Date.now();
+        renderLive();
+        timer = setInterval(renderLive, 1000);
+      },
+      stop: function () {
+        if (timer) { clearInterval(timer); timer = null; }
+        if (started && finalSec === null) {
+          finalSec = Math.max(1, Math.round((Date.now() - started) / 1000));
+          if (summaryEl) {
+            summaryEl.textContent = (labels.thoughtFor || "Thought for {s}s").replace("{s}", String(finalSec));
+          }
+        }
+        return finalSec;
+      },
+      seconds: function () { return finalSec; }
+    };
   }
 
   // Composer control centre (UI-3): bottom-row chips with upward popovers,
@@ -836,7 +969,11 @@
     esc: esc, md: md, createScroller: createScroller,
     initSidebar: initSidebar, initHeader: initHeader,
     initComposerControls: initComposerControls,
-    createAttachments: createAttachments, diffBlock: diffBlock
+    createAttachments: createAttachments, diffBlock: diffBlock,
+    registerPendingPerm: registerPendingPerm,
+    unregisterPendingPerm: unregisterPendingPerm,
+    setPermButton: setPermButton,
+    createThinkTimer: createThinkTimer
   };
 
   // Agent switcher: the page is drawn for one agent; switching reloads it.

@@ -236,4 +236,45 @@ def test_ui3_composer_control_centre_chips_and_readable_names(tmp_path, monkeypa
 
     gem_html = client.get("/chat?agent=gemini").text
     assert ">Gemini 4 Neon</option>" in gem_html
-    assert 'class="composer-kbd' in gem_html
+    assert 'class="composer-kbd' in gem_html or "data-composer-status" in gem_html
+
+
+def test_ui4_claude_code_messages_diffs_approvals_and_status_line(tmp_path, monkeypatch):
+    from baton import web
+    from test_models import model_item, write_config
+
+    async def no_projects(self, force=False):
+        return [], []
+
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    monkeypatch.setattr(web, "find_agy", lambda: "agy")
+    monkeypatch.setattr(
+        web, "catalog",
+        lambda agent: {"gemini-4-neon": {"label": "Gemini 4 Neon", "efforts": ["low"]}} if agent == "gemini" else {},
+    )
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    write_config(data_dir, [model_item(data_dir, "qwen")])
+    scratch_dir = tmp_path / "scratch"
+    scratch_dir.mkdir()
+    app = web.create_app(Settings(data_dir=data_dir, lang="es", self_update=False, chat_scratch=str(scratch_dir)))
+    client = TestClient(app)
+
+    for path in ("/chat", "/chat?agent=gemini"):
+        html = client.get(path).text
+        assert "data-composer-status" in html, path
+        assert "data-status-text" in html, path
+        assert '"thinking_s"' in html and '"thought_for"' in html, path
+        assert '"perm_keys"' in html and '"diff_unchanged"' in html, path
+
+    chat_css = (STATIC / "chat.css").read_text(encoding="utf-8")
+    assert ".msg-assistant { align-self: stretch; background: transparent; border: 0;" in chat_css
+    assert ".ag-dot" in chat_css
+    assert ".ag-diff-table" in chat_css and ".ag-ln" in chat_css
+    assert ".ag-kbd" in chat_css
+    assert ".composer-status" in chat_css
+
+    common_js = (STATIC / "chat-common.js").read_text(encoding="utf-8")
+    assert "registerPendingPerm" in common_js
+    assert "createThinkTimer" in common_js
+    assert "ag-diff-row" in common_js

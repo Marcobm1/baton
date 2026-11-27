@@ -260,6 +260,15 @@
     return node;
   }
 
+  var registerPendingPerm = window.BatonChat.registerPendingPerm;
+  var unregisterPendingPerm = window.BatonChat.unregisterPendingPerm;
+  var setPermButton = window.BatonChat.setPermButton;
+  var createThinkTimer = window.BatonChat.createThinkTimer;
+  var statusTextEl = root.querySelector("[data-status-text]");
+  function setStatus(liveMsg) {
+    if (statusTextEl) statusTextEl.textContent = liveMsg || T.kbd_hint || "";
+  }
+
   function toolBlock(label, body, cls) {
     var d = mkEl("div", "ag-block");
     d.appendChild(mkEl("span", "label", label));
@@ -268,15 +277,21 @@
   }
 
   function populateToolCard(card, ev) {
+    var st = ev.status || "pending";
     card.innerHTML = "";
     var sum = mkEl("summary");
+    var dot = mkEl("span", "ag-dot ag-" + st);
+    dot.setAttribute("aria-hidden", "true");
+    sum.appendChild(dot);
     sum.appendChild(mkEl("span", "ag-kind", ev.kind || "tool"));
     sum.appendChild(mkEl("span", "ag-title", ev.title || ev.name || ev.id));
-    sum.appendChild(mkEl("span", "ag-status ag-" + (ev.status || "pending"), T["st_" + ev.status] || ev.status || ""));
+    sum.appendChild(mkEl("span", "ag-status ag-" + st, T["st_" + st] || st));
     card.appendChild(sum);
-    if (ev.input) card.appendChild(toolBlock(T.input || "Arguments", ev.input));
-    (ev.diffs || []).forEach(function (d) { card.appendChild(diffBlock(d)); });
-    if (ev.output) card.appendChild(toolBlock(T.output || "Result", ev.output));
+    var body = mkEl("div", "ag-tool-body");
+    if (ev.input) body.appendChild(toolBlock(T.input || "Arguments", ev.input));
+    (ev.diffs || []).forEach(function (d) { body.appendChild(diffBlock(d, T.diff_unchanged)); });
+    if (ev.output) body.appendChild(toolBlock(T.output || "Result", ev.output));
+    if (body.childNodes.length) card.appendChild(body);
   }
 
   function readToolCategory(ev) {
@@ -302,6 +317,7 @@
     if (!parts.length) parts.push((T.grp_steps || "{n} steps").replace("{n}", String(grp.items.length)));
     grp.titleEl.textContent = parts.join(" · ");
     var st = running ? "in_progress" : (failed ? "failed" : "completed");
+    grp.dotEl.className = "ag-dot ag-" + st;
     grp.statusEl.className = "ag-status ag-" + st;
     grp.statusEl.textContent = T["st_" + st] || st;
   }
@@ -313,15 +329,18 @@
       if (activeGroup) return activeGroup;
       var box = mkEl("details", "ag-tool-group");
       var sum = mkEl("summary");
+      var dotEl = mkEl("span", "ag-dot ag-in_progress");
+      dotEl.setAttribute("aria-hidden", "true");
       var titleEl = mkEl("span", "ag-group-title", "");
       var statusEl = mkEl("span", "ag-status", "");
+      sum.appendChild(dotEl);
       sum.appendChild(titleEl);
       sum.appendChild(statusEl);
       var list = mkEl("div", "ag-tool-group-list");
       box.appendChild(sum);
       box.appendChild(list);
       container.appendChild(box);
-      activeGroup = { el: box, list: list, titleEl: titleEl, statusEl: statusEl, items: new Map() };
+      activeGroup = { el: box, list: list, dotEl: dotEl, titleEl: titleEl, statusEl: statusEl, items: new Map() };
       return activeGroup;
     }
 
@@ -362,6 +381,7 @@
     }
 
     function settlePerm(id, outcome, detail) {
+      unregisterPendingPerm(id);
       var box = permMap[id];
       if (!box) return;
       var row = box.querySelector(".ag-perm-actions");
@@ -377,28 +397,35 @@
     function onPermission(runId, ev) {
       activeGroup = null;
       var box = permMap[ev.id] = mkEl("div", "ag-perm");
-      box.appendChild(mkEl("strong", "", (T.perm_title || "Asks for permission") + ": " + (ev.title || ev.kind)));
+      box.appendChild(mkEl("strong", "ag-perm-head", (T.perm_title || "Asks for permission") + ": " + (ev.title || ev.kind)));
       if (ev.command) box.appendChild(toolBlock(T.command || "Command", ev.command, "ag-cmd"));
-      (ev.diffs || []).forEach(function (d) { box.appendChild(diffBlock(d)); });
+      (ev.diffs || []).forEach(function (d) { box.appendChild(diffBlock(d, T.diff_unchanged)); });
       if (!ev.command && !(ev.diffs || []).length && ev.input) box.appendChild(toolBlock(T.input || "Arguments", ev.input));
       if ((ev.locations || []).length) box.appendChild(mkEl("p", "muted small", ev.locations.join("\n")));
       var row = mkEl("div", "ag-perm-actions");
-      var yes = mkEl("button", "btn small", T.allow || "Allow");
-      var no = mkEl("button", "btn small danger", T.deny || "Deny");
+      var yes = mkEl("button", "btn small");
+      var no = mkEl("button", "btn small danger");
       yes.type = no.type = "button";
+      setPermButton(yes, "1", T.allow || "Allow");
+      setPermButton(no, "2", T.deny || "Deny");
       [[yes, true], [no, false]].forEach(function (pair) {
         pair[0].addEventListener("click", function () {
           yes.disabled = no.disabled = true;
+          unregisterPendingPerm(ev.id);
           api("/api/chat-harness/" + encodeURIComponent(runId) + "/permission", "POST", { id: ev.id, allow: pair[1] })
             .catch(function (err) { settlePerm(ev.id, "expired", err.message); });
         });
       });
+      registerPendingPerm(ev.id, yes, no);
       row.appendChild(yes);
       row.appendChild(no);
+      var metaParts = [];
+      if (T.perm_keys) metaParts.push(T.perm_keys);
       if (ev.expires) {
         var when = new Date(ev.expires * 1000).toLocaleTimeString(T.lang, { hour: "2-digit", minute: "2-digit" });
-        row.appendChild(mkEl("span", "muted small", (T.expires || "").replace("{time}", when)));
+        metaParts.push((T.expires || "").replace("{time}", when));
       }
+      if (metaParts.length) row.appendChild(mkEl("span", "muted small", metaParts.join(" · ")));
       box.appendChild(row);
       container.appendChild(box);
     }
@@ -456,6 +483,9 @@
     var think = el.querySelector(".msg-think");
     if (m.reasoning) {
       think.hidden = false;
+      if (m.thinkSec) {
+        think.querySelector("summary").textContent = (T.thought_for || "Thought for {s}s").replace("{s}", String(m.thinkSec));
+      }
       think.querySelector(".msg-think-text").textContent = m.reasoning;
     }
     el.querySelector(".msg-body").innerHTML = md(m.content || "");
@@ -583,12 +613,14 @@
   async function streamHarnessReply(restoreOnFail) {
     var m = { role: "assistant", content: "", reasoning: "", meta: T.thinking, tools: [], notices: [] };
     var el = bubble("assistant");
+    var thinkTimer = createThinkTimer(el.querySelector(".msg-think summary"), { thinkingS: T.thinking_s, thoughtFor: T.thought_for });
     var toolsView = createToolsView(el.querySelector(".msg-tools"));
     fill(el, m, false);
     scroller.follow(true);
     busy = new AbortController();
     activeRunId = "";
     setBusy(true);
+    setStatus(T.thinking);
     var timings = null, rounds = 1, failed = false, queued = false, done = false;
 
     function schedulePaint() {
@@ -633,25 +665,37 @@
             if (j.type === "run" && j.run_id) {
               activeRunId = j.run_id;
             } else if (j.type === "thought") {
+              thinkTimer.start();
               m.reasoning += j.text || "";
               m.meta = T.thinking;
+              setStatus(T.thinking);
               schedulePaint();
             } else if (j.type === "text") {
+              var sec = thinkTimer.stop();
+              if (sec) m.thinkSec = sec;
               m.content += j.text || "";
               m.meta = T.writing;
+              setStatus(T.writing);
               schedulePaint();
             } else if (j.type === "tool") {
+              var sec2 = thinkTimer.stop();
+              if (sec2) m.thinkSec = sec2;
               toolsView.onTool(j, m.tools);
               m.meta = j.status === "in_progress" ? (T.lh_running_tools || T.thinking) : T.thinking;
+              setStatus(m.meta);
               schedulePaint();
             } else if (j.type === "permission") {
+              var sec3 = thinkTimer.stop();
+              if (sec3) m.thinkSec = sec3;
               toolsView.onPermission(j.run_id || activeRunId, j);
               m.meta = T.lh_waiting_perm || T.thinking;
+              setStatus((T.lh_waiting_perm || T.perm_title) + " · " + (T.perm_keys || "1 / 2"));
               fill(el, m, false);
               scroller.follow(true);
             } else if (j.type === "permission_done") {
               toolsView.settlePerm(j.id, j.outcome);
               m.meta = T.lh_running_tools || T.thinking;
+              setStatus(m.meta);
               schedulePaint();
             } else if (j.type === "timings" && j.timings) {
               timings = j.timings;
@@ -683,6 +727,8 @@
       else { failed = true; m.meta = T.error + " " + e.message; }
     } finally {
       done = true;
+      var finalS = thinkTimer.stop();
+      if (finalS) m.thinkSec = finalS;
       busy = null;
       activeRunId = "";
       if (m.content || m.reasoning || (m.tools && m.tools.length) || (m.notices && m.notices.length)) {
@@ -693,6 +739,7 @@
         autosize();
       }
       setBusy(false);
+      setStatus("");
       renderAll();
       updateContextMeter();
       persistThread();
@@ -705,10 +752,12 @@
     if (harnessOn()) return streamHarnessReply(restoreOnFail);
     var m = { role: "assistant", content: "", reasoning: "", meta: T.thinking };
     var el = bubble("assistant");
+    var thinkTimer = createThinkTimer(el.querySelector(".msg-think summary"), { thinkingS: T.thinking_s, thoughtFor: T.thought_for });
     fill(el, m, false);
     scroller.follow(true);
     busy = new AbortController();
     setBusy(true);
+    setStatus(T.thinking);
     var timings = null, failed = false, queued = false, done = false;
     try {
       var r = await fetch("/api/chat/" + encodeURIComponent(modelSel.value), {
@@ -739,8 +788,12 @@
             try { j = JSON.parse(data); } catch (e) { return; }
             if (j.error) { problem = j.error.message || JSON.stringify(j.error); return; }
             var d = (j.choices && j.choices[0] && j.choices[0].delta) || {};
-            if (d.reasoning_content) m.reasoning += d.reasoning_content;
-            if (d.content) m.content += d.content;
+            if (d.reasoning_content) { thinkTimer.start(); m.reasoning += d.reasoning_content; }
+            if (d.content) {
+              var sec = thinkTimer.stop();
+              if (sec) m.thinkSec = sec;
+              m.content += d.content;
+            }
             if (j.timings) timings = j.timings;
           });
         });
@@ -751,6 +804,7 @@
             queued = false;
             if (done) return;
             m.meta = m.content ? T.writing : T.thinking;
+            setStatus(m.meta);
             fill(el, m, false);
             scroller.follow(false);
           });
@@ -766,6 +820,8 @@
       else { failed = true; m.meta = T.error + " " + e.message; }
     } finally {
       done = true;
+      var finalS = thinkTimer.stop();
+      if (finalS) m.thinkSec = finalS;
       busy = null;
       if (m.content || m.reasoning) {
         messages.push(m);
@@ -775,6 +831,7 @@
         autosize();
       }
       setBusy(false);
+      setStatus("");
       renderAll();
       updateContextMeter();
       persistThread();

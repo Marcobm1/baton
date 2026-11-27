@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "UI-4: Claude Code-style messages"
+next: "UI-5: One chat component for local models and agents"
 updated: 2026-11-26
 updated_by: gemini
 open_source: true
@@ -13,6 +13,7 @@ links:
 ---
 
 ## Done recently
+- 2026-11-26: UI-4: Claude Code-style messages on `/chat` (cardless assistant prose, compact one-line tool rows & read groups with status dots, line-numbered inline diffs with `+/-` stats & collapsed context hunks, inline approvals answerable with keys `1`/`2`, collapsed live `"Thinking… Ns"` → `"Thought for Ns"` timer, and unified bottom status line with context meter; `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26: UI-3: composer as the control centre on `/chat` (agent, readable model names via `readable_model_name()`, effort, folder, permission/tool mode, and preset/resume moved into bottom-row composer chips with upward popovers, locked-not-hidden state once started, and `Enter` / `Shift+Enter` / `Shift+Tab` / `Esc` shortcuts; `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26: UI-2: full-height `/chat` layout like Claude Code desktop (`body.page-chat` removes `main` max-width/padding only on `/chat`, flush full-height history column, slim topbar with title/folder/git-branch chips and `⋯` menu for Convert to task / Rename / Delete, centred `760 px` scrollable conversation, bottom-anchored composer dock, mobile drawer & tab bar preserved; `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26: UI-1: switched both dark token blocks in `baton/static/style.css` to neutral near-black surfaces (`#0c0c0d` / `#111113` / `#161618` / `#1e1e21`, Claude Code desktop look), updated `docs/design.md`, and verified WCAG AA contrast (`tests/test_design.py`).
@@ -43,10 +44,7 @@ links:
 - [x] 2026-11-26 UI-1: Near-black dark theme (Claude Code desktop look — neutral charcoal/near-black tokens in `baton/static/style.css`, updated `docs/design.md`, WCAG AA verified in `tests/test_design.py`)
 - [x] 2026-11-26 UI-2: Full-height `/chat` layout like Claude Code desktop (`body.page-chat`, flush history column, slim header with title/folder/git branch and `⋯` menu, centred `760 px` scroll viewport, bottom-anchored composer dock, mobile drawer & tab bar preserved; `tests/test_design.py`, `docs/design.md`)
 - [x] 2026-11-26 UI-3: Composer as the control centre (bottom-row chips for agent, readable model names, effort, folder, mode, preset/resume with upward popovers, locked-not-hidden state when started, `Enter`/`Shift+Enter`/`Shift+Tab`/`Esc` shortcuts; `baton/task_models.py`, `baton/static/chat-common.js`, `tests/test_design.py`)
-- [ ] UI-4: Claude Code-style messages
-  Assistant text without a card, compact one-line tool rows with status dots, inline diffs with line
-  numbers, inline approvals answerable with keys 1/2, collapsed "Thinking… Ns", status line with context.
-  Recommended: claude-code, opus, medium
+- [x] 2026-11-26 UI-4: Claude Code-style messages (cardless assistant prose, compact one-line tool rows with status dots, line-numbered inline diffs with collapsed context, inline approvals with `1`/`2` keys, live `"Thinking… Ns"` timer, unified status line with context; `baton/static/chat-common.js`, `baton/static/chat.css`, `tests/test_design.py`)
 - [ ] UI-5: One chat component for local models and agents
   Merge the two branches of `templates/chat.html` into one composer and message renderer.
   Recommended: claude-code, opus, high
@@ -77,6 +75,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-26 (gemini): Completed UI-4 Claude Code-style messages on `/chat` (cardless assistant prose, compact one-line tool rows with status dots, line-numbered inline diffs with collapsed context, `1`/`2` approval hotkeys, live `"Thinking… Ns"` timer, and unified bottom status line with context; `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26 (gemini): Completed UI-3 composer control centre on `/chat` (bottom-row chips for agent, readable model names, effort, folder, mode, preset/resume with upward popovers, locked-not-hidden session state, `Enter`/`Shift+Enter`/`Shift+Tab`/`Esc` shortcuts, `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26 (gemini): Completed UI-2 full-height `/chat` layout (page-scoped `body.page-chat` shell, flush left history column, slim header with title/folder/git-branch badges and `⋯` menu, centred `760 px` scroll container, bottom-anchored composer dock, `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26 (gemini): Completed UI-1 near-black dark theme across the whole app (`baton/static/style.css` dark token blocks, `docs/design.md`, WCAG AA verified in `tests/test_design.py`).

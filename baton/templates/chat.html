@@ -69,6 +69,9 @@
   'lbl_agent': t.ag_agent, 'lbl_model': t.chat_model, 'lbl_effort': t.chat_effort,
   'lbl_folder': t.ag_folder, 'lbl_mode': t.ag_mode, 'lbl_resume': t.ag_resume,
   'locked': t.chat_locked, 'filter_models': t.chat_filter_models,
+  'thinking_s': t.chat_thinking_s, 'thought_for': t.chat_thought_for,
+  'perm_keys': t.ag_perm_keys, 'diff_unchanged': t.ag_diff_unchanged,
+  'kbd_hint': t.chat_kbd_hint,
   'copy': t.chat_copy, 'copied': t.chat_copied,
   'grp_read': t.ag_grp_read, 'grp_search': t.ag_grp_search, 'grp_steps': t.ag_grp_steps,
   'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled, 'new_chat': t.chat_new,
@@ -169,7 +172,10 @@
         </div>
         <div class="cc-popover" data-cc-popover hidden role="dialog"></div>
       </form>
-      <p class="composer-kbd small muted">{{ t.chat_kbd_hint }}</p>
+      <div class="composer-status composer-kbd small muted" data-composer-status>
+        <span class="status-left" data-status-text>{{ t.chat_kbd_hint }}</span>
+        <span class="status-right" data-status-meta></span>
+      </div>
     </div>
   </div>
   {% endif %}
@@ -208,6 +214,9 @@
   'lbl_agent': t.ag_agent, 'lbl_model': t.chat_model, 'lbl_effort': t.chat_effort,
   'lbl_folder': t.ag_folder, 'lbl_mode': t.lh_mode, 'lbl_preset': t.chat_preset,
   'locked': t.chat_locked, 'filter_models': t.chat_filter_models,
+  'thinking_s': t.chat_thinking_s, 'thought_for': t.chat_thought_for,
+  'perm_keys': t.ag_perm_keys, 'diff_unchanged': t.ag_diff_unchanged,
+  'kbd_hint': t.chat_kbd_hint,
   'lang': lang} %}
 <section class="chat" data-chat data-csrf="{{ csrf }}">
   {{ chat_topbar(show_full_badge=false, show_new=view.models|length > 0) }}
@@ -293,10 +302,6 @@
   <div class="chat-dock" data-chat-dock>
     <div class="chat-dock-inner">
       <button type="button" class="scroll-bottom" data-scroll-bottom hidden aria-label="{{ t.chat_scroll_bottom }}">↓</button>
-      <div class="ctx-meter small muted" data-ctx-meter hidden>
-        <span data-ctx-text></span>
-        <span class="ctx-bar"><span class="ctx-fill" data-ctx-fill></span></span>
-      </div>
       <form class="chat-input composer" data-form>
         <input type="file" data-attach-input accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
         <div class="attach-bar" data-attach-bar hidden></div>
@@ -317,7 +322,13 @@
         </div>
         <div class="cc-popover" data-cc-popover hidden role="dialog"></div>
       </form>
-      <p class="composer-kbd small muted">{{ t.chat_kbd_hint }}</p>
+      <div class="composer-status composer-kbd small muted" data-composer-status>
+        <span class="status-left" data-status-text>{{ t.chat_kbd_hint }}</span>
+        <span class="ctx-meter" data-ctx-meter hidden>
+          <span data-ctx-text></span>
+          <span class="ctx-bar"><span class="ctx-fill" data-ctx-fill></span></span>
+        </span>
+      </div>
     </div>
   </div>
   {% endif %}

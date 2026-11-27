@@ -175,3 +175,19 @@ def test_agent_env_strips_notification_secrets_and_test_route_enforces_csrf_and_
     locked = web.create_app(Settings(data_dir=tmp_path, access_key="key-notify-123"))
     with TestClient(locked) as locked_client:
         assert locked_client.post("/machines/notify/test", data={"csrf": "x"}).status_code == 401
+
+
+def test_notifier_uses_huo_default_and_custom_app_name():
+    default_n = Notifier(lang="es")
+    t_alert, _ = default_n.format_alert({"severity": "bad", "machine_name": "VPS", "message": "down"})
+    t_task, _ = default_n.format_task(Task("t1", "u/r", "Fix", "", "gemini", "local", 1.0, status="done"))
+    t_perm, b_perm = default_n.format_permission({"agent": "claude-code", "command": "ls"})
+    assert "Huo · CRÍTICA" in t_alert
+    assert "Huo · Terminada" in t_task
+    assert "Huo · Permiso pendiente" in t_perm and "en Huo" in b_perm
+
+    custom_n = Notifier(lang="en", app_name="StarHub")
+    ct_alert, _ = custom_n.format_alert({"severity": "warn", "machine_name": "PC", "message": "hot"})
+    ct_perm, cb_perm = custom_n.format_permission({"agent": "codex", "command": "pwd"})
+    assert "StarHub · WARNING" in ct_alert
+    assert "StarHub · Approval waiting" in ct_perm and "in StarHub" in cb_perm

@@ -63,7 +63,7 @@ def test_machines_shows_env_file_hint_and_manual_restart_endpoint(tmp_path: Path
     page = client.get("/machines").text
     assert "Falta BATON_TELEGRAM_CHAT_ID" in page
     assert str(tmp_path / ".env") in page
-    assert "Reiniciar Baton" in page
+    assert "Reiniciar Huo" in page
     assert "123:ABC" not in page
 
     csrf = app.state.ctx.csrf_token
@@ -75,7 +75,7 @@ def test_machines_shows_env_file_hint_and_manual_restart_endpoint(tmp_path: Path
     resp = client.post("/machines/restart", data={"csrf": csrf})
     assert resp.status_code == 200
     assert restarted == [True]
-    assert "Reiniciando Baton" in resp.text
+    assert "Reiniciando Huo" in resp.text
 
     # Second restart while already restarting is refused cleanly.
     resp2 = client.post("/machines/restart", data={"csrf": csrf})

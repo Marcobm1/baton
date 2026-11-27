@@ -333,3 +333,41 @@ def test_ui5_unified_chat_template_and_shared_renderer(tmp_path, monkeypatch):
         assert 'id="chat-bootstrap"' in html, path
         assert 'id="agents-strings"' not in html, path
 
+
+def test_huo_brand_favicon_and_dynamic_title(tmp_path, monkeypatch):
+    async def no_projects(self, force=False):
+        return [], []
+
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    app = create_app(Settings(data_dir=tmp_path, lang="es", self_update=False, access_key="secret-k"))
+    client = TestClient(app)
+
+    # Favicon asset is served as SVG.
+    icon = client.get("/static/huo-icon.svg")
+    assert icon.status_code == 200
+    assert "image/svg+xml" in icon.headers.get("content-type", "")
+    assert "<svg" in icon.text
+
+    # Login page shows Huo title, dynamic heading, and the Huo icon (no legacy diamond).
+    login_html = client.get("/login").text
+    assert '<link rel="icon" type="image/svg+xml" href="/static/huo-icon.svg?v=' in login_html
+    assert 'class="mark-img" src="/static/huo-icon.svg?v=' in login_html
+    assert ">◆<" not in login_html
+    assert "Desbloquear Huo" in login_html
+    assert '<span class="brand-name">Huo</span>' in login_html
+
+    # Authenticated main shell and custom BATON_TITLE propagate cleanly.
+    custom_app = create_app(
+        Settings(data_dir=tmp_path, lang="es", self_update=False, title="MiHuo"),
+        restart=lambda: None,
+    )
+    custom_client = TestClient(custom_app)
+    page = custom_client.get("/machines").text
+    assert '<link rel="icon" type="image/svg+xml" href="/static/huo-icon.svg?v=' in page
+    assert 'class="mark-img" src="/static/huo-icon.svg?v=' in page
+    assert ">◆<" not in page
+    assert '<span class="brand-name">MiHuo</span>' in page
+    assert "Reiniciar MiHuo" in page
+    assert "Actualizaciones de MiHuo" in page
+    assert "reinicia MiHuo" in page
+

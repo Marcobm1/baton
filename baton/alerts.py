@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import db
+from .config import DEFAULT_TITLE
 
 MIB = 1024.0 * 1024.0
 SEVERITY_RANK = {"warn": 1, "bad": 2}
@@ -61,10 +62,12 @@ class AlertEngine:
         *,
         thresholds: AlertThresholds | None = None,
         on_opened: Callable[[dict[str, Any]], None] | None = None,
+        app_name: str = DEFAULT_TITLE,
     ):
         self.data_dir = Path(data_dir)
         self.thresholds = thresholds or AlertThresholds()
         self.on_opened = on_opened
+        self.app_name = (app_name or DEFAULT_TITLE).strip() or DEFAULT_TITLE
         self._lock = threading.Lock()
         self._strikes: dict[tuple[str, str], int] = {}
         self._last_resolved: dict[tuple[str, str], float] = {}
@@ -322,7 +325,7 @@ class AlertEngine:
                 if ev:
                     opened.append(ev)
 
-                # 5. Unusual GPU load when local Baton has no active model loaded
+                # 5. Unusual GPU load when local app has no active model loaded
                 if m.get("local") and local_gpu_busy:
                     self._resolve_if_clear(conn, mid, "gpu_unusual", ts)
                 else:
@@ -330,7 +333,7 @@ class AlertEngine:
                         conn, machine_id=mid, machine_name=mname, kind="gpu_unusual",
                         value=gpu.get("util_pct"),
                         warn_at=th.gpu_unusual_pct, bad_at=None, clear_below=th.gpu_unusual_clear,
-                        message_fn=lambda v, _s: f"Sustained GPU activity ({v:.0f}%) with no Baton model active.",
+                        message_fn=lambda v, _s: f"Sustained GPU activity ({v:.0f}%) with no {self.app_name} model active.",
                         now=ts,
                     )
                     if ev:

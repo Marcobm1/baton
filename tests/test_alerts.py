@@ -102,6 +102,7 @@ def test_offline_unusual_gpu_network_and_new_login_rules(tmp_path):
     assert engine.evaluate([_card(gpu_util=85.0)], local_gpu_busy=False, now=t + 100) == []
     ev_gpu = engine.evaluate([_card(gpu_util=88.0)], local_gpu_busy=False, now=t + 130)
     assert len(ev_gpu) == 1 and ev_gpu[0]["kind"] == "gpu_unusual"
+    assert "no Huo model active" in ev_gpu[0]["message"]
     engine.evaluate([_card(gpu_util=88.0)], local_gpu_busy=True, now=t + 160)
     assert engine.active_alerts() == []
 

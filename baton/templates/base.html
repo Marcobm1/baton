@@ -15,6 +15,7 @@
       if (theme === "light" || theme === "dark") d.dataset.theme = theme;
     })();
   </script>
+  <link rel="icon" type="image/svg+xml" href="/static/huo-icon.svg?v={{ css_v }}">
   <link rel="stylesheet" href="/static/style.css?v={{ css_v }}">
   {% block styles %}{% endblock %}
 </head>
@@ -41,7 +42,7 @@
 <div class="shell">
   <aside class="sidebar">
     <a class="brand" href="/">
-      <span class="mark" aria-hidden="true">◆</span>
+      <span class="mark" aria-hidden="true"><img class="mark-img" src="/static/huo-icon.svg?v={{ css_v }}" alt="" width="34" height="34"></span>
       <span class="brand-text"><span class="brand-name">{{ title }}</span><span class="brand-version">v{{ version }}</span></span>
     </a>
     <p class="side-label">{{ t.nav_panel }}</p>
@@ -70,7 +71,7 @@
   </aside>
 
   <header class="mobile-top">
-    <a class="brand" href="/"><span class="mark" aria-hidden="true">◆</span><span class="brand-name">{{ title }}</span></a>
+    <a class="brand" href="/"><span class="mark" aria-hidden="true"><img class="mark-img" src="/static/huo-icon.svg?v={{ css_v }}" alt="" width="30" height="30"></span><span class="brand-name">{{ title }}</span></a>
     <button type="button" class="theme-cycle" data-theme-cycle aria-label="{{ t.theme }}">
       <span data-when="auto">{{ icon('auto') }}</span><span data-when="light">{{ icon('light') }}</span><span data-when="dark">{{ icon('dark') }}</span>
     </button>

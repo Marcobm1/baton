@@ -17,7 +17,6 @@ from ..agents import AGENTS, SUMMARY_REQUEST, extract_summary, next_task_request
 from ..artifacts import parse_structured_report, resolve_artifact_path
 from ..chat_history import thread_task_draft
 from ..github import GitHubError
-from ..i18n import strings
 from ..task_models import opencode_groups
 from ..task_report import format_task_log, task_report
 from ..task_store import PRIORITIES, Task, UpdateInProgress, new_id
@@ -349,7 +348,7 @@ async def task_create(
     if agent in ("codex", "claude-code", "gemini") and (model or effort):
         options = await asyncio.to_thread(ctx.catalog_fn, agent)
         if model not in options or (effort and effort not in options[model]["efforts"]):
-            return back(strings(ctx.settings.lang)["invalid_model"])
+            return back(ctx.t["invalid_model"])
     elif agent == "opencode":
         # Only a model OpenCode itself lists is accepted.
         if oc_model not in await asyncio.to_thread(ctx.opencode_models_fn):

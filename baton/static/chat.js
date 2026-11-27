@@ -213,6 +213,7 @@
     showState();
     syncHarnessUi();
     updateContextMeter();
+    if (composer) composer.sync();
     history.replaceState(null, "", "/chat?agent=local&thread=" + encodeURIComponent(threadId));
     scroller.follow(true);
   }
@@ -227,6 +228,7 @@
     sidebar.setActive("");
     renderAll();
     updateContextMeter();
+    if (composer) composer.sync();
     history.replaceState(null, "", "/chat?model=" + encodeURIComponent(modelSel.value));
     text.focus();
   }
@@ -794,6 +796,85 @@
   }
 
   // ------------------------------------------------------------- events
+  var agentSel = root.querySelector("[data-agent-switch]");
+  function selectedLabel(sel) {
+    if (!sel || sel.selectedIndex < 0) return "";
+    return (sel.options[sel.selectedIndex].textContent || "").trim();
+  }
+  function shortFolder(sel) {
+    var txt = selectedLabel(sel);
+    if (!txt) return "";
+    if (sel.value === "scratch") {
+      var parts = txt.split(/[\\/]/);
+      return parts[parts.length - 1] || txt;
+    }
+    return txt;
+  }
+  var composer = window.BatonChat.initComposerControls({
+    root: root,
+    labels: { locked: T.locked, filterModels: T.filter_models },
+    chips: [
+      { id: "agent", title: T.lbl_agent, select: agentSel, label: function () { return selectedLabel(agentSel); }, isLocked: function () { return !!busy; } },
+      { id: "model", title: T.lbl_model, select: modelSel, label: function () { return selectedLabel(modelSel); }, isLocked: function () { return !!busy; } },
+      { id: "effort", title: T.lbl_effort, select: effortSel, label: function () { return selectedLabel(effortSel); }, isLocked: function () { return !!busy; } },
+      {
+        id: "mode", title: T.lbl_mode, shortcut: "Shift+Tab",
+        label: function () { return harnessOn() ? T.lh_on : T.lh_off; },
+        tone: function () { return harnessOn() ? "warn" : ""; },
+        isLocked: function () { return !!busy; },
+        renderPopover: function (body, close) {
+          var offR = root.querySelector('[data-harness-mode][value="off"]');
+          var onR = root.querySelector('[data-harness-mode][value="on"]');
+          var items = [
+            { radio: offR, title: T.lh_off, desc: "", warn: false },
+            { radio: onR, title: T.lh_on, desc: [T.lh_help_tools, T.lh_help_safety].filter(Boolean).join(" "), warn: true }
+          ];
+          items.forEach(function (item) {
+            if (!item.radio) return;
+            var active = item.radio.checked;
+            var row = mkEl("button", "cc-pop-mode" + (active ? " is-active" : "") + (item.warn ? " is-warn" : ""));
+            row.type = "button";
+            row.disabled = !!item.radio.disabled;
+            var top = mkEl("span", "cc-pop-mode-head");
+            top.appendChild(mkEl("span", "cc-pop-mode-title", item.title));
+            if (active) top.appendChild(mkEl("span", "cc-pop-check", "✓"));
+            row.appendChild(top);
+            if (item.desc) row.appendChild(mkEl("span", "cc-pop-mode-desc", item.desc));
+            row.addEventListener("click", function () {
+              item.radio.checked = true;
+              syncHarnessUi();
+              composer.sync();
+              close(false);
+              if (!text.disabled) text.focus();
+            });
+            body.appendChild(row);
+          });
+        }
+      },
+      { id: "folder", title: T.lbl_folder, select: harnessFolderSel, label: function () { return shortFolder(harnessFolderSel); }, isHidden: function () { return !harnessOn() || !harnessFolderSel; }, isLocked: function () { return !!busy; } },
+      { id: "preset", title: T.lbl_preset, select: presetSel, label: function () { return selectedLabel(presetSel); }, tone: function () { return presetSel && presetSel.value ? "accent" : ""; }, isHidden: function () { return !presetSel; }, isLocked: function () { return !!busy; } }
+    ],
+    isBusy: function () { return !!busy; },
+    onCancel: function () { abortActive(); },
+    onCycleMode: function () {
+      if (busy) return;
+      var offR = root.querySelector('[data-harness-mode][value="off"]');
+      var onR = root.querySelector('[data-harness-mode][value="on"]');
+      if (!offR || !onR) return;
+      if (onR.checked) offR.checked = true;
+      else onR.checked = true;
+      syncHarnessUi();
+      composer.sync();
+    }
+  });
+  var origSetBusy = setBusy;
+  setBusy = function (on) { origSetBusy(on); composer.sync(); };
+  var origRefresh = refresh;
+  refresh = function () {
+    origRefresh();
+    setTimeout(function () { composer.sync(); }, 250);
+  };
+
   function autosize() { text.style.height = "auto"; text.style.height = Math.min(text.scrollHeight, 192) + "px"; }
   text.addEventListener("input", autosize);
   text.addEventListener("keydown", function (e) {
@@ -806,17 +887,20 @@
   modelSel.addEventListener("change", function () {
     showState();
     syncHarnessUi();
+    composer.sync();
     if (!threadId) history.replaceState(null, "", "/chat?model=" + encodeURIComponent(modelSel.value));
   });
   effortSel.addEventListener("change", function () {
+    composer.sync();
     try { localStorage.setItem("baton-chat-effort", effortSel.value); } catch (e) {}
   });
   harnessRadios.forEach(function (r) {
-    r.addEventListener("change", syncHarnessUi);
+    r.addEventListener("change", function () { syncHarnessUi(); composer.sync(); });
   });
   if (harnessFolderSel) {
     harnessFolderSel.addEventListener("change", function () {
       syncHarnessUi();
+      composer.sync();
       try { localStorage.setItem("baton-chat-harness-folder", harnessFolderSel.value); } catch (e) {}
     });
   }
@@ -824,6 +908,7 @@
     presetSel.addEventListener("change", function () {
       syncPresetUi();
       updateContextMeter();
+      composer.sync();
       try { localStorage.setItem("baton-chat-preset", presetSel.value); } catch (e) {}
     });
   }
@@ -834,7 +919,7 @@
     });
   }
   root.querySelectorAll("[data-new]").forEach(function (btn) {
-    btn.addEventListener("click", startNew);
+    btn.addEventListener("click", function () { startNew(); composer.sync(); });
   });
 
   if (boot.active_thread && boot.active_thread.agent === "local") {
@@ -844,5 +929,6 @@
     showState();
     syncHarnessUi();
   }
+  composer.sync();
   setInterval(function () { if (!document.hidden) refresh(); }, 4000);
 })();

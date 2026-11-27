@@ -64,6 +64,11 @@
   'st_in_progress': t.ag_st_in_progress, 'st_completed': t.ag_st_completed, 'st_failed': t.ag_st_failed,
   'full_off': t.ag_full_off, 'full_help': t.ag_full_help, 'full_local_only': t.ag_full_local_only,
   'full_abliterated': t.ag_full_abliterated, 'full_badge': t.ag_full_badge,
+  'confirm_label': t.ag_confirm, 'full_label': t.ag_full,
+  'confirm_help': t['ag_confirm_help' ~ suffix],
+  'lbl_agent': t.ag_agent, 'lbl_model': t.chat_model, 'lbl_effort': t.chat_effort,
+  'lbl_folder': t.ag_folder, 'lbl_mode': t.ag_mode, 'lbl_resume': t.ag_resume,
+  'locked': t.chat_locked, 'filter_models': t.chat_filter_models,
   'copy': t.chat_copy, 'copied': t.chat_copied,
   'grp_read': t.ag_grp_read, 'grp_search': t.ag_grp_search, 'grp_steps': t.ag_grp_steps,
   'history_empty': t.chat_history_empty, 'untitled': t.chat_untitled, 'new_chat': t.chat_new,
@@ -73,43 +78,44 @@
 <section class="chat" data-agents data-agent="{{ agent }}" data-csrf="{{ csrf }}"
          data-sandbox-ready="{{ '1' if oc.sandbox_ready else '0' }}">
   {{ chat_topbar(show_full_badge=true, show_new=can_chat) }}
+  {% if can_chat %}
+  <div class="composer-native" hidden aria-hidden="true">
+    {{ agent_select() }}
+    <div class="ag-catalog" role="group" aria-label="{{ t.ag_model_catalog }}" data-catalog hidden></div>
+    <select data-oc-model{% if oc.efforts %} data-efforts="{{ oc.efforts|tojson|forceescape }}"{% endif %}>
+      {% for g in oc.groups %}
+      <optgroup label="{{ g.label }}" data-catalog-key="{{ 'go' if g.included else 'payg' if g.payg else 'other' }}" data-catalog-label="{{ g.label if g.included or g.payg else t.ag_other_providers }}">
+        {% for m in g.models %}<option value="{{ m }}" {% if g.payg %}data-payg{% endif %}>{{ oc.model_labels.get(m, m) }}</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+    <select data-oc-effort>
+      {% for e in efforts %}
+      <option value="{{ e }}">{{ t['ag_effort_' ~ e] if e in ('default', 'xhigh', 'max') else t['chat_effort_' ~ e] }}</option>
+      {% endfor %}
+    </select>
+    <select data-oc-folder>
+      {% for f in oc.folders %}<option value="{{ f.key }}"{% if f.branch %} data-branch="{{ f.branch }}"{% endif %}{% if selected_folder and f.key.lower() == selected_folder.lower() %} selected{% endif %}>{{ f.label }}</option>{% endfor %}
+    </select>
+    {% if oc.sessions %}
+    <select data-oc-resume>
+      <option value="">{{ t.ag_resume_new }}</option>
+      {% for s in oc.sessions %}
+      <option value="{{ s.session_id }}" data-folder="{{ s.folder_key }}" data-model="{{ s.model }}" data-effort="{{ s.effort }}">{{ (s.title or s.session_id[:12]) ~ ' · ' ~ s.folder_label }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    <input type="radio" name="ag-mode" value="confirm" checked data-mode>
+    <input type="radio" name="ag-mode" value="full"{% if not oc.sandbox_ready %} disabled{% endif %} data-mode>
+    <span data-full-note>{{ t.ag_full_help if oc.sandbox_ready else t.ag_full_off }}</span>
+  </div>
+  {% endif %}
   <div class="chat-scroll" data-chat-scroll>
     <div class="chat-column">
+      {% if not can_chat %}
       <div class="chat-setup">
         <div class="chat-head">
-          <div class="chat-controls">
-            {{ agent_select() }}
-            {% if oc.available and oc.folders %}
-            <div class="ag-catalog" role="group" aria-label="{{ t.ag_model_catalog }}" data-catalog hidden></div>
-            <label><span class="label">{{ t.chat_model }}</span>
-              <select data-oc-model{% if oc.efforts %} data-efforts="{{ oc.efforts|tojson|forceescape }}"{% endif %}>
-                {% for g in oc.groups %}
-                <optgroup label="{{ g.label }}" data-catalog-key="{{ 'go' if g.included else 'payg' if g.payg else 'other' }}" data-catalog-label="{{ g.label if g.included or g.payg else t.ag_other_providers }}">
-                  {% for m in g.models %}<option value="{{ m }}" {% if g.payg %}data-payg{% endif %}>{{ m }}</option>{% endfor %}
-                </optgroup>
-                {% endfor %}
-              </select></label>
-            <label><span class="label">{{ t.chat_effort }}</span>
-              <select data-oc-effort>
-                {% for e in efforts %}
-                <option value="{{ e }}">{{ t['ag_effort_' ~ e] if e in ('default', 'xhigh', 'max') else t['chat_effort_' ~ e] }}</option>
-                {% endfor %}
-              </select></label>
-            <label><span class="label">{{ t.ag_folder }}</span>
-              <select data-oc-folder>
-                {% for f in oc.folders %}<option value="{{ f.key }}"{% if f.branch %} data-branch="{{ f.branch }}"{% endif %}{% if selected_folder and f.key.lower() == selected_folder.lower() %} selected{% endif %}>{{ f.label }}</option>{% endfor %}
-              </select></label>
-            {% if oc.sessions %}
-            <label><span class="label">{{ t.ag_resume }}</span>
-              <select data-oc-resume>
-                <option value="">{{ t.ag_resume_new }}</option>
-                {% for s in oc.sessions %}
-                <option value="{{ s.session_id }}" data-folder="{{ s.folder_key }}" data-model="{{ s.model }}" data-effort="{{ s.effort }}">{{ (s.title or s.session_id[:12]) ~ ' · ' ~ s.folder_label }}</option>
-                {% endfor %}
-              </select></label>
-            {% endif %}
-            {% endif %}
-          </div>
+          <div class="chat-controls">{{ agent_select() }}</div>
         </div>
         {% if not oc.available %}
         <p class="warn">{{ t['ag_unavailable' ~ suffix] }}</p>
@@ -117,28 +123,13 @@
         <p class="warn">{{ t['ag_no_models' ~ suffix] }}</p>
         {% elif not oc.folders %}
         <p class="warn">{{ t.ag_no_folders }}</p>
-        {% else %}
-        <div class="ag-mode-bar">
-          <div class="ag-mode-pills" role="radiogroup" aria-label="{{ t.ag_mode }}">
-            <label class="ag-pill"><input type="radio" name="ag-mode" value="confirm" checked data-mode><span>{{ t.ag_confirm }}</span></label>
-            <label class="ag-pill ag-full{% if oc.sandbox_ready %} ag-full-ready{% endif %}"><input type="radio" name="ag-mode" value="full"{% if not oc.sandbox_ready %} disabled{% endif %} data-mode><span>{{ t.ag_full }}</span></label>
-          </div>
-          <details class="ag-mode-info">
-            <summary class="small muted" title="{{ t.ag_mode }}">?</summary>
-            <div class="ag-mode-info-body small muted">
-              <p><strong>{{ t.ag_confirm }}:</strong> {{ t['ag_confirm_help' ~ suffix] }}</p>
-              <p><strong>{{ t.ag_full }}:</strong> <span data-full-note>{{ t.ag_full_help if oc.sandbox_ready else t.ag_full_off }}</span></p>
-            </div>
-          </details>
-        </div>
-        <p class="ag-full-warn small" role="alert" data-full-warn hidden>{{ t.ag_full_warn }}</p>
-        <p class="warn small" data-payg-warn hidden>{{ t.oc_payg_warning }}</p>
-        <div class="muted small ag-fixed" data-fixed hidden>
-          <span data-fixed-text></span>
-        </div>
         {% endif %}
       </div>
-      {% if can_chat %}
+      {% else %}
+      <div class="chat-banners">
+        <p class="ag-full-warn small" role="alert" data-full-warn hidden>{{ t.ag_full_warn }}</p>
+        <p class="warn small" data-payg-warn hidden>{{ t.oc_payg_warning }}</p>
+      </div>
       <div class="chat-log" data-log aria-live="polite">
         <div class="chat-empty" data-empty>
           <p class="muted">{{ t['ag_empty' ~ suffix] }}</p>
@@ -156,13 +147,29 @@
   <div class="chat-dock" data-chat-dock>
     <div class="chat-dock-inner">
       <button type="button" class="scroll-bottom" data-scroll-bottom hidden aria-label="{{ t.chat_scroll_bottom }}">↓</button>
-      <div class="attach-bar" data-attach-bar hidden></div>
-      <form class="chat-input" data-form>
+      <form class="chat-input composer" data-form>
         <input type="file" data-attach-input accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
-        <button type="button" class="attach-btn" data-attach-btn title="{{ t.chat_attach }}" aria-label="{{ t.chat_attach }}">＋</button>
+        <div class="attach-bar" data-attach-bar hidden></div>
         <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
-        <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
+        <div class="composer-bar" data-composer-bar>
+          <div class="composer-chips" data-composer-chips>
+            <button type="button" class="cc-chip cc-icon-chip" data-attach-btn title="{{ t.chat_attach }}" aria-label="{{ t.chat_attach }}">＋</button>
+            <button type="button" class="cc-chip" data-cc-chip="agent" aria-haspopup="dialog" aria-expanded="false" title="{{ t.ag_agent }}"></button>
+            <button type="button" class="cc-chip cc-chip-model" data-cc-chip="model" aria-haspopup="dialog" aria-expanded="false" title="{{ t.chat_model }}"></button>
+            <button type="button" class="cc-chip" data-cc-chip="effort" aria-haspopup="dialog" aria-expanded="false" title="{{ t.chat_effort }}"></button>
+            <button type="button" class="cc-chip" data-cc-chip="folder" aria-haspopup="dialog" aria-expanded="false" title="{{ t.ag_folder }}"></button>
+            <button type="button" class="cc-chip" data-cc-chip="mode" aria-haspopup="dialog" aria-expanded="false" title="{{ t.ag_mode }}"></button>
+            {% if oc.sessions %}
+            <button type="button" class="cc-chip" data-cc-chip="resume" aria-haspopup="dialog" aria-expanded="false" title="{{ t.ag_resume }}"></button>
+            {% endif %}
+          </div>
+          <div class="composer-right">
+            <button type="submit" class="btn cc-send" data-send>{{ t.chat_send }}</button>
+          </div>
+        </div>
+        <div class="cc-popover" data-cc-popover hidden role="dialog"></div>
       </form>
+      <p class="composer-kbd small muted">{{ t.chat_kbd_hint }}</p>
     </div>
   </div>
   {% endif %}
@@ -192,79 +199,73 @@
   'st_pending': t.ag_st_pending, 'st_in_progress': t.ag_st_in_progress,
   'st_completed': t.ag_st_completed, 'st_failed': t.ag_st_failed,
   'grp_read': t.ag_grp_read, 'grp_search': t.ag_grp_search, 'grp_steps': t.ag_grp_steps,
+  'lh_off': t.lh_off, 'lh_on': t.lh_on,
+  'lh_help_tools': t.lh_help_tools, 'lh_help_safety': t.lh_help_safety,
   'lh_warn': t.lh_warn, 'lh_warn_folder': t.lh_warn_folder,
   'lh_warn_abliterated': t.lh_warn_abliterated,
   'lh_running_tools': t.lh_running_tools, 'lh_waiting_perm': t.lh_waiting_perm,
   'lh_rounds': t.lh_rounds,
+  'lbl_agent': t.ag_agent, 'lbl_model': t.chat_model, 'lbl_effort': t.chat_effort,
+  'lbl_folder': t.ag_folder, 'lbl_mode': t.lh_mode, 'lbl_preset': t.chat_preset,
+  'locked': t.chat_locked, 'filter_models': t.chat_filter_models,
   'lang': lang} %}
 <section class="chat" data-chat data-csrf="{{ csrf }}">
   {{ chat_topbar(show_full_badge=false, show_new=view.models|length > 0) }}
+  {% if view.models %}
+  <div class="composer-native" hidden aria-hidden="true">
+    {{ agent_select() }}
+    <select data-model>
+      {% if view.groups|length > 1 %}
+      {% for g in view.groups %}
+      <optgroup label="{{ g.label }}">
+        {% for m in g.models %}
+        <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
+                {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}" data-abliterated="{{ '1' if m.abliterated else '0' }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endfor %}
+      {% else %}
+      {% for m in view.models %}
+      <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
+              {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}" data-abliterated="{{ '1' if m.abliterated else '0' }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
+      {% endfor %}
+      {% endif %}
+    </select>
+    <select data-effort>
+      {% for e in ['none', 'low', 'medium', 'high'] %}
+      <option value="{{ e }}" {% if e == 'low' %}selected{% endif %}>{{ t['chat_effort_' ~ e] }}</option>
+      {% endfor %}
+    </select>
+    <select data-preset>
+      <option value="">{{ t.chat_preset_default }}</option>
+      <option value="coder">{{ t.chat_preset_coder }}</option>
+      <option value="tutor">{{ t.chat_preset_tutor }}</option>
+      <option value="reviewer">{{ t.chat_preset_reviewer }}</option>
+      <option value="custom">{{ t.chat_preset_custom }}</option>
+    </select>
+    <input type="radio" name="lh-mode" value="off" checked data-harness-mode>
+    <input type="radio" name="lh-mode" value="on" data-harness-mode>
+    <select data-harness-folder>
+      <option value="">{{ t.lh_folder_none }}</option>
+      {% for f in local_folders %}
+      <option value="{{ f.key }}"{% if f.branch %} data-branch="{{ f.branch }}"{% endif %}{% if selected_folder and f.key.lower() == selected_folder.lower() %} selected{% endif %}>{{ f.label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
   <div class="chat-scroll" data-chat-scroll>
     <div class="chat-column">
+      {% if not view.models %}
       <div class="chat-setup">
         <div class="chat-head">
-          <div class="chat-controls">
-            {{ agent_select() }}
-            {% if view.models %}
-            <label><span class="label">{{ t.chat_model }}</span>
-              <select data-model>
-                {% if view.groups|length > 1 %}
-                {% for g in view.groups %}
-                <optgroup label="{{ g.label }}">
-                  {% for m in g.models %}
-                  <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
-                          {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}" data-abliterated="{{ '1' if m.abliterated else '0' }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
-                  {% endfor %}
-                </optgroup>
-                {% endfor %}
-                {% else %}
-                {% for m in view.models %}
-                <option value="{{ m.id }}" data-name="{{ m.name }}" data-status="{{ m.status }}"
-                        {% if m.id == selected %}selected{% endif %} data-family="{{ m.family_key }}" data-ctx="{{ m.ctx or 0 }}" data-abliterated="{{ '1' if m.abliterated else '0' }}">{{ ('● ' if m.uses_gpu else '') ~ m.name }}</option>
-                {% endfor %}
-                {% endif %}
-              </select></label>
-            <label><span class="label">{{ t.chat_effort }}</span>
-              <select data-effort>
-                {% for e in ['none', 'low', 'medium', 'high'] %}
-                <option value="{{ e }}" {% if e == 'low' %}selected{% endif %}>{{ t['chat_effort_' ~ e] }}</option>
-                {% endfor %}
-              </select></label>
-            <label><span class="label">{{ t.chat_preset }}</span>
-              <select data-preset>
-                <option value="">{{ t.chat_preset_default }}</option>
-                <option value="coder">{{ t.chat_preset_coder }}</option>
-                <option value="tutor">{{ t.chat_preset_tutor }}</option>
-                <option value="reviewer">{{ t.chat_preset_reviewer }}</option>
-                <option value="custom">{{ t.chat_preset_custom }}</option>
-              </select></label>
-            {% endif %}
-          </div>
+          <div class="chat-controls">{{ agent_select() }}</div>
         </div>
         {% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
-        {% if not view.models %}
         <p class="muted">{{ t.m_no_config.format(path=view.config.path) }}</p>
-        {% else %}
-        <div class="local-tools-bar">
-          <div class="ag-mode-pills" role="radiogroup" aria-label="{{ t.lh_mode }}">
-            <label class="ag-pill"><input type="radio" name="lh-mode" value="off" checked data-harness-mode><span>{{ t.lh_off }}</span></label>
-            <label class="ag-pill lh-pill-on"><input type="radio" name="lh-mode" value="on" data-harness-mode><span>{{ t.lh_on }}</span></label>
-          </div>
-          <label class="lh-folder-wrap" data-harness-folder-wrap hidden><span class="label">{{ t.ag_folder }}</span>
-            <select data-harness-folder>
-              <option value="">{{ t.lh_folder_none }}</option>
-              {% for f in local_folders %}
-              <option value="{{ f.key }}"{% if f.branch %} data-branch="{{ f.branch }}"{% endif %}{% if selected_folder and f.key.lower() == selected_folder.lower() %} selected{% endif %}>{{ f.label }}</option>
-              {% endfor %}
-            </select></label>
-          <details class="ag-mode-info">
-            <summary class="small muted" title="{{ t.lh_mode }}">?</summary>
-            <div class="ag-mode-info-body small muted">
-              <p>{{ t.lh_help_tools }}</p>
-              <p>{{ t.lh_help_safety }}</p>
-            </div>
-          </details>
-        </div>
+      </div>
+      {% else %}
+      <div class="chat-banners">
+        {% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
         <p class="local-harness-warn small" role="alert" data-harness-warn hidden></p>
         <textarea class="custom-sys small" data-custom-system rows="2" hidden placeholder="{{ t.chat_custom_sys_placeholder }}" aria-label="{{ t.chat_preset_custom }}"></textarea>
         <div class="warn chat-off" data-off hidden>
@@ -274,9 +275,7 @@
             <button type="submit" class="btn small" data-start>{{ t.m_start }}</button>
           </form>
         </div>
-        {% endif %}
       </div>
-      {% if view.models %}
       <div class="chat-log" data-log aria-live="polite">
         <div class="chat-empty" data-empty>
           <p class="muted">{{ t.chat_empty }}</p>
@@ -298,13 +297,27 @@
         <span data-ctx-text></span>
         <span class="ctx-bar"><span class="ctx-fill" data-ctx-fill></span></span>
       </div>
-      <div class="attach-bar" data-attach-bar hidden></div>
-      <form class="chat-input" data-form>
+      <form class="chat-input composer" data-form>
         <input type="file" data-attach-input accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
-        <button type="button" class="attach-btn" data-attach-btn title="{{ t.chat_attach }}" aria-label="{{ t.chat_attach }}">＋</button>
+        <div class="attach-bar" data-attach-bar hidden></div>
         <textarea data-text rows="1" placeholder="{{ t.chat_placeholder }}" aria-label="{{ t.chat_placeholder }}"></textarea>
-        <button type="submit" class="btn" data-send>{{ t.chat_send }}</button>
+        <div class="composer-bar" data-composer-bar>
+          <div class="composer-chips" data-composer-chips>
+            <button type="button" class="cc-chip cc-icon-chip" data-attach-btn title="{{ t.chat_attach }}" aria-label="{{ t.chat_attach }}">＋</button>
+            <button type="button" class="cc-chip" data-cc-chip="agent" aria-haspopup="dialog" aria-expanded="false" title="{{ t.ag_agent }}"></button>
+            <button type="button" class="cc-chip cc-chip-model" data-cc-chip="model" aria-haspopup="dialog" aria-expanded="false" title="{{ t.chat_model }}"></button>
+            <button type="button" class="cc-chip" data-cc-chip="effort" aria-haspopup="dialog" aria-expanded="false" title="{{ t.chat_effort }}"></button>
+            <button type="button" class="cc-chip" data-cc-chip="mode" aria-haspopup="dialog" aria-expanded="false" title="{{ t.lh_mode }}"></button>
+            <button type="button" class="cc-chip" data-cc-chip="folder" aria-haspopup="dialog" aria-expanded="false" title="{{ t.ag_folder }}" hidden></button>
+            <button type="button" class="cc-chip" data-cc-chip="preset" aria-haspopup="dialog" aria-expanded="false" title="{{ t.chat_preset }}"></button>
+          </div>
+          <div class="composer-right">
+            <button type="submit" class="btn cc-send" data-send>{{ t.chat_send }}</button>
+          </div>
+        </div>
+        <div class="cc-popover" data-cc-popover hidden role="dialog"></div>
       </form>
+      <p class="composer-kbd small muted">{{ t.chat_kbd_hint }}</p>
     </div>
   </div>
   {% endif %}

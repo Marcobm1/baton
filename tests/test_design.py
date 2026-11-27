@@ -190,3 +190,50 @@ def test_ui2_chat_full_height_layout_header_and_branch_badges(tmp_path, monkeypa
     chat_css = (STATIC / "chat.css").read_text(encoding="utf-8")
     assert "body.page-chat main" in chat_css
     assert "max-width: 760px" in chat_css
+
+
+def test_readable_model_name_formats_slugs_and_keeps_catalog_labels():
+    from baton.task_models import readable_model_name
+
+    assert readable_model_name("gemini-4-neon", "Gemini 4 Neon") == "Gemini 4 Neon"
+    assert readable_model_name("opencode-go/qwen3.8-max") == "Qwen 3.8 Max"
+    assert readable_model_name("opencode-go/claude-haiku-5-5") == "Claude Haiku 5.5"
+    assert readable_model_name("opencode-go/deepseek-v4.1-flash") == "DeepSeek V4.1 Flash"
+    assert readable_model_name("opencode-go/glm-5.3-flash") == "GLM 5.3 Flash"
+    assert readable_model_name("opencode-go/gpt-5.6-luna") == "GPT 5.6 Luna"
+    assert readable_model_name("opencode-go/minimax-m3.1-flash") == "MiniMax M3.1 Flash"
+    assert readable_model_name("local-inkling/inkling-2-mini") == "Inkling 2 Mini"
+
+
+def test_ui3_composer_control_centre_chips_and_readable_names(tmp_path, monkeypatch):
+    from baton import web
+    from test_models import model_item, write_config
+
+    async def no_projects(self, force=False):
+        return [], []
+
+    monkeypatch.setattr(github.Hub, "load", no_projects)
+    monkeypatch.setattr(web, "find_agy", lambda: "agy")
+    monkeypatch.setattr(
+        web, "catalog",
+        lambda agent: {"gemini-4-neon": {"label": "Gemini 4 Neon", "efforts": ["low", "high"]}} if agent == "gemini" else {},
+    )
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    write_config(data_dir, [model_item(data_dir, "qwen")])
+    scratch_dir = tmp_path / "scratch"
+    scratch_dir.mkdir()
+    app = web.create_app(Settings(data_dir=data_dir, lang="es", self_update=False, chat_scratch=str(scratch_dir)))
+    client = TestClient(app)
+
+    for path in ("/chat", "/chat?agent=gemini"):
+        html = client.get(path).text
+        assert 'data-composer-bar' in html, path
+        assert 'data-cc-popover' in html, path
+        for chip in ("agent", "model", "effort", "folder", "mode"):
+            assert f'data-cc-chip="{chip}"' in html, (path, chip)
+        assert 'class="composer-native" hidden' in html, path
+
+    gem_html = client.get("/chat?agent=gemini").text
+    assert ">Gemini 4 Neon</option>" in gem_html
+    assert 'class="composer-kbd' in gem_html

@@ -580,9 +580,262 @@
     return wrap;
   }
 
+  // Composer control centre (UI-3): bottom-row chips with upward popovers,
+  // locked-state display when a session starts, and Esc / Shift+Tab shortcuts.
+  function initComposerControls(opts) {
+    var root = opts.root || document;
+    var form = root.querySelector("[data-form]");
+    var popover = root.querySelector("[data-cc-popover]");
+    var chips = opts.chips || [];
+    var labels = opts.labels || {};
+    var chipEls = {};
+    var openId = "";
+
+    chips.forEach(function (cfg) {
+      var btn = root.querySelector('[data-cc-chip="' + cfg.id + '"]');
+      if (btn) chipEls[cfg.id] = btn;
+    });
+
+    function mk(tag, cls, txt) {
+      var el = document.createElement(tag);
+      if (cls) el.className = cls;
+      if (txt != null) el.textContent = txt;
+      return el;
+    }
+
+    function close(restoreFocus) {
+      if (!openId) return;
+      var prev = chipEls[openId];
+      if (prev) prev.setAttribute("aria-expanded", "false");
+      openId = "";
+      if (popover) {
+        popover.hidden = true;
+        popover.innerHTML = "";
+        popover.style.left = "";
+      }
+      if (restoreFocus) {
+        var box = root.querySelector("[data-text]");
+        if (prev && !prev.disabled) prev.focus();
+        else if (box && !box.disabled) box.focus();
+      }
+    }
+
+    function positionPopover(btn) {
+      if (!popover || !form || !btn) return;
+      if (window.innerWidth < 600) {
+        popover.style.left = "";
+        return;
+      }
+      var formRect = form.getBoundingClientRect();
+      var btnRect = btn.getBoundingClientRect();
+      var popW = popover.offsetWidth || 260;
+      var rawLeft = btnRect.left - formRect.left;
+      var maxLeft = Math.max(0, formRect.width - popW);
+      popover.style.left = Math.max(0, Math.min(rawLeft, maxLeft)) + "px";
+    }
+
+    function renderSelectList(body, cfg, selectEl, extra) {
+      if (!selectEl) return;
+      extra = extra || {};
+      if (extra.catalogTabs && extra.catalogTabs.length > 1) {
+        var tabBar = mk("div", "cc-pop-tabs");
+        extra.catalogTabs.forEach(function (tab) {
+          var tb = mk("button", "cc-pop-tab" + (tab.active ? " is-active" : ""), tab.label);
+          tb.type = "button";
+          tb.addEventListener("click", function () {
+            tab.onPick();
+            open(cfg.id);
+          });
+          tabBar.appendChild(tb);
+        });
+        body.appendChild(tabBar);
+      }
+
+      var allOpts = Array.from(selectEl.options);
+      var listWrap = mk("div", "cc-pop-list");
+      var searchInput = null;
+      if (allOpts.length > 8) {
+        searchInput = mk("input", "cc-pop-search");
+        searchInput.type = "search";
+        searchInput.placeholder = labels.filterModels || "Filter…";
+        searchInput.setAttribute("aria-label", labels.filterModels || "Filter");
+        body.appendChild(searchInput);
+      }
+      body.appendChild(listWrap);
+
+      function draw(query) {
+        var q = (query || "").trim().toLowerCase();
+        listWrap.innerHTML = "";
+        var children = Array.from(selectEl.children);
+        var hasGroups = children.some(function (c) { return c.tagName === "OPTGROUP"; });
+
+        function addOpt(opt) {
+          var text = (opt.textContent || "").trim();
+          var val = opt.value || "";
+          if (q && text.toLowerCase().indexOf(q) < 0 && val.toLowerCase().indexOf(q) < 0) return false;
+          var active = opt.value === selectEl.value;
+          var row = mk("button", "cc-pop-opt" + (active ? " is-active" : ""));
+          row.type = "button";
+          row.disabled = !!opt.disabled;
+          var main = mk("span", "cc-pop-opt-main", text);
+          row.appendChild(main);
+          var right = mk("span", "cc-pop-opt-right");
+          if (opt.hasAttribute("data-payg")) right.appendChild(mk("span", "cc-pop-tag warn", "PAYG"));
+          if (opt.dataset && opt.dataset.branch) right.appendChild(mk("span", "cc-pop-tag", "⎇ " + opt.dataset.branch));
+          if (active) right.appendChild(mk("span", "cc-pop-check", "✓"));
+          row.appendChild(right);
+          row.addEventListener("click", function () {
+            selectEl.value = opt.value;
+            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+            close(false);
+            sync();
+            var box = root.querySelector("[data-text]");
+            if (box && !box.disabled) box.focus();
+          });
+          listWrap.appendChild(row);
+          return true;
+        }
+
+        if (hasGroups) {
+          children.forEach(function (grp) {
+            if (grp.tagName !== "OPTGROUP") return;
+            var grpOpts = Array.from(grp.children);
+            var matched = grpOpts.filter(function (opt) {
+              if (!q) return true;
+              return (opt.textContent || "").toLowerCase().indexOf(q) >= 0 || (opt.value || "").toLowerCase().indexOf(q) >= 0;
+            });
+            if (!matched.length) return;
+            if (children.length > 1 && grp.label) listWrap.appendChild(mk("div", "cc-pop-group", grp.label));
+            matched.forEach(addOpt);
+          });
+        } else {
+          allOpts.forEach(addOpt);
+        }
+      }
+
+      draw("");
+      if (searchInput) {
+        searchInput.addEventListener("input", function () { draw(searchInput.value); });
+        setTimeout(function () { searchInput.focus(); }, 0);
+      }
+    }
+
+    function open(id) {
+      if (!popover) return;
+      var cfg = chips.find(function (c) { return c.id === id; });
+      var btn = chipEls[id];
+      if (!cfg || !btn || btn.disabled) return;
+      if (openId && openId !== id && chipEls[openId]) {
+        chipEls[openId].setAttribute("aria-expanded", "false");
+      }
+      openId = id;
+      btn.setAttribute("aria-expanded", "true");
+      popover.innerHTML = "";
+      var head = mk("div", "cc-pop-head");
+      head.appendChild(mk("span", "cc-pop-title", cfg.title || id));
+      if (cfg.shortcut) head.appendChild(mk("kbd", "cc-pop-kbd", cfg.shortcut));
+      popover.appendChild(head);
+      var body = mk("div", "cc-pop-body");
+      popover.appendChild(body);
+      if (cfg.renderPopover) {
+        cfg.renderPopover(body, close, renderSelectList);
+      } else if (cfg.select) {
+        renderSelectList(body, cfg, cfg.select, cfg.selectExtra ? cfg.selectExtra() : null);
+      }
+      popover.hidden = false;
+      positionPopover(btn);
+    }
+
+    function sync() {
+      chips.forEach(function (cfg) {
+        var btn = chipEls[cfg.id];
+        if (!btn) return;
+        var hide = cfg.isHidden ? !!cfg.isHidden() : false;
+        btn.hidden = hide;
+        if (hide) {
+          if (openId === cfg.id) close(false);
+          return;
+        }
+        var locked = cfg.isLocked ? !!cfg.isLocked() : false;
+        var tone = cfg.tone ? (cfg.tone() || "") : "";
+        var text = cfg.label ? (cfg.label() || "") : "";
+        btn.disabled = locked;
+        btn.classList.toggle("is-locked", locked);
+        btn.classList.toggle("is-warn", tone === "warn");
+        btn.classList.toggle("is-bad", tone === "bad");
+        btn.classList.toggle("is-accent", tone === "accent");
+        btn.innerHTML = "";
+        if (cfg.prefix) btn.appendChild(mk("span", "cc-chip-prefix", cfg.prefix));
+        btn.appendChild(mk("span", "cc-chip-label", text));
+        btn.appendChild(mk("span", "cc-chip-caret", locked ? "🔒" : "▾"));
+        btn.title = locked ? ((cfg.title || "") + " · " + (labels.locked || "Locked")) : (cfg.title || text);
+        if (locked && openId === cfg.id) close(false);
+      });
+    }
+
+    chips.forEach(function (cfg) {
+      var btn = chipEls[cfg.id];
+      if (!btn) return;
+      btn.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        if (openId === cfg.id) close(false);
+        else open(cfg.id);
+      });
+    });
+
+    document.addEventListener("click", function (ev) {
+      if (!openId || !popover) return;
+      if (popover.contains(ev.target)) return;
+      var btn = chipEls[openId];
+      if (btn && btn.contains(ev.target)) return;
+      close(false);
+    });
+
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape") {
+        if (openId) {
+          ev.preventDefault();
+          close(true);
+          return;
+        }
+        var shell = document.querySelector("[data-chat-shell]");
+        if (shell && shell.classList.contains("sidebar-open")) {
+          shell.classList.remove("sidebar-open");
+          return;
+        }
+        var menu = root.querySelector("[data-chat-menu]");
+        if (menu && menu.open) {
+          menu.open = false;
+          return;
+        }
+        if (opts.isBusy && opts.isBusy() && opts.onCancel) {
+          ev.preventDefault();
+          opts.onCancel();
+        }
+        return;
+      }
+      if (ev.key === "Tab" && ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+        if (!opts.onCycleMode) return;
+        var active = document.activeElement;
+        if (active && root.contains(active)) {
+          ev.preventDefault();
+          opts.onCycleMode(function (id) { open(id); });
+        }
+      }
+    });
+
+    window.addEventListener("resize", function () {
+      if (openId && chipEls[openId]) positionPopover(chipEls[openId]);
+    });
+
+    sync();
+    return { sync: sync, close: close, open: open };
+  }
+
   window.BatonChat = {
     esc: esc, md: md, createScroller: createScroller,
     initSidebar: initSidebar, initHeader: initHeader,
+    initComposerControls: initComposerControls,
     createAttachments: createAttachments, diffBlock: diffBlock
   };
 

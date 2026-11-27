@@ -207,16 +207,47 @@
     var branch = (opt && opt.dataset.branch) || "";
     header.setContext(label, branch);
   }
+  var agentSel = $("[data-agent-switch]");
+  var composer = null;
+  function syncComposer() { if (composer) composer.sync(); }
+  function selectedLabel(sel) {
+    if (!sel || sel.selectedIndex < 0) return "";
+    return (sel.options[sel.selectedIndex].textContent || "").trim();
+  }
+  function shortFolder(sel) {
+    var txt = selectedLabel(sel);
+    if (!txt) return "";
+    if (sel.value === "scratch") {
+      var parts = txt.split(/[\\/]/);
+      return parts[parts.length - 1] || txt;
+    }
+    return txt;
+  }
+  function catalogTabs() {
+    var tabs = [];
+    buttons.forEach(function (button, key) {
+      tabs.push({
+        label: button.textContent,
+        active: button.getAttribute("aria-pressed") === "true",
+        onPick: function () {
+          chooseCatalog(key);
+          savePrefs();
+          syncComposer();
+        }
+      });
+    });
+    return tabs;
+  }
   [modelSel, effortSel, folderSel].forEach(function (s) {
     s.addEventListener("change", function () {
       if (s === modelSel) setEfforts();
-      savePrefs(); showPayg(); updateFullMode(); syncHeaderContext();
+      savePrefs(); showPayg(); updateFullMode(); syncHeaderContext(); syncComposer();
     });
   });
   if (resumeSel) {
     resumeSel.addEventListener("change", function () {
       var o = resumeSel.options[resumeSel.selectedIndex];
-      if (!o || !o.value) return;
+      if (!o || !o.value) { syncComposer(); return; }
       if (o.dataset.folder && folderSel.querySelector('option[value="' + CSS.escape(o.dataset.folder) + '"]')) {
         folderSel.value = o.dataset.folder;
       }
@@ -227,11 +258,11 @@
       if (o.dataset.effort && effortSel.querySelector('option[value="' + CSS.escape(o.dataset.effort) + '"]')) {
         effortSel.value = o.dataset.effort;
       }
-      showPayg(); updateFullMode(); syncHeaderContext();
+      showPayg(); updateFullMode(); syncHeaderContext(); syncComposer();
     });
   }
   root.querySelectorAll("[data-mode]").forEach(function (r) {
-    r.addEventListener("change", updateFullMode);
+    r.addEventListener("change", function () { updateFullMode(); syncComposer(); });
   });
   function lock(info) {
     [modelSel, effortSel, folderSel, resumeSel].forEach(function (s) { if (s) s.disabled = !!info; });
@@ -241,7 +272,7 @@
       else if (r.value === "confirm") r.disabled = false;
     });
     root.classList.toggle("is-started", !!info);
-    fixed.hidden = !info;
+    if (fixed) fixed.hidden = !info;
     if (info) {
       restoreModel(info.model);
       modelSel.value = info.model;
@@ -250,7 +281,7 @@
       if (info.mode === "full" && fullRadio) fullRadio.checked = true;
       else if (confirmRadio) confirmRadio.checked = true;
       var msg = T.fixed.replace("{model}", info.model).replace("{folder}", info.folder);
-      if (fixedText) fixedText.textContent = msg; else fixed.textContent = msg;
+      if (fixedText) fixedText.textContent = msg; else if (fixed) fixed.textContent = msg;
       if (fullBadge) fullBadge.hidden = info.mode !== "full";
     } else {
       if (fullBadge) fullBadge.hidden = true;
@@ -261,12 +292,72 @@
     showPayg();
     updateFullMode();
     syncHeaderContext(info);
+    syncComposer();
   }
   function setBusy(on) {
     busy = on;
     send.textContent = on ? T.stop : T.send;
     if (on) send.setAttribute("data-busy", ""); else send.removeAttribute("data-busy");
   }
+
+  composer = window.BatonChat.initComposerControls({
+    root: root,
+    labels: { locked: T.locked, filterModels: T.filter_models },
+    chips: [
+      { id: "agent", title: T.lbl_agent, select: agentSel, label: function () { return selectedLabel(agentSel); }, isLocked: function () { return !!chat; } },
+      { id: "model", title: T.lbl_model, select: modelSel, label: function () { return selectedLabel(modelSel); }, isLocked: function () { return !!chat; }, selectExtra: function () { return { catalogTabs: catalogTabs() }; } },
+      { id: "effort", title: T.lbl_effort, select: effortSel, label: function () { return selectedLabel(effortSel); }, isHidden: function () { return effortSel.options.length <= 1; }, isLocked: function () { return !!chat; } },
+      { id: "folder", title: T.lbl_folder, select: folderSel, label: function () { return shortFolder(folderSel); }, isLocked: function () { return !!chat; } },
+      {
+        id: "mode", title: T.lbl_mode, shortcut: "Shift+Tab",
+        label: function () { return fullRadio && fullRadio.checked ? T.full_label : T.confirm_label; },
+        tone: function () { return fullRadio && fullRadio.checked ? "bad" : ""; },
+        isLocked: function () { return !!chat; },
+        renderPopover: function (body, close) {
+          var modes = [
+            { val: "confirm", radio: confirmRadio, title: T.confirm_label, desc: T.confirm_help, danger: false },
+            { val: "full", radio: fullRadio, title: T.full_label, desc: fullNote ? fullNote.textContent : T.full_off, danger: true }
+          ];
+          modes.forEach(function (item) {
+            if (!item.radio) return;
+            var active = item.radio.checked;
+            var row = el("button", "cc-pop-mode" + (active ? " is-active" : "") + (item.danger ? " is-danger" : ""));
+            row.type = "button";
+            row.disabled = !!item.radio.disabled;
+            var top = el("span", "cc-pop-mode-head");
+            top.appendChild(el("span", "cc-pop-mode-title", item.title));
+            if (active) top.appendChild(el("span", "cc-pop-check", "✓"));
+            row.appendChild(top);
+            if (item.desc) row.appendChild(el("span", "cc-pop-mode-desc", item.desc));
+            row.addEventListener("click", function () {
+              item.radio.checked = true;
+              updateFullMode();
+              syncComposer();
+              close(false);
+              if (!text.disabled) text.focus();
+            });
+            body.appendChild(row);
+          });
+        }
+      },
+      { id: "resume", title: T.lbl_resume, select: resumeSel, label: function () { return selectedLabel(resumeSel); }, isHidden: function () { return !resumeSel; }, isLocked: function () { return !!chat; } }
+    ],
+    isBusy: function () { return !!busy; },
+    onCancel: function () {
+      if (busy && chat) api("/api/agents/" + encodeURIComponent(chat.id) + "/cancel").catch(function () {});
+    },
+    onCycleMode: function (openChip) {
+      if (chat) return;
+      if (fullRadio && !fullRadio.disabled) {
+        if (fullRadio.checked && confirmRadio) confirmRadio.checked = true;
+        else fullRadio.checked = true;
+        updateFullMode();
+        syncComposer();
+      } else {
+        openChip("mode");
+      }
+    }
+  });
 
   // ------------------------------------------------------------- history
   var activeGroup = null;
@@ -303,6 +394,7 @@
       resumeSel.value = th.session_id;
     }
     syncHeaderContext();
+    syncComposer();
     (th.messages || []).forEach(function (m) {
       if (m.role === "user") {
         add(el("article", "msg msg-user")).appendChild(el("div", "msg-body", m.content || ""));

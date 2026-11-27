@@ -19,7 +19,7 @@ from ..chat_history import VALID_AGENTS
 from ..local_harness import ToolError, run_harness_stream
 from ..models import CHAT_MAX_IMAGES, ModelError, chat_payload, validate_image_data_url
 from ..sandbox import is_local_opencode_model
-from ..task_models import opencode_groups
+from ..task_models import opencode_groups, readable_model_name
 from .deps import CTX, AppContext
 
 router = APIRouter()
@@ -145,7 +145,7 @@ async def chat_page(
     ids = [m["id"] for m in view["models"]]
     running = [m["id"] for m in view["models"] if m["status"] in ("running", "external")]
     selected = model if model in ids else (running[0] if running else (ids[0] if ids else ""))
-    oc: dict = {"available": False, "groups": [], "folders": [], "sandbox_ready": False, "sessions": []}
+    oc: dict = {"available": False, "groups": [], "folders": [], "sandbox_ready": False, "sessions": [], "model_labels": {}}
     if agent == "opencode" and ctx.find_opencode_fn():
         oc_list, folders, sandbox_ready = await asyncio.gather(
             asyncio.to_thread(ctx.opencode_models_fn),
@@ -153,7 +153,9 @@ async def chat_page(
             asyncio.to_thread(ctx.agent_chats.sandbox_ready),
         )
         active_families = {m["family_key"] for m in view["models"] if m["uses_gpu"]}
-        oc = {"available": True, "groups": opencode_groups(oc_list, ctx.t, active_families=active_families),
+        oc_groups = opencode_groups(oc_list, ctx.t, active_families=active_families)
+        oc = {"available": True, "groups": oc_groups,
+              "model_labels": {m: readable_model_name(m) for g in oc_groups for m in g["models"]},
               "folders": folders, "sandbox_ready": sandbox_ready, "sessions": []}
     elif agent in ("gemini", "claude-code", "codex"):
         finder = {"gemini": ctx.find_agy_fn, "claude-code": ctx.find_claude_fn, "codex": ctx.find_codex_fn}[agent]
@@ -168,6 +170,7 @@ async def chat_page(
                 "folders": folders,
                 "groups": [{"provider": agent, "label": _AGENT_LABELS[agent], "included": False, "payg": False,
                             "models": list(cat)}] if cat else [],
+                "model_labels": {m: readable_model_name(m, v.get("label", "")) for m, v in cat.items()},
                 "efforts": {m: v["efforts"] for m, v in cat.items()},
                 "sandbox_ready": False,
                 "sessions": sessions,

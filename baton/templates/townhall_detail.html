@@ -35,9 +35,15 @@
 
 {% if session.status == 'running' %}
 <section class="th-card">
-  <h2>{{ t.th_live }}</h2>
-  <div id="th-live-log" class="th-live" data-events-url="/api/townhall/{{ session.id }}/events">{{ t.th_live_connecting }}</div>
+  <div class="th-live-head">
+    <h2>{{ t.th_live }}</h2>
+    <span id="th-live-status" class="th-pill is-running">{{ t.th_live_connecting }}</span>
+  </div>
+  <div id="th-live-log" class="th-live"
+       data-events-url="/api/townhall/{{ session.id }}/events"
+       data-status-url="/api/townhall/{{ session.id }}">{{ t.th_live_connecting }}</div>
 </section>
+<script id="th-live-i18n" type="application/json">{{ live_i18n | tojson }}</script>
 <script src="/static/townhall.js?v={{ css_v }}" defer></script>
 {% endif %}
 

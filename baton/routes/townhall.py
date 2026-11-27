@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -77,6 +79,23 @@ def _folder_key_for_workspace(ctx: AppContext, workspace: str) -> str:
     return ""
 
 
+def _filter_guest_pool(pool: Iterable[str], exclude_models: Iterable[str]) -> list[str]:
+    """Remove excluded/duplicate models (case-insensitive) while preserving order."""
+    excluded = {m.strip().lower() for m in exclude_models if m and m.strip()}
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in pool:
+        m = (raw or "").strip()
+        if not m:
+            continue
+        low = m.lower()
+        if low in excluded or low in seen:
+            continue
+        seen.add(low)
+        out.append(m)
+    return out
+
+
 async def _load_model_choices(ctx: AppContext) -> dict[str, Any]:
     available = ctx.runner.agents_available()
     cli_agents = [a for a in ("claude-code", "codex", "gemini") if not available.get(a, "missing")]
@@ -86,8 +105,10 @@ async def _load_model_choices(ctx: AppContext) -> dict[str, Any]:
         *(asyncio.to_thread(ctx.catalog_fn, a) for a in cli_agents),
     )
     catalogs = dict(zip(cli_agents, cats, strict=True))
-    go_models = [m for m in oc_list if m.startswith("opencode-go/")]
-    guest_pool = go_models or list(oc_list) or list(DEFAULT_GUEST_POOL)
+    excluded = ctx.settings.townhall_guest_exclude
+    go_models = _filter_guest_pool([m for m in oc_list if m.startswith("opencode-go/")], excluded)
+    guest_all = _filter_guest_pool(oc_list, excluded)
+    guest_pool = go_models or guest_all or _filter_guest_pool(DEFAULT_GUEST_POOL, excluded)
     quota_map = format_provider_quotas(quota_views)
 
     families: list[dict[str, Any]] = []
@@ -115,7 +136,7 @@ async def _load_model_choices(ctx: AppContext) -> dict[str, Any]:
         "catalogs": catalogs,
         "families": families,
         "quotas": quota_map,
-        "oc_models": oc_list,
+        "oc_models": guest_all,
         "oc_groups": opencode_groups(oc_list, ctx.t),
         "go_models": go_models,
         "default_guest_pool": guest_pool,
@@ -153,21 +174,29 @@ def _parse_participants(
     raise HTTPException(400, f"Choose between {MIN_PARTICIPANTS} and {MAX_PARTICIPANTS} participants.")
 
 
-async def _resolve_guest_pool(ctx: AppContext, guest_scope: str, *, use_demo: bool = False) -> list[str]:
+async def _resolve_guest_pool(
+    ctx: AppContext,
+    guest_scope: str,
+    *,
+    use_demo: bool = False,
+    exclude_models: Iterable[str] = (),
+) -> list[str]:
     if guest_scope == "none":
         return []
+    combined_exclude = [*exclude_models, *ctx.settings.townhall_guest_exclude]
     if use_demo:
-        return list(DEFAULT_GUEST_POOL)
+        return _filter_guest_pool(DEFAULT_GUEST_POOL, combined_exclude)
     oc_models = (
         await asyncio.to_thread(ctx.opencode_models_fn)
         if not ctx.runner.agents_available().get("opencode")
         else []
     )
     if guest_scope == "go":
-        pool = [m for m in oc_models if m.startswith("opencode-go/")]
+        raw_pool = [m for m in oc_models if m.startswith("opencode-go/")]
     else:
-        pool = list(oc_models)
-    return pool or list(DEFAULT_GUEST_POOL)
+        raw_pool = list(oc_models)
+    base_pool = raw_pool or list(DEFAULT_GUEST_POOL)
+    return _filter_guest_pool(base_pool, combined_exclude)
 
 
 @router.get("/townhall", response_class=HTMLResponse)
@@ -243,7 +272,12 @@ async def townhall_create(
         use_demo=use_demo,
         allow_legacy_fallback=use_demo or legacy_present,
     )
-    guest_pool = await _resolve_guest_pool(ctx, guest_scope, use_demo=use_demo)
+    guest_pool = await _resolve_guest_pool(
+        ctx,
+        guest_scope,
+        use_demo=use_demo,
+        exclude_models=[p.model for p in participants],
+    )
 
     cfg = SessionConfig(
         topic=topic_clean,
@@ -281,6 +315,12 @@ async def townhall_detail(request: Request, session_id: str, ctx: AppContext = C
         t for t in rec.turns
         if t.phase != "vote_guest" and not (t.phase == "synthesis" and rec.conclusion is not None)
     ]
+    live_i18n = {
+        "connecting": ctx.t["th_live_connecting"],
+        "connected": ctx.t["th_live_connected"],
+        "reconnecting": ctx.t["th_live_reconnecting"],
+        "thinking": ctx.t["th_live_thinking"],
+    }
     return ctx.page(
         request,
         "townhall_detail.html",
@@ -289,6 +329,7 @@ async def townhall_detail(request: Request, session_id: str, ctx: AppContext = C
         transcript_turns=transcript_turns,
         folder_key=folder_key,
         repo_key=repo_key,
+        live_i18n=live_i18n,
     )
 
 
@@ -327,7 +368,9 @@ async def townhall_schedule_create(
     _, ws_path = _resolve_folder(ctx, folder)
     if participant_provider or participant_model:
         participants = _parse_participants(participant_provider or [], participant_model or [])
-        guest_pool = await _resolve_guest_pool(ctx, guest_scope)
+        guest_pool = await _resolve_guest_pool(
+            ctx, guest_scope, exclude_models=[p.model for p in participants]
+        )
     else:
         choices = await _load_model_choices(ctx)
         participants = build_core_participants(
@@ -335,7 +378,11 @@ async def townhall_schedule_create(
             codex_model=choices["defaults"]["codex"],
             claude_model=choices["defaults"]["claude"],
         )
-        guest_pool = [] if guest_scope == "none" else choices["default_guest_pool"]
+        guest_pool = (
+            []
+            if guest_scope == "none"
+            else _filter_guest_pool(choices["default_guest_pool"], [p.model for p in participants])
+        )
     spec = build_schedule_spec(
         name=name.strip(),
         topic=topic.strip(),
@@ -408,7 +455,17 @@ async def api_townhall_detail(session_id: str, ctx: AppContext = CTX):
 
 
 @router.get("/api/townhall/{session_id}/events")
-async def api_townhall_events(session_id: str, ctx: AppContext = CTX):
+async def api_townhall_events(
+    session_id: str,
+    request: Request,
+    after: int = 0,
+    ctx: AppContext = CTX,
+):
+    start_idx = max(0, int(after))
+    raw_last = (request.headers.get("last-event-id") or "").strip()
+    if raw_last.isdigit():
+        start_idx = max(start_idx, int(raw_last))
+
     async def _stream():
         active = ctx.townhall.get_active(session_id)
         if active is None:
@@ -421,8 +478,12 @@ async def api_townhall_events(session_id: str, ctx: AppContext = CTX):
             yield f"data: {json.dumps(ev)}\n\n"
             return
 
-        idx = 0
+        idx = start_idx
+        last_sent = time.monotonic()
         while True:
+            if await request.is_disconnected():
+                return
+
             def _wait_batch(cur_idx: int):
                 with active.cond:
                     if cur_idx >= len(active.events) and not active.done:
@@ -430,9 +491,17 @@ async def api_townhall_events(session_id: str, ctx: AppContext = CTX):
                     return list(active.events[cur_idx:]), len(active.events), active.done
 
             batch, new_idx, done = await asyncio.to_thread(_wait_batch, idx)
-            idx = new_idx
-            for ev in batch:
-                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+            if batch:
+                for offset, ev in enumerate(batch):
+                    seq = idx + offset + 1
+                    yield f"id: {seq}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+                idx = new_idx
+                last_sent = time.monotonic()
+            else:
+                idx = max(idx, new_idx)
+                if not done and (time.monotonic() - last_sent) >= 10.0:
+                    yield ": keepalive\n\n"
+                    last_sent = time.monotonic()
             if done and idx >= len(active.events):
                 return
 

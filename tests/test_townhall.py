@@ -449,6 +449,10 @@ def test_townhall_dynamic_picker_page_quotas_validation_and_custom_sessions(tmp_
     assert d4["status"] == "completed"
     assert len(d4["participants"]) == 5  # 4 chosen + 1 optional consensus guest
     assert d4["guest_selection"]["chosen_model"] in DEFAULT_GUEST_POOL
+    assert d4["guest_selection"]["chosen_model"] not in {
+        "opencode-go/deepseek-v4-pro",
+        "opencode-go/qwen4-max",
+    }
     assert d4["conclusion"]["moderator_id"] == "opencode_1"
 
     # Schedule with custom 2 participants and no consensus guest.
@@ -467,4 +471,107 @@ def test_townhall_dynamic_picker_page_quotas_validation_and_custom_sessions(tmp_
     assert sched["guest_pool"] == []
     assert sched["moderator_id"] == "gemini"
     assert "opencode-go/qwen4-max" in client.get("/townhall").text
+
+
+def test_townhall_no_meta_refresh_even_when_active(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch, lang="es")
+    monkeypatch.setattr(app.state.ctx.townhall, "active_count", lambda: 2)
+    client = TestClient(app)
+    html = client.get("/townhall").text
+    assert 'http-equiv="refresh"' not in html
+
+
+def test_townhall_guest_exclude_env_and_core_models(tmp_path, monkeypatch):
+    monkeypatch.setenv("BATON_TOWNHALL_GUEST_EXCLUDE", "opencode-go/deepseek-v4-pro, opencode-go/glm-5.3")
+    monkeypatch.setenv("BATON_USE_GH_CLI", "0")
+    s = Settings.from_env()
+    assert s.townhall_guest_exclude == ["opencode-go/deepseek-v4-pro", "opencode-go/glm-5.3"]
+
+    app = _make_app(tmp_path, monkeypatch, lang="es")
+    app.state.ctx.settings.townhall_guest_exclude = ["opencode-go/deepseek-v4-pro"]
+    client = TestClient(app, follow_redirects=False)
+    csrf = app.state.ctx.csrf_token
+
+    # Schedule created with qwen4-max as core participant + deepseek-v4-pro excluded by env:
+    # neither model should appear in the saved guest_pool (and defaults are NOT re-added).
+    r = client.post("/townhall/schedules", data={
+        "csrf": csrf,
+        "name": "Pool filtrado",
+        "topic": "Revisar prioridades",
+        "interval_hours": "24",
+        "moderator": "0",
+        "guest_scope": "go",
+        "participant_provider": ["gemini", "opencode"],
+        "participant_model": ["gemini-4-neon", "opencode-go/qwen4-max"],
+    })
+    assert r.status_code == 303
+    sched = client.get("/api/townhall").json()["schedules"][0]
+    assert sched["guest_pool"] == []
+
+
+def test_townhall_sse_resume_with_after_and_last_event_id(tmp_path, monkeypatch):
+    from townhall import SessionEvent, SessionRecord
+
+    from baton.townhall_bridge import ActiveTownHall
+
+    app = _make_app(tmp_path, monkeypatch, lang="es")
+    sid = "resumetest1"
+    rec = SessionRecord(
+        id=sid,
+        topic="Live stream test",
+        mode="council",
+        status="running",
+        workspace="",
+        language="es",
+        participants=build_core_participants(),
+        started_at=time.time(),
+    )
+    app.state.ctx.townhall.store.save(rec)
+
+    now = time.time()
+    active = ActiveTownHall(session_id=sid, topic=rec.topic, mode="council")
+    active.push(SessionEvent(type="session_started", session_id=sid, timestamp=now, payload={"mode": "council"}))
+    active.push(SessionEvent(type="phase_started", session_id=sid, timestamp=now, payload={"phase": "independent", "round_num": 1}))
+    active.push(SessionEvent(
+        type="guest_fallback",
+        session_id=sid,
+        timestamp=now,
+        payload={"failed_model": "opencode-go/deepseek-v4-pro", "fallback_model": "opencode-go/qwen4-max"},
+    ))
+    active.push(SessionEvent(type="session_completed", session_id=sid, timestamp=now, payload={"status": "completed"}))
+    app.state.ctx.townhall._active[sid] = active
+
+    client = TestClient(app)
+
+    # Running detail page includes live status bar, status URL, and live i18n payload.
+    detail = client.get(f"/townhall/{sid}")
+    assert detail.status_code == 200
+    assert 'id="th-live-status"' in detail.text
+    assert f'data-status-url="/api/townhall/{sid}"' in detail.text
+    assert 'id="th-live-i18n"' in detail.text
+
+    # Full stream delivers events 1..4 with sequential IDs.
+    full = client.get(f"/api/townhall/{sid}/events")
+    assert full.status_code == 200
+    assert "id: 1\n" in full.text
+    assert "id: 4\n" in full.text
+    assert "session_started" in full.text
+    assert "guest_fallback" in full.text
+
+    # ?after=2 skips events 1..2 and resumes cleanly at id: 3.
+    resumed_q = client.get(f"/api/townhall/{sid}/events?after=2")
+    assert resumed_q.status_code == 200
+    assert "session_started" not in resumed_q.text
+    assert "phase_started" not in resumed_q.text
+    assert "id: 3\n" in resumed_q.text
+    assert "guest_fallback" in resumed_q.text
+    assert "id: 4\n" in resumed_q.text
+
+    # Last-Event-ID: 3 header skips events 1..3 and delivers only id: 4.
+    resumed_hdr = client.get(f"/api/townhall/{sid}/events", headers={"Last-Event-ID": "3"})
+    assert resumed_hdr.status_code == 200
+    assert "guest_fallback" not in resumed_hdr.text
+    assert "id: 4\n" in resumed_hdr.text
+    assert "session_completed" in resumed_hdr.text
+
 

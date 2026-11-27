@@ -8,13 +8,16 @@ Huo mounts the standalone open-source [`ai-townhall`](https://github.com/Marcobm
 2. **Two modes:**
    - **Council (debate → conclusion):** optional consensus-guest vote → parallel opening positions → configurable critique rounds → structured **Conclusion**, **Summary**, **Agreements**, **Disagreements**, and **Action Plan** by the chosen moderator.
    - **Open floor (free chat):** round-robin dialogue bounded by max turns and wall-clock time budget.
-3. **Live progress & durable storage:** Each session runs in a background worker thread backed by `<data_dir>/townhall.sqlite3` (SQLite WAL). The detail page subscribes to `GET /api/townhall/{id}/events` (SSE) while running and reloads when finished to display the Conclusion, Summary, Guest Election table, and collapsible Full Conversation.
-4. **Huo bridges:**
+3. **Live progress & durable storage:** Each session runs in a background worker thread backed by `<data_dir>/townhall.sqlite3` (SQLite WAL). The detail page subscribes to `GET /api/townhall/{id}/events` (SSE with `id:` sequence numbers, `?after=` / `Last-Event-ID` resume, and 10 s `: keepalive` heartbeats) while running: `townhall.js` auto-reconnects with exponential backoff, displays which participants are currently thinking with an elapsed timer, logs `guest_fallback` switches, and reloads cleanly once finished (even if the debate completed during a brief disconnect). `/townhall` disables `<meta http-equiv="refresh">` so an active debate never wipes an in-progress form.
+4. **Resilience & guest exclusions:**
+   - Already-selected core participant models and any comma-separated IDs in `BATON_TOWNHALL_GUEST_EXCLUDE` (e.g. region-restricted OpenCode Go models such as `opencode-go/deepseek-v4-pro`) are automatically removed from the consensus guest voting pool.
+   - Inside `ai-townhall`, if the #1 consensus guest fails in Round 1 (for example due to a provider region restriction), the engine automatically falls back to the next Borda runner-up, budgets debate/synthesis prompts safely below Windows' 32 KB `CreateProcessW` argument limit, isolates empty-workspace runs in a clean temporary directory, falls back to a healthy moderator if needed, and terminates the full subprocess tree promptly on Cancel.
+5. **Huo bridges:**
    - **Convert to task →** (`/tasks/new?from_townhall={id}&repo=...`) turns a Town Hall conclusion and prioritized action plan into a prefilled task draft.
    - **Open in Chat** (`/chat?folder=...`) jumps straight to `/chat` in the same allowlisted workspace.
    - **Download .md** (`/townhall/{id}.md`) exports a portable Markdown report.
    - **Telegram / Webhook notices:** `Notifier.notify_townhall()` sends a summary when a council finishes or fails (including scheduled runs).
-5. **Recurring schedules:** Weekly or interval-based debates (with custom 2–4 participant lineup, moderator, optional consensus guest, and `HH:MM-HH:MM` active window) are stored in `townhall.sqlite3` and ticked inside Huo's existing background loop (`_quota_tick`).
+6. **Recurring schedules:** Weekly or interval-based debates (with custom 2–4 participant lineup, moderator, optional consensus guest, and `HH:MM-HH:MM` active window) are stored in `townhall.sqlite3` and ticked inside Huo's existing background loop (`_quota_tick`).
 
 ## Security invariants
 

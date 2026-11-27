@@ -140,6 +140,25 @@ BATON_SEARCH_URL=http://127.0.0.1:8888/search?format=json&q={query}
 SearXNG listens strictly on `127.0.0.1:8888` with JSON output enabled
 (`docker/searxng/settings.yml`).
 
+If SearXNG is not running (Docker closed, PC just restarted), `web_search`
+falls back to the next backend (Brave, Tavily or DuckDuckGo) and says so at
+the top of its result, instead of failing.
+
+The image is pinned by digest in `docker-compose.yml`. To update it:
+`docker pull searxng/searxng:latest`, check search still works, then paste the
+new digest (`docker image inspect searxng/searxng:latest --format '{{index .RepoDigests 0}}'`).
+
+**Docker Desktop on Windows won't start** and its error mentions
+`remove …\Docker\run\dockerInference` (or `docker-secrets-engine\engine.sock`):
+"The file cannot be accessed by the system". A crash left Unix socket files
+behind that Windows itself cannot open or delete. Quit Docker Desktop, delete
+them from WSL, and start it again (do **not** use "Reset to factory defaults",
+which wipes your images and containers):
+
+```powershell
+wsl -d Ubuntu -- find /mnt/c/Users/<you>/AppData/Local/Docker/run /mnt/c/Users/<you>/AppData/Local/docker-secrets-engine -maxdepth 1 -type s -delete
+```
+
 ### 2. Brave Search API or Tavily API (optional, without Docker)
 
 If you prefer a cloud search API instead of running SearXNG locally, set one of

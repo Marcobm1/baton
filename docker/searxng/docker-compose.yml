@@ -5,7 +5,10 @@
 #   BATON_SEARCH_URL=http://127.0.0.1:8888/search?format=json&q={query}
 services:
   searxng:
-    image: searxng/searxng:latest
+    # Pinned by digest like everything else in Baton (exact versions, Actions by SHA):
+    # "latest" could change under you. Pulled and tested 2026-11-27 (image built 2026-11-26).
+    # To update: docker pull searxng/searxng:latest, test, then paste the new digest here.
+    image: searxng/searxng:latest@sha256:462d8dbeadd7c7c304be08d47084f5caba70f47a9145a01fd25990a7944e61b7
     container_name: baton-searxng
     restart: unless-stopped
     ports:

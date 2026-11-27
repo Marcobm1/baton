@@ -156,3 +156,25 @@ that both dark blocks match, and the contrast below.
   component. `tests/test_design.py` guards both the single-template invariant
   and the absence of duplicated renderer code.
 
+## `/chat` polish after review (UI-6, 2026-11-27)
+
+- **Keyboard:** Shift+Tab cycles the permission mode only from the message box;
+  everywhere else it moves focus backwards, as it should for keyboard users.
+- **Restraint:** one accent action per view. The send button is a round arrow
+  (text kept as its accessible name), "New chat" is a neutral button in the
+  history column and an icon in the header only where the history is a drawer,
+  and Deny is neutral (Allow is the primary action).
+- **Header:** the folder chip shows the last folder name (`scratch (pruebas)`),
+  never a full path; the full value is in its tooltip. On phones it hides: the
+  folder already shows in its composer chip.
+- **Tools:** kind labels are translated (Leer, Editar, Ejecutar…), groups use
+  singular/plural, edits open their diff straight away (once, so a folded diff
+  stays folded), and arguments that repeat the title are not shown twice.
+  Tool rows are saved with the assistant turn and restored on reload.
+- **Quiet chrome:** no "Keys: 1 allow · 2 deny" prose (the keycaps say it, and
+  they hide on touch screens); the keys hint under the composer shows only
+  while typing; the status line no longer repeats the model; the empty state
+  just says what to ask.
+- **Phone:** header is ☰ · title · ＋ · ⋯; composer chips sit in one row that
+  scrolls sideways instead of wrapping into three.
+

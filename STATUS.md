@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "(Marco) Start local SearXNG in Docker and configure BATON_SEARCH_URL in .env"
+next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
 updated: 2026-11-27
-updated_by: gemini
+updated_by: claude-code
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -48,10 +48,19 @@ links:
 - [x] 2026-11-26 UI-4: Claude Code-style messages (cardless assistant prose, compact one-line tool rows with status dots, line-numbered inline diffs with collapsed context, inline approvals with `1`/`2` keys, live `"Thinking… Ns"` timer, unified status line with context; `baton/static/chat-common.js`, `baton/static/chat.css`, `tests/test_design.py`)
 - [x] 2026-11-27 UI-5: One chat component for local models and agents (merged the two branches of `baton/templates/chat.html` into one composer & message shell with `_chat_strings()` and moved the shared message/tool/diff/approval renderer into `baton/static/chat-common.js`; `tests/test_design.py`, `docs/design.md`)
 - [x] 2026-11-26 Fix flaky Windows test `tests/test_models.py::test_thermal_guard_without_page_visits[False]` (`LocalModels._state()` now retries transient Windows `PermissionError` during `os.replace`, and `_save()` uses a PID/thread-scoped temp file)
-- [ ] (Marco) Start local SearXNG in Docker and configure `BATON_SEARCH_URL` in `.env`
-  Run `docker compose -f docker/searxng/docker-compose.yml up -d` in the Baton folder, add
-  `BATON_SEARCH_URL=http://127.0.0.1:8888/search?format=json&q={query}` to `.env`, restart
-  Baton from `/machines`, and test `web_search` with a local model in `/chat`.
+- [x] 2026-11-27 Local SearXNG running on Marco's PC (`baton-searxng` on `127.0.0.1:8888`), `BATON_SEARCH_URL` in `.env`, Baton restarted; `web_search` verified with Baton's own code (Docker Desktop needed stale sockets removed, see docs/local-harness.md)
+- [x] 2026-11-27 UI-6: `/chat` polish after review (Shift+Tab only from the message box, short folder name in the header, translated tool kinds/plurals/Copy, tool rows and diffs saved in SQLite and restored on reload, search falls back when SearXNG is down, SearXNG image pinned by digest, one "new chat", round send button, neutral Deny, no keys prose, edits open, think chevron, quieter status line, cleaner empty state, mobile header and one-row chips)
+- [ ] UI-7: Visual smoke test for /chat (screenshots + button contrast)
+  Turn the review harness into an opt-in test: start the app with a fake Gemini agent (as in
+  `tests/test_gemini.py`), inject a conversation with Baton's own renderers, screenshot desktop and
+  mobile in light and dark, and fail if any visible button is under 3:1 contrast. Pin Playwright
+  exactly in the `dev` extra; skip when no browser is installed. Verify: the test fails on a commit
+  that reintroduces `button { color: … !important }`.
+  Recommended: claude-code, opus, medium
+- [ ] (Marco) Try `web_search` from `/chat` with a local model in **Internet + tools** mode (needs your sign-in)
+- [ ] (Marco) Decide two layout questions from the UI review
+  (a) collapse the global menu to icons on `/chat` to give the conversation more width;
+  (b) local chat without models: show the same composer with a setup notice instead of the old "Agent" form.
 - [ ] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify
   Allow/Deny on a harmless command, restart Baton or start a new chat, and resume the saved session.
@@ -64,6 +73,7 @@ links:
 - Confirm mode on the host runs approved commands as the host Windows user (Gemini Confirm covers commands only; Codex approved commands write even under `sandbox: "read-only"`).
 
 ## Decisions
+- 2026-11-27: Chat tool rows are saved with each assistant turn (`chat_messages.tools`, JSON): only rendered fields, outputs clipped to 4,000 chars, big diffs dropped, and never the output of anything touching an `.env` file. `web_search` falls back to the next backend when local SearXNG is down. The SearXNG image is pinned by digest.
 - 2026-11-26 (Marco): UI reference for `/chat` and the app is the Claude Code desktop app; the dark theme becomes near-black like Claude Code across the whole app (replaces "blue-grey, never pure black"). Plan: UI-0 … UI-5 under Next.
 - 2026-11-26: Native local-model tool-calling harness (`baton/local_harness.py`, [docs/local-harness.md](docs/local-harness.md)): opt-in per conversation (Offline by default), reliable search backends (`BATON_SEARCH_URL` local SearXNG in `docker/searxng/`, `BATON_BRAVE_API_KEY`, `BATON_TAVILY_API_KEY`, or honest DuckDuckGo anti-bot error), SSRF-guarded `fetch_url` (6K default), `get_datetime`, AST `calculate`, older tool-output compaction, streaming `<tool_call>` sanitizer/fallback parser, collapsible `.ag-tool-group`, and optional allowlisted-folder tools (`list_files`, `read_file`, `search_files`, `write_file`, `run_command`). Writes, commands, and `.env` reads ALWAYS require one-shot CSRF-protected Allow/Deny confirmation (never unattended, including for abliterated models).
 - 2026-11-26: Three-phase Chat overhaul completed (Chat-1 SQLite history sidebar + upgraded Markdown + sticky scroll, Chat-2 tool grouping + Chat-to-Task bridge + Telegram approval pings, Chat-3 validated image attachments + system presets + context usage meter).
@@ -74,6 +84,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-27 (claude-code): Reviewed UI-1…UI-5 and shipped UI-6 polish (14 fixes, tool persistence + migration, search fallback, SearXNG digest pin); started SearXNG on Marco's PC and set `BATON_SEARCH_URL`.
 - 2026-11-27 (gemini): Completed UI-5 unified `/chat` component for local models and ACP agents (merged the two branches of `baton/templates/chat.html` into one composer & message shell with `_chat_strings()`, extracted shared assistant bubble / tool-row / read-group / diff / `1`/`2` approval renderer into `baton/static/chat-common.js`, reduced `chat.js` and `agents-chat.js` to thin transport adapters, `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26 (gemini): Completed UI-4 Claude Code-style messages on `/chat` (cardless assistant prose, compact one-line tool rows with status dots, line-numbered inline diffs with collapsed context, `1`/`2` approval hotkeys, live `"Thinking… Ns"` timer, and unified bottom status line with context; `tests/test_design.py`, `docs/design.md`).
 - 2026-11-26 (gemini): Completed UI-3 composer control centre on `/chat` (bottom-row chips for agent, readable model names, effort, folder, mode, preset/resume with upward popovers, locked-not-hidden session state, `Enter`/`Shift+Enter`/`Shift+Tab`/`Esc` shortcuts, `tests/test_design.py`, `docs/design.md`).

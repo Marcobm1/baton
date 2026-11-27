@@ -164,7 +164,8 @@ _SCHEMA_SQL = (
         content TEXT NOT NULL,
         reasoning TEXT NOT NULL,
         meta TEXT NOT NULL,
-        created_at REAL NOT NULL
+        created_at REAL NOT NULL,
+        tools TEXT NOT NULL DEFAULT ''
     )""",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat_messages(thread_id, id ASC)",
 )
@@ -296,6 +297,11 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE tasks ADD COLUMN diff_stat TEXT")
     if "artifacts" not in cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN artifacts TEXT")
+    msg_cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_messages)")}
+    if msg_cols and "tools" not in msg_cols:
+        # Tool calls of an assistant turn (JSON list), so a reopened chat
+        # shows the same tool rows and diffs it showed live (UI-6).
+        conn.execute("ALTER TABLE chat_messages ADD COLUMN tools TEXT NOT NULL DEFAULT ''")
 
 
 def migrate_legacy_tasks(data_dir: Path, conn: sqlite3.Connection) -> int:

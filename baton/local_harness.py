@@ -327,6 +327,37 @@ def web_search(
     tavily_api_key: str = "",
     client_factory: Callable[[float], httpx.Client] = _default_http_client,
 ) -> str:
+    """Search the web; if the local SearXNG is down, fall back to the next backend.
+
+    BATON_SEARCH_URL points at a container that may simply not be running
+    (Docker closed, PC just rebooted). That should not take web search down:
+    try Brave, Tavily or DuckDuckGo instead and say so in the result.
+    """
+    kwargs = {"max_results": max_results, "brave_api_key": brave_api_key,
+              "tavily_api_key": tavily_api_key, "client_factory": client_factory}
+    if not search_url:
+        return _web_search_once(query, search_url="", **kwargs)
+    try:
+        return _web_search_once(query, search_url=search_url, **kwargs)
+    except ToolError as first:
+        if not " ".join(str(query or "").split()).strip() or len(str(query)) > 400:
+            raise  # invalid query: another backend would refuse it too
+        try:
+            result = _web_search_once(query, search_url="", **kwargs)
+        except ToolError as second:
+            raise ToolError(f"Local SearXNG failed ({first}); fallback also failed: {second}") from second
+        return f"[Local SearXNG unavailable ({first}); results from the fallback backend.]\n{result}"
+
+
+def _web_search_once(
+    query: str,
+    *,
+    max_results: int = 5,
+    search_url: str = "",
+    brave_api_key: str = "",
+    tavily_api_key: str = "",
+    client_factory: Callable[[float], httpx.Client] = _default_http_client,
+) -> str:
     """Search the public web via SearXNG, Brave, Tavily, or DuckDuckGo HTML fallback."""
     q = " ".join(str(query or "").split()).strip()
     if not q or len(q) > 400:

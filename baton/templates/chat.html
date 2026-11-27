@@ -22,7 +22,7 @@
 <div class="chat-shell" data-chat-shell>
   <aside class="chat-sidebar" aria-label="{{ t.chat_history }}">
     <div class="chat-sidebar-head">
-      <button type="button" class="btn small chat-new-wide" data-sidebar-new>＋ {{ t.chat_new }}</button>
+      <button type="button" class="btn ghost small chat-new-wide" data-sidebar-new>＋ {{ t.chat_new }}</button>
       <input type="search" class="thread-search" data-thread-search placeholder="{{ t.chat_search }}" aria-label="{{ t.chat_search }}">
     </div>
     <div class="thread-list" data-thread-list>
@@ -45,7 +45,7 @@
           </div>
         </div>
         <div class="chat-topbar-actions">
-          {% if can_chat %}<button type="button" class="btn ghost small" data-new>{{ t.chat_new }}</button>{% endif %}
+          {% if can_chat %}<button type="button" class="btn ghost small chat-new-icon" data-new aria-label="{{ t.chat_new }}" title="{{ t.chat_new }}">＋</button>{% endif %}
           <details class="chat-menu" data-chat-menu>
             <summary class="chat-menu-trigger" aria-label="{{ t.chat_more_actions }}" title="{{ t.chat_more_actions }}">⋯</summary>
             <div class="chat-menu-pop" role="menu">
@@ -204,13 +204,13 @@
                 {% endif %}
               </div>
               <div class="composer-right">
-                <button type="submit" class="btn cc-send" data-send>{{ t.chat_send }}</button>
+                <button type="submit" class="btn cc-send" data-send aria-label="{{ t.chat_send }}" title="{{ t.chat_send }}"><span class="cc-send-icon" aria-hidden="true">↑</span><span class="cc-send-text">{{ t.chat_send }}</span></button>
               </div>
             </div>
             <div class="cc-popover" data-cc-popover hidden role="dialog"></div>
           </form>
           <div class="composer-status composer-kbd small muted" data-composer-status>
-            <span class="status-left" data-status-text>{{ t.chat_kbd_hint }}</span>
+            <span class="status-left is-hint" data-status-text>{{ t.chat_kbd_hint }}</span>
             {% if is_agent %}
             <span class="status-right" data-status-meta></span>
             {% else %}

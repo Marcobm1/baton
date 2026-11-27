@@ -2,7 +2,7 @@
 {% block title %}{{ task.title }} · {{ title }}{% endblock %}
 {% block refresh %}{% endblock %}
 {% block main %}
-<p><a href="/tasks">← {{ t.tasks_nav }}</a></p>
+<div class="page-head page-head-back"><a class="back-link" href="/tasks">← {{ t.tasks_nav }}</a></div>
 <article class="detail" data-task-id="{{ task.id }}" data-task-status="{{ task.status }}"
          data-no-step="{{ t.no_step }}" data-no-progress="{{ t.no_progress }}" data-no-log="{{ t.no_log }}">
   <h2>{{ task.title }} <span id="task-status" class="pill st st-{{ task.status }}">{{ t['st_' ~ task.status] }}</span>{% if task.merged %} <span class="pill st-done">{{ t.merged }}</span>{% endif %}</h2>

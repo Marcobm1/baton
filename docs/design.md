@@ -200,3 +200,37 @@ that both dark blocks match, and the contrast below.
   *Honkai: Star Rail* — inside a dark obsidian-jade squircle so it stays sharp
   and high-contrast on both light and near-black dark themes at 16 px, 30 px,
   and 34 px.
+
+## Global Claude Code desktop look & mobile PWA (2026-11-27)
+
+- **Warm off-white light palette & neutral primary actions:** light mode moved
+  from cool blue-grey (`#eef1f5`) to warm Claude Code parchment (`#faf9f5` page,
+  `#f3f1ea` rail/insets, `#ffffff` cards, `#e9e6dd` selected, `#e4e1d8`
+  hairlines). Primary buttons and active filter chips use `--primary` /
+  `--on-primary` (charcoal `#1f1e1c` on `#faf9f5` in light; crisp `#ececef` on
+  `#0c0c0d` in dark, both >15:1 contrast), reserving `--accent` blue strictly
+  for hyperlinks, focus rings, and progress indicators.
+- **Collapsible global sidebar rail (`baton-sidebar`):** desktop (`>= 900 px`)
+  adds a `[data-sidebar-toggle]` button in `.side-top` that flips
+  `<html data-sidebar="collapsed|expanded">` (`220 px` ↔ `56 px` icon rail) and
+  persists the choice in `localStorage` (`baton-sidebar`), applied before first
+  paint in `<head>`. When no preference is stored yet, `/chat` starts collapsed
+  to maximize conversation width while all other pages start expanded. The
+  collapsed rail keeps native tooltips, alert badges on the Machines icon, a
+  single `.side-theme-cycle` toggle, and an icon-only Sign out button.
+- **Scrollable mobile tab bar:** with 8 sections in the bottom bar, fixed
+  equal-width grid columns collided on 390 px screens; `.tab-bar` is now a
+  horizontally scrollable flex strip (`scroll-snap-type: x proximity`) and
+  `theme.js` centers the active tab into view on load.
+- **Unified page chrome across all views:** consistent `.page-head` headers with
+  a subtle bottom hairline, quiet `.back-link` navigation bars, neutral
+  `.next-up` and segmented `.score-switch` controls, non-wrapping card footer
+  actions, chevron accordions on `/machines`, and mono uppercase field labels on
+  `/townhall`.
+- **Installable mobile PWA:** dynamic `GET /manifest.webmanifest`
+  (`application/manifest+json`, using `BATON_TITLE` for `name`/`short_name`,
+  exempt from session auth so install prompts work when `BATON_ACCESS_KEY` is
+  set), PNG icons rendered from `huo-icon.svg` (`apple-touch-icon.png` 180²,
+  `huo-icon-192.png`, `huo-icon-512.png`), plus `theme-color` light/dark and
+  standalone iOS/Android meta tags on both `base.html` and `login.html`.
+

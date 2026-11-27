@@ -2,7 +2,7 @@
 {% block refresh %}{% endblock %}
 {% block title %}{{ t.baton_task if job.task_id else t.delegation }} #{{ job.id }} · {{ title }}{% endblock %}
 {% block main %}
-<p><a href="/ranking?origin={{ origin }}&amp;view={{ view }}">← {{ t.ranking }}</a></p>
+<div class="page-head page-head-back"><a class="back-link" href="/ranking?origin={{ origin }}&amp;view={{ view }}">← {{ t.ranking }}</a></div>
 <h2>{{ t.baton_task if job.task_id else t.delegation }} #{{ job.id }} · {{ job.model or t.unknown_model }}</h2>
 <p class="muted small">{{ job.started|when }} · {{ t.baton_task if job.task_id else job.kind }} · {{ t['st_' ~ job.outcome] if job.outcome else t.unreported }}{% if job.task_id %} · <a href="/tasks/{{ job.task_id }}">{{ job.title }}</a> · {{ t.merged if job.merged else t.not_merged }}{% endif %}</p>
 <details class="inline-help">

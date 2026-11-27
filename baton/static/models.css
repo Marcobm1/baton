@@ -10,11 +10,11 @@
 .m-specs { margin: .45rem 0 .2rem; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .m-budget { height: 8px; margin: .55rem 0 0; }
 .m-filters { margin: 0 0 1rem; }
-.m-filters button.chip { font: 550 .85rem var(--sans); color: var(--ink) !important; background: var(--panel); border-color: var(--line); }
-.m-filters button.chip:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); filter: none; }
-.m-filters button.chip[aria-current="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent) !important; }
+.m-filters button.chip { font: 500 .82rem var(--sans); color: var(--muted) !important; background: var(--panel); border-color: var(--line); }
+.m-filters button.chip:hover { color: var(--ink) !important; border-color: color-mix(in srgb, var(--ink) 26%, var(--line)); background: var(--panel-2); filter: none; }
+.m-filters button.chip[aria-current="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary) !important; font-weight: 600; }
 .m-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }
-.m-filters button.chip[aria-current="true"] .m-dot { background: var(--on-accent); }
+.m-filters button.chip[aria-current="true"] .m-dot { background: var(--on-primary); }
 .m-family-group + .m-family-group { margin-top: 1.4rem; }
 .m-family-group[hidden] { display: none; }
 .m-family-head { margin: 1.1rem 0 .7rem; }

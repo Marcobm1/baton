@@ -4,18 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c0c0d" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ title }}">
   {% block refresh %}<meta http-equiv="refresh" content="300">{% endblock %}
   <title>{% block title %}{{ title }}{% endblock %}</title>
-  {# Runs before the first paint, so a saved theme never flashes the other one. #}
+  {# Runs before the first paint, so saved theme and sidebar rail never flash. #}
   <script>
     (function () {
-      var d = document.documentElement, theme = "auto";
+      var d = document.documentElement, theme = "auto", side = "";
       d.classList.add("js");
-      try { theme = localStorage.getItem("baton-theme") || "auto"; } catch (e) {}
+      try {
+        theme = localStorage.getItem("baton-theme") || "auto";
+        side = localStorage.getItem("baton-sidebar") || "";
+      } catch (e) {}
       if (theme === "light" || theme === "dark") d.dataset.theme = theme;
+      if (!side) side = "{% if nav == 'chat' %}collapsed{% else %}expanded{% endif %}";
+      if (side === "collapsed" || side === "expanded") d.dataset.sidebar = side;
     })();
   </script>
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/svg+xml" href="/static/huo-icon.svg?v={{ css_v }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v={{ css_v }}">
   <link rel="stylesheet" href="/static/style.css?v={{ css_v }}">
   {% block styles %}{% endblock %}
 </head>
@@ -31,6 +44,8 @@
 {%- elif name == 'chat' %}<path d="M4 5h16v10.5H10l-4.5 3.8v-3.8H4z"/><path d="M8 9.5h8M8 12.5h5"/>
 {%- elif name == 'ranking' %}<path d="M5 20V11M12 20V5M19 20v-6"/><path d="M3 20h18"/>
 {%- elif name == 'townhall' %}<path d="M3 10l9-6 9 6"/><path d="M5 10v8M10 10v8M14 10v8M19 10v8"/><path d="M3 18h18M2 21h20"/>
+{%- elif name == 'sidebar' %}<rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M9.5 4v16"/>
+{%- elif name == 'logout' %}<path d="M9 20H5.5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2H9"/><path d="M15.5 16.5L20 12l-4.5-4.5"/><path d="M20 12H9"/>
 {%- elif name == 'auto' %}<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>
 {%- elif name == 'light' %}<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>
 {%- elif name == 'dark' %}<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>
@@ -42,15 +57,22 @@
                    ('townhall', '/townhall', t.townhall_nav), ('ranking', '/ranking', t.ranking)] %}
 <div class="shell">
   <aside class="sidebar">
-    <a class="brand" href="/">
-      <span class="mark" aria-hidden="true"><img class="mark-img" src="/static/huo-icon.svg?v={{ css_v }}" alt="" width="34" height="34"></span>
-      <span class="brand-text"><span class="brand-name">{{ title }}</span><span class="brand-version">v{{ version }}</span></span>
-    </a>
+    <div class="side-top">
+      <a class="brand" href="/" title="{{ title }}">
+        <span class="mark" aria-hidden="true"><img class="mark-img" src="/static/huo-icon.svg?v={{ css_v }}" alt="" width="32" height="32"></span>
+        <span class="brand-text"><span class="brand-name">{{ title }}</span><span class="brand-version">v{{ version }}</span></span>
+      </a>
+      <button type="button" class="side-toggle" data-sidebar-toggle
+              data-label-collapse="{{ t.sidebar_collapse }}" data-label-expand="{{ t.sidebar_expand }}"
+              aria-label="{{ t.sidebar_collapse }}" title="{{ t.sidebar_collapse }}">
+        {{ icon('sidebar') }}
+      </button>
+    </div>
     <p class="side-label">{{ t.nav_panel }}</p>
     {% set alert_n = active_alerts_count() if active_alerts_count is defined else 0 %}
     <nav class="side-nav" aria-label="{{ t.nav_panel }}">
       {% for key, href, label in sections %}
-      <a href="{{ href }}" {% if nav == key %}aria-current="page"{% endif %}>{{ icon(key) }}<span>{{ label }}</span>{% if key == 'machines' and alert_n %}<span class="nav-badge" data-alert-badge>{{ alert_n }}</span>{% endif %}</a>
+      <a href="{{ href }}" title="{{ label }}" aria-label="{{ label }}"{% if nav == key %} aria-current="page"{% endif %}>{{ icon(key) }}<span class="side-text">{{ label }}</span>{% if key == 'machines' and alert_n %}<span class="nav-badge" data-alert-badge>{{ alert_n }}</span>{% endif %}</a>
       {% endfor %}
     </nav>
     <div class="side-foot">
@@ -61,10 +83,13 @@
           {{ icon(key) }}<span>{{ t['theme_' ~ key] }}</span></button>
         {% endfor %}
       </div>
+      <button type="button" class="theme-cycle side-theme-cycle" data-theme-cycle aria-label="{{ t.theme }}" title="{{ t.theme }}">
+        <span data-when="auto">{{ icon('auto') }}</span><span data-when="light">{{ icon('light') }}</span><span data-when="dark">{{ icon('dark') }}</span>
+      </button>
       {% if auth_enabled %}
       <form method="post" action="/logout" class="side-logout">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <button type="submit" class="btn-link">{{ t.auth_sign_out }}</button>
+        <button type="submit" class="btn-link" title="{{ t.auth_sign_out }}" aria-label="{{ t.auth_sign_out }}">{{ icon('logout') }}<span class="side-text">{{ t.auth_sign_out }}</span></button>
       </form>
       {% endif %}
       <p class="side-meta"><a href="https://github.com/Marcobm1/baton">GitHub</a></p>

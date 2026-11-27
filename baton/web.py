@@ -174,7 +174,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         # Changes whenever any stylesheet, script or icon changes, so browsers (and
         # phones, which cache hard) never keep an old copy after an update.
         css_v=hashlib.sha256(b"".join(
-            f.read_bytes() for f in sorted((HERE / "static").glob("*")) if f.suffix in (".css", ".js", ".svg")
+            f.read_bytes() for f in sorted((HERE / "static").glob("*")) if f.suffix in (".css", ".js", ".svg", ".png")
         )).hexdigest()[:10],
     )
     templates.env.filters["md"] = _render_md
@@ -327,7 +327,7 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
         if not auth_enabled:
             return await call_next(request)
         path = request.url.path
-        if (path == "/healthz" or path.startswith("/static/")) and request.method in ("GET", "HEAD"):
+        if (path in ("/healthz", "/manifest.webmanifest") or path.startswith("/static/")) and request.method in ("GET", "HEAD"):
             return await call_next(request)
         if path == "/login" and request.method in ("GET", "HEAD", "POST"):
             return await call_next(request)

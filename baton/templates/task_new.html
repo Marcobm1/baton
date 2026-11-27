@@ -2,8 +2,8 @@
 {% block title %}{{ t.task_title }} · {{ title }}{% endblock %}
 {% block refresh %}{% endblock %}
 {% block main %}
-<p><a href="/tasks">← {{ t.tasks_nav }}</a></p>
-<h2>{{ t.task_title }}</h2>
+<div class="page-head page-head-back"><a class="back-link" href="/tasks">← {{ t.tasks_nav }}</a></div>
+<div class="page-head"><h2>{{ t.task_title }}</h2></div>
 {% if error %}<p class="warn small">{{ error }}</p>{% endif %}
 <form method="post" action="/tasks" class="task-form">
   <input type="hidden" name="csrf" value="{{ csrf }}">

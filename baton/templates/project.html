@@ -11,8 +11,8 @@
     <button type="submit" class="{{ cls }}"{% if title %} title="{{ title }}" aria-label="{{ title }}: {{ item.title }}"{% endif %}>{{ label }}</button>
   </form>
 {%- endmacro %}
-<div class="page-head">
-  <p><a href="/">← {{ t.back }}</a></p>
+<div class="page-head page-head-back">
+  <a class="back-link" href="/">← {{ t.back }}</a>
   <a class="btn ghost small" href="/tasks/new?repo={{ p.repo|urlencode }}">＋ {{ t.task_button }}</a>
 </div>
 <article class="detail project-detail prio-{{ s.priority }}{% if p.blocked %} blocked{% endif %}">

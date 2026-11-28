@@ -249,6 +249,15 @@ def _find_next_span(source: str) -> tuple[int, int, int, str] | None:
     return None
 
 
+def next_markdown(source: str) -> str:
+    """Show the original section body, including any lines that need correcting."""
+    span = _find_next_span(source)
+    if span is None:
+        return "## Next\n"
+    _, start, end, _ = span
+    return "\n".join(["## Next", *source.splitlines()[start:end]]) + "\n"
+
+
 def _strip_task_metadata(rest: str, owner_tag: str) -> tuple[str | None, str | None, bool, list[str], str, bool]:
     """Parse ``[ID]``, ISO date, owner tag, and ``(after: ...)`` from a task line.
 
@@ -369,10 +378,13 @@ def transitive_edges(tasks: list[MapTask]) -> list[tuple[str, str]]:
     return redundant
 
 
-def parse_status_map(source: str, *, owner_tag: str = DEFAULT_OWNER_TAG) -> TaskMap:
+def parse_status_map(source: str, *, owner_tag: str = DEFAULT_OWNER_TAG, strict: bool = False,
+                     existing_titles: dict[str, str] | None = None) -> TaskMap:
     """Parse the ``## Next`` section of a ``STATUS.md`` into a ``TaskMap``."""
     tag = normalize_owner_tag(owner_tag)
     span = _find_next_span(source)
+    if strict and (not span or span[:3] != (0, 1, len(source.splitlines())) or span[3].strip() != "## Next"):
+        raise ValueError("Submit only the ## Next section, starting with its heading.")
     if span is None:
         return TaskMap(groups=[Group("GN", "General")], tasks=[], enabled=False)
 
@@ -422,7 +434,7 @@ def parse_status_map(source: str, *, owner_tag: str = DEFAULT_OWNER_TAG) -> Task
         current_group = g
         return g
 
-    for raw in raw_lines:
+    for lineno, raw in enumerate(raw_lines, start=body_start + 1):
         m_group = _GROUP_HEADING.match(raw)
         if m_group:
             flush_desc()
@@ -430,6 +442,8 @@ def parse_status_map(source: str, *, owner_tag: str = DEFAULT_OWNER_TAG) -> Task
             has_explicit_map = True
             name = m_group.group(1).strip()
             gid = m_group.group(2)
+            if strict and not gid:
+                raise ValueError(f"Line {lineno}: expected ### Group name (PFX).")
             if gid and gid not in group_ids:
                 pass
             elif gid and gid in group_ids:
@@ -448,6 +462,8 @@ def parse_status_map(source: str, *, owner_tag: str = DEFAULT_OWNER_TAG) -> Task
             g = ensure_general_group()
             done = m_top.group(1).lower() == "x"
             tid, date_str, is_owner, deps, title, had_map = _strip_task_metadata(m_top.group(2), tag)
+            if strict and (not tid or not title):
+                raise ValueError(f"Line {lineno}: expected a task ID and title.")
             if had_map:
                 has_explicit_map = True
             if tid:
@@ -473,6 +489,8 @@ def parse_status_map(source: str, *, owner_tag: str = DEFAULT_OWNER_TAG) -> Task
             m_sub = _SUB_CHECKBOX.match(raw)
             if m_sub:
                 text = m_sub.group(2).strip()
+                if strict and not text:
+                    raise ValueError(f"Line {lineno}: empty subtask.")
                 if text:
                     current_task.subs.append(Subtask(text=text, done=m_sub.group(1).lower() == "x"))
                 continue
@@ -486,8 +504,17 @@ def parse_status_map(source: str, *, owner_tag: str = DEFAULT_OWNER_TAG) -> Task
             # Unindented non-checkbox line stops the current task continuation.
             flush_desc()
             current_task = None
+        if strict and raw.strip():
+            raise ValueError(f"Line {lineno}: expected a group, task, or indented task detail.")
 
     flush_desc()
+
+    if strict:
+        if problems:
+            raise ValueError("; ".join(problems))
+        groups, tasks = validate_map_payload([g.to_dict() for g in groups], [t.to_dict() for t in tasks],
+                                             existing_titles=existing_titles)
+        return TaskMap(groups=groups, tasks=tasks, enabled=True)
 
     if not groups:
         groups.append(Group("GN", "General"))
@@ -530,7 +557,8 @@ def parse_status_map(source: str, *, owner_tag: str = DEFAULT_OWNER_TAG) -> Task
     )
 
 
-def validate_map_payload(groups_raw: Any, tasks_raw: Any) -> tuple[list[Group], list[MapTask]]:
+def validate_map_payload(groups_raw: Any, tasks_raw: Any, *,
+                         existing_titles: dict[str, str] | None = None) -> tuple[list[Group], list[MapTask]]:
     """Strictly validate groups and tasks submitted by the browser before writing STATUS.md."""
     if not isinstance(groups_raw, list) or not groups_raw:
         raise ValueError("At least one group is required.")
@@ -571,7 +599,12 @@ def validate_map_payload(groups_raw: Any, tasks_raw: Any) -> tuple[list[Group], 
             raise ValueError(f"Duplicate task ID: {tid}.")
         if gid not in group_ids:
             raise ValueError(f"Task {tid} refers to unknown group {gid!r}.")
-        if not title or len(title) > MAX_TITLE:
+        # Historical STATUS.md entries can exceed the editor's title limit.
+        # Preserve the stored text verbatim when editing something else.
+        stored_title = (existing_titles or {}).get(tid)
+        if stored_title and item.get("title") == stored_title:
+            title = stored_title
+        elif not title or len(title) > MAX_TITLE:
             raise ValueError(f"Task {tid} title must be 1-{MAX_TITLE} characters.")
         if _AFTER_SUFFIX.search(title):
             raise ValueError(f"Task {tid} title cannot end with '(after: ...)'.")
@@ -703,7 +736,8 @@ def merge_task_maps(base: TaskMap, local: TaskMap, remote: TaskMap) -> TaskMap:
         lanes = [[t for t in side.tasks if t.group == gid] for side in (base, local, remote)]
         task_ids.extend(_merge_order(*lanes, {key for key, t in tasks.items() if t.group == gid}))
     checked_groups, checked_tasks = validate_map_payload(
-        [groups[key].to_dict() for key in group_ids], [tasks[key].to_dict() for key in task_ids]
+        [groups[key].to_dict() for key in group_ids], [tasks[key].to_dict() for key in task_ids],
+        existing_titles={t.id: t.title for t in remote.tasks},
     )
     return TaskMap(groups=checked_groups, tasks=checked_tasks, enabled=True)
 

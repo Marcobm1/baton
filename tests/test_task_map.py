@@ -388,7 +388,9 @@ def test_map_stream_emits_status_transitions_and_sha(tmp_path, monkeypatch):
 
 
 def test_map_tab_and_enable_and_save_endpoints(tmp_path, monkeypatch):
-    current_source = [LEGACY_STATUS]
+    historical_title = "Define endpoints " + "and publish their specifications " * 7
+    historical_title = historical_title.rstrip()
+    current_source = [LEGACY_STATUS.replace("Define endpoints", historical_title)]
     writes: list[dict] = []
     project = _make_project(current_source[0])
 
@@ -433,6 +435,8 @@ def test_map_tab_and_enable_and_save_endpoints(tmp_path, monkeypatch):
     assert data["enabled"] is False
     assert data["can_write"] is True
     assert [t["id"] for t in data["tasks"]] == ["GN-01", "GN-02", "GN-03"]
+    assert "## Next\n- [x] 2026-11-20 Define endpoints" in data["next_markdown"]
+    assert "## Blockers" not in data["next_markdown"]
 
     # 3. CSRF is strictly enforced.
     assert client.post("/api/projects/me/demo/map/enable", json={"sha": data["sha"]}).status_code == 403
@@ -495,6 +499,35 @@ def test_map_tab_and_enable_and_save_endpoints(tmp_path, monkeypatch):
     conflict = r_409.json()
     assert conflict["conflict"] is True
     assert conflict["map"]["sha"] == saved["sha"]
+
+    # Markdown Apply uses the same protected save route. Invalid drafts never
+    # commit a partially parsed section, even when the read parser could repair it.
+    def apply_markdown(markdown):
+        return client.post(
+            "/api/projects/me/demo/map", headers={"X-Baton-CSRF": csrf},
+            json={"sha": saved["sha"], "next_markdown": markdown,
+                  "base": {k: saved[k] for k in ("groups", "tasks")}},
+        )
+
+    section = saved["next_markdown"]
+    for invalid in (
+        section.replace("## Next", "## Log"),
+        section + "\n## Blockers\n- Remove this section",
+        section + "\nText outside a task",
+        section + "\n- [ ] [GN-02] Duplicate ID",
+        section.replace(historical_title, historical_title + " again"),
+        section + "\n- [ ] [RL-04] Missing dependency (after: XX-99)",
+        section + "\n- [ ] [RL-04] Cycle (after: RL-05)\n- [ ] [RL-05] Cycle (after: RL-04)",
+    ):
+        assert apply_markdown(invalid).status_code == 400
+        assert len(writes) == 2
+    result = apply_markdown(section.replace("Implement handlers", "Implement routes"))
+    assert result.status_code == 200
+    assert "[GN-02] Implement routes" in current_source[0]
+    assert historical_title in current_source[0]
+    assert "(Marco) Approve release" in current_source[0]
+    assert "## Blockers\n- Waiting on review" in current_source[0]
+    assert len(writes) == 3
 
 
 def test_map_api_requires_auth_when_access_key_is_set(tmp_path, monkeypatch):

@@ -119,18 +119,12 @@
   {% elif not s.next_task and not content.owner_actions %}<p class="muted">{{ t.nothing_next }}</p>{% endif %}
 
   {% elif tab == 'map' %}
-  <div class="tm-mobile-notice" id="tm-mobile-notice">
-    <p>{{ t.tm_mobile_notice }}</p>
-    <div class="tm-mobile-actions">
-      <a class="btn small" href="?tab=next">{{ t.tm_open_list }}</a>
-      <button type="button" class="btn ghost small" id="tm-show-mobile">{{ t.tm_show_anyway }}</button>
-    </div>
-  </div>
   <div class="tm-shell" id="task-map-root" data-csrf="{{ csrf }}">
     <div id="tm-banner" hidden></div>
     <header class="tm-bar" id="tm-bar"></header>
     <div class="tm-main" id="tm-main">
-      <div class="tm-cwrap">
+      <div id="tm-board" hidden></div>
+      <div class="tm-cwrap" id="tm-graph">
         <div class="tm-canvas" id="tm-canvas">
           <div class="tm-sizer" id="tm-sizer">
             <div class="tm-stage" id="tm-stage">
@@ -143,7 +137,27 @@
         </div>
       </div>
       <aside class="tm-panel" id="tm-panel" hidden></aside>
-      <aside class="tm-mdp" id="tm-mdp" hidden></aside>
+      <dialog class="tm-mdp" id="tm-mdp" aria-labelledby="tm-md-title">
+        <div class="tm-p-head"><strong id="tm-md-title">STATUS.md · ## Next</strong><span class="tm-spacer"></span>
+          <button type="button" class="tm-ibtn" id="tm-md-close" aria-label="{{ t.tm_close }}">✕</button></div>
+        <textarea id="tm-md-text" aria-labelledby="tm-md-title" spellcheck="false"></textarea>
+        <p id="tm-md-error" role="alert" hidden></p>
+        <div class="tm-md-actions">
+          <button type="button" class="tm-btn" id="tm-md-copy">{{ t.tm_copy }}</button>
+          <button type="button" class="tm-btn primary" id="tm-md-apply">{{ t.tm_apply }}</button>
+        </div>
+      </dialog>
+      <dialog class="tm-help" id="tm-help" aria-labelledby="tm-help-title">
+        <div class="tm-p-head"><strong id="tm-help-title">{{ t.tm_shortcuts }}</strong><span class="tm-spacer"></span>
+          <form method="dialog"><button class="tm-ibtn" aria-label="{{ t.tm_close }}">✕</button></form></div>
+        <dl>{% for keys, label in [('↑ ↓ ← →', t.tm_navigate), ('Enter', t.tm_focus_panel), ('/', t.tm_filter),
+          ('N', t.tm_new_task), ('Ctrl/⌘ Z', t.tm_undo), ('Ctrl/⌘ Shift Z', t.tm_redo),
+          ('Delete', t.tm_unlink), ('L', t.tm_orient), ('M', t.tm_order), ('[ ]', t.tm_spacing),
+          ('0', t.tm_fit), ('Esc', t.tm_close), ('?', t.tm_shortcuts)] %}
+          <dt><kbd>{{ keys }}</kbd></dt><dd>{{ label }}</dd>
+        {% endfor %}</dl>
+      </dialog>
+      <div class="tm-menu" id="tm-menu" popover="auto" role="menu" aria-label="{{ t.tm_actions }}"></div>
       <div class="tm-toast" id="tm-toast" hidden></div>
     </div>
     <div class="tm-hint" id="tm-hint">{{ t.tm_hint_tm1 }}</div>
@@ -208,7 +222,6 @@
     'cancel': t.tm_cancel,
     'copy': t.tm_copy,
     'copied': t.tm_copied,
-    'md_note': t.tm_md_note,
     'new_task_default': t.tm_new_task_default,
     'add_in_group': t.tm_add_in_group,
     'del_group': t.tm_del_group,
@@ -219,6 +232,17 @@
     'toggle_subs': t.tm_toggle_subs,
     'problems': t.tm_problems,
     'reload': t.tm_reload,
+    'graph': t.tm_graph,
+    'board': t.tm_board,
+    'shortcuts': t.tm_shortcuts,
+    'add_before': t.tm_add_before,
+    'copy_id': t.tm_copy_id,
+    'jump_from': t.tm_jump_from,
+    'jump_to': t.tm_jump_to,
+    'rename_group': t.tm_rename_group,
+    'close': t.tm_close,
+    'md_conflict': t.tm_md_conflict,
+    'copy_error': t.tm_copy_error,
     'display': t.tm_display,
     'orient': t.tm_orient,
     'orient_lr': t.tm_orient_lr,

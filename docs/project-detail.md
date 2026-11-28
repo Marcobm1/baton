@@ -160,10 +160,28 @@ Key design choices and trade-offs:
   Clicking **Launch
   task…** on a ready card opens `/tasks/new` prefilled with `[ID] <title>`,
   description, subtasks, and `Recommended:` agent/model/effort.
-- **Small screens:** below `640 px`, the Map tab shows a notice pointing to the
-  **Next** list view, with an opt-in button to inspect the canvas anyway.
+- **Graph and Board.** Graph arranges cards by dependency depth. Board uses the
+  same computed state to group tasks into Blocked, Ready, Your turn, Running
+  and Done. Queued tasks appear in Running with their own badge. Board opens
+  by default below 640 px and stacks the five groups vertically. Select a card
+  in either view to open its details or copy its URL, such as `?tab=map#AP-02`.
+- **Navigation and actions.** Arrow keys select a nearby visible card. Enter
+  focuses its details, and `?` opens the shortcut list. Right-click a card to
+  copy its ID, launch a ready task or edit it. Adding a predecessor creates a
+  task and its dependency in one undoable edit. Right-click an arrow to visit
+  either endpoint or unlink it. A lane menu creates a task or renames the
+  group. Delete is available for empty groups when another group remains.
+- **Editing Markdown.** Open **STATUS.md** after pending saves finish to edit
+  the displayed `## Next` section. **Apply** validates IDs, dependencies and
+  task structure on the server and saves through the same revision-checked
+  endpoint as card edits. Invalid input stays in the drawer for correction.
+  Existing titles longer than 200 characters can pass through unchanged.
+  New titles and replacements use the same limit as the card editor.
+  An incompatible concurrent change leaves the draft available to copy before
+  reopening the current revision. Preview mode retains a read-only drawer.
 
-Planned follow-up phases (TM-3 context menus/Kanban view and TM-4
-dependency-aware chain execution) are tracked in
-[docs/task-map-roadmap.md](task-map-roadmap.md).
+The remaining runner phase is tracked in [the task map roadmap](task-map-roadmap.md).
 
+With Playwright and Chromium installed, run
+`pytest -q tests/test_task_map_browser.py` to check both layouts against an
+in-memory project. Set `PLAYWRIGHT_CHANNEL=msedge` to use an installed Edge.

@@ -98,7 +98,7 @@ links:
 - [ ] [GN-39] (Marco) Send a first real Gemini task from Baton
   New task → Gemini, model `gemini-3.8-flash` (low) on a small change in this
   repo; check auto-merge without review, readable log, summary, Quotas, and Telegram notice.
-- [ ] [GN-40] (Marco) Live smoke checks: queue two tasks on one repo and check a blocked card (hub: Cuantización → IA local)
+- [x] [GN-40] 2026-11-28 (Marco) Live smoke checks: queue two tasks on one repo and check a blocked card (hub: Cuantización → IA local)
 
 ## Blockers
 - Confirm mode on the host runs approved commands as the host Windows user (Gemini Confirm covers commands only; Codex approved commands write even under `sandbox: "read-only"`).

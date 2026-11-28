@@ -34,7 +34,7 @@ predictable without pulling in a JS graph library.
 
 ---
 
-## TM-2: Performance, commit coalescing, 3-way conflict merge & live SSE
+## TM-2: Performance, commit coalescing, 3-way conflict merge & live SSE — shipped (2026-11-28)
 
 **Problem:** Immediate one-commit-per-edit writes are simple, but editing a
 title and adding three subtasks produces 4 rapid GitHub commits (~1–2 s each).
@@ -42,7 +42,7 @@ Meanwhile, an agent completing a task or another browser tab updating
 `STATUS.md` is only visible after clicking Reload (`↻`).
 
 **Scope:**
-- **Short trailing debounce / batching (optional, ~1.5 s window):** coalesce
+- **Short trailing debounce / batching (1.5 s window):** coalesce
   rapid back-to-back edits (e.g., adding several subtasks or editing title +
   description) into a single clean GitHub commit, flushing immediately on
   `beforeunload` / tab switch and keeping an explicit **Save now** affordance

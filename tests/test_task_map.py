@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import base64
 import json
+from copy import deepcopy
 
 import httpx
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from baton import task_map
@@ -254,6 +256,137 @@ def _make_project(source: str, owner_tag: str = "Marco") -> Project:
     )
 
 
+def test_merge_preserves_order_insertions_and_group_edits():
+    base = task_map.parse_status_map(MAP_STATUS, owner_tag="Marco")
+    local, remote = deepcopy(base), deepcopy(base)
+    local.tasks[0], local.tasks[1] = local.tasks[1], local.tasks[0]
+    local.groups[1].name = "Ship"
+    remote.tasks.insert(0, task_map.MapTask("AP-03", "AP", "New first task"))
+    remote.tasks[-1].title = "Publish"
+    merged = task_map.merge_task_maps(base, local, remote)
+    assert [t.id for t in merged.tasks] == ["AP-03", "AP-02", "AP-01", "RL-01"]
+    assert merged.groups[1].name == "Ship"
+    assert merged.tasks[-1].title == "Publish"
+
+
+def test_merge_rejects_delete_vs_edit_and_combined_cycle():
+    base = task_map.parse_status_map(MAP_STATUS)
+    local, remote = deepcopy(base), deepcopy(base)
+    local.tasks.pop()
+    remote.tasks[-1].title = "New release title"
+    with pytest.raises(ValueError, match="RL-01"):
+        task_map.merge_task_maps(base, local, remote)
+
+    base.tasks[-1].deps = []
+    local, remote = deepcopy(base), deepcopy(base)
+    local.tasks[-1].deps = ["AP-01"]
+    remote.tasks[0].deps = ["RL-01"]
+    with pytest.raises(ValueError, match="cycle"):
+        task_map.merge_task_maps(base, local, remote)
+
+
+@pytest.mark.parametrize("race", ["disjoint", "same_task", "retry_raced"])
+def test_save_after_github_conflict(tmp_path, monkeypatch, race):
+    initial = _make_project(MAP_STATUS)
+    title = "Implement handlers" if race == "same_task" else "Define endpoints"
+    remote_source = MAP_STATUS.replace(title, "Agent edit").replace("## Blockers\n- None", "## Blockers\n- Keep this")
+    remote = _make_project(remote_source)
+    attempts = []
+    latest = initial
+
+    async def load(self, force=False):
+        nonlocal latest
+        if force:
+            latest = remote
+        return [latest], []
+
+    def github(request):
+        body = json.loads(request.content)
+        attempts.append(body)
+        if len(attempts) == 1 or race == "retry_raced":
+            return httpx.Response(409)
+        return httpx.Response(200)
+
+    monkeypatch.setattr(Hub, "load", load)
+    monkeypatch.setattr(Hub, "_client", lambda self: httpx.AsyncClient(
+        base_url="https://api.github.com", transport=httpx.MockTransport(github)))
+    app = create_app(Settings(data_dir=tmp_path, github_token="tok", owner_tag="Marco", self_update=False))
+    client = TestClient(app)
+    url = "/api/projects/me/demo/map"
+    base = client.get(url).json()
+    tasks = deepcopy(base["tasks"])
+    tasks[1]["title"] = "Browser edit"
+    original_remote_sha = remote.status_sha
+    result = client.post(url, headers={"X-Baton-CSRF": app.state.ctx.csrf_token}, json={
+        "sha": base["sha"], "base": {"groups": base["groups"], "tasks": base["tasks"]},
+        "groups": base["groups"], "tasks": tasks,
+    })
+    if race == "same_task":
+        assert result.status_code == 409
+        assert "AP-02" in result.json()["detail"]
+        assert len(attempts) == 1
+    else:
+        assert [a["sha"] for a in attempts] == [initial.status_sha, original_remote_sha]
+        if race == "retry_raced":
+            assert result.status_code == 409
+            assert result.json()["map"]["sha"] == original_remote_sha
+        else:
+            assert result.status_code == 200
+            content = base64.b64decode(attempts[1]["content"]).decode()
+            assert "[AP-02] Browser edit" in content and "Agent edit" in content
+            assert "## Blockers\n- Keep this" in content
+            # Another edit was typed while the first save was in flight. Its
+            # base predates the merge even though the client now has its SHA.
+            followup = deepcopy(tasks)
+            followup[1]["title"] = "Typed while saving"
+            again = client.post(url, headers={"X-Baton-CSRF": app.state.ctx.csrf_token}, json={
+                "sha": result.json()["sha"], "base": {"groups": base["groups"], "tasks": tasks},
+                "groups": base["groups"], "tasks": followup,
+            })
+            assert again.status_code == 200
+            assert [t["title"] for t in again.json()["tasks"][:2]] == ["Agent edit", "Typed while saving"]
+
+
+def test_map_stream_emits_status_transitions_and_sha(tmp_path, monkeypatch):
+    project = _make_project(MAP_STATUS)
+    original_sha = project.status_sha
+
+    async def load(self, force=False):
+        assert not force
+        return [project], []
+
+    monkeypatch.setattr(Hub, "load", load)
+    app = create_app(Settings(data_dir=tmp_path, self_update=False))
+    ctx = app.state.ctx
+    ctx.task_sse_poll = 0.02
+    task = Task("run", "ME/Demo", "[AP-02] Build it", "", "codex", "local", 1)
+    other = Task("elsewhere", "me/other", "[AP-02] Build it", "", "codex", "local", 1)
+    ctx.store.save(other)
+    changes = iter(["initial", "queued", "unchanged", "running", "done", "sha", "disconnect"])
+
+    async def disconnected(request):
+        step = next(changes)
+        if step in ("queued", "running", "done"):
+            task.status = step
+            ctx.store.save(task)
+        if step == "sha":
+            project.status = parse_status(MAP_STATUS.replace("Define endpoints", "Define API"))
+        return step == "disconnect"
+
+    monkeypatch.setattr(Request, "is_disconnected", disconnected)
+    client = TestClient(app)
+    assert client.get("/api/projects/unknown/map/stream").status_code == 404
+    res = client.get("/api/projects/me/demo/map/stream")
+    assert res.headers["content-type"].startswith("text/event-stream")
+    events = [json.loads(event.removeprefix("event: status\ndata: "))
+              for event in res.text.strip().split("\n\n")]
+    assert [e["running"].get("AP-02", {}).get("status") for e in events] == [
+        None, "queued", "running", None, None,
+    ]
+    assert [e["sha"] for e in events] == [original_sha] * 4 + [project.status_sha]
+    assert project.status_sha != original_sha
+
+
 def test_map_tab_and_enable_and_save_endpoints(tmp_path, monkeypatch):
     current_source = [LEGACY_STATUS]
     writes: list[dict] = []
@@ -374,6 +507,7 @@ def test_map_api_requires_auth_when_access_key_is_set(tmp_path, monkeypatch):
     app = create_app(Settings(data_dir=tmp_path, access_key="secret", self_update=False))
     client = TestClient(app)
     assert client.get("/api/projects/me/demo/map").status_code == 401
+    assert client.get("/api/projects/me/demo/map/stream").status_code == 401
     assert client.post("/api/projects/me/demo/map", json={}).status_code == 401
 
 

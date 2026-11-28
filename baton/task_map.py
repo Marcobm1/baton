@@ -24,6 +24,8 @@ import datetime as dt
 import json
 import re
 from dataclasses import dataclass, field
+from graphlib import CycleError, TopologicalSorter
+from itertools import combinations
 from textwrap import dedent
 from typing import Any
 from urllib.parse import quote
@@ -641,6 +643,69 @@ def validate_map_payload(groups_raw: Any, tasks_raw: Any) -> tuple[list[Group], 
         raise ValueError(f"Dependency cycle detected: {' -> '.join(cycle)}.")
 
     return groups, tasks
+
+
+def _merge_order(base, local, remote, ids):
+    """Keep each side's insertions and moves within a lane (or the group list)."""
+    orders = [[item.id for item in side if item.id in ids] for side in (base, local, remote)]
+    before, ours, theirs = orders
+    if before == ours or ours == theirs:
+        return theirs
+    if before == theirs:
+        return ours
+
+    positions = [{key: i for i, key in enumerate(order)} for order in orders]
+    graph = TopologicalSorter()
+    keys = list(dict.fromkeys(theirs + ours))
+    for key in keys:
+        graph.add(key)
+    for a, b in combinations(keys, 2):
+        old, left, right = [
+            pos[a] < pos[b] if a in pos and b in pos else None for pos in positions
+        ]
+        if left is None and right is None:
+            continue  # Independent additions have no relative order.
+        if old is None and left is not None and right is not None and left != right:
+            raise ValueError(f"Conflicting placement of {a} and {b}.")
+        first = right if right is not None and (left is None or left == old) else left
+        predecessor, successor = (a, b) if first else (b, a)
+        graph.add(successor, predecessor)
+    try:
+        return list(graph.static_order())
+    except CycleError as exc:
+        raise ValueError("Conflicting changes to map order.") from exc
+
+
+def _merge_items(base, local, remote):
+    original, ours, theirs = ({item.id: item for item in side} for side in (base, local, remote))
+    merged = {}
+    for key in ours.keys() | theirs.keys():
+        old, left, right = original.get(key), ours.get(key), theirs.get(key)
+        if left != old and right != old and left != right:
+            raise ValueError(f"Conflicting changes to {key}.")
+        item = right if left == old else left
+        if item is not None:
+            merged[key] = item
+    return merged
+
+
+def merge_task_maps(base: TaskMap, local: TaskMap, remote: TaskMap) -> TaskMap:
+    """Merge by stable ID, rejecting overlapping edits and invalid combined graphs."""
+    if not remote.enabled or remote.problems:
+        raise ValueError("The remote task map needs review.")
+    groups = _merge_items(base.groups, local.groups, remote.groups)
+    tasks = _merge_items(base.tasks, local.tasks, remote.tasks)
+    group_ids = _merge_order(base.groups, local.groups, remote.groups, groups)
+    if any(task.group not in groups for task in tasks.values()):
+        raise ValueError("A task's group was deleted.")
+    task_ids = []
+    for gid in group_ids:
+        lanes = [[t for t in side.tasks if t.group == gid] for side in (base, local, remote)]
+        task_ids.extend(_merge_order(*lanes, {key for key, t in tasks.items() if t.group == gid}))
+    checked_groups, checked_tasks = validate_map_payload(
+        [groups[key].to_dict() for key in group_ids], [tasks[key].to_dict() for key in task_ids]
+    )
+    return TaskMap(groups=checked_groups, tasks=checked_tasks, enabled=True)
 
 
 def serialize_next_body(

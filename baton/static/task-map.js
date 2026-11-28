@@ -21,8 +21,18 @@
   var undoStack = [];
   var redoStack = [];
   var lastLayout = null;
-  var saveChain = Promise.resolve();
-  var pendingSaves = 0;
+  var mapUrl = "/api/projects/" + encodePid(state.pid) + "/map";
+  var pending = null;
+  var saveTimer = null;
+  var sending = false;
+  var keepalive = false;
+  var editVersion = 0;
+  var refreshNeeded = false;
+  var refreshing = false;
+  var redrawNeeded = false;
+  var pointerDown = false;
+  var events = null;
+  var liveStatus = null;
 
   function loadPrefs() {
     try {
@@ -371,7 +381,7 @@
     state.sha = payload.sha || state.sha;
     state.enabled = !!payload.enabled;
     state.can_write = !!payload.can_write;
-    state.running = payload.running || {};
+    state.running = liveStatus && liveStatus.sha === state.sha ? liveStatus.running : payload.running || {};
     state.problems = payload.problems || [];
     state.next_markdown = payload.next_markdown || "";
     confirmed = cloneData(state);
@@ -386,104 +396,174 @@
     }
   }
 
-  function enqueueSave(msg, groupsSnap, tasksSnap) {
-    pendingSaves += 1;
+  function snapshot(map) {
+    return JSON.stringify({groups: map.groups, tasks: map.tasks});
+  }
+
+  function editingField() {
+    var field = document.activeElement;
+    return field && root.contains(field) && field.id !== "tm-search" && field.matches("input, textarea, select");
+  }
+
+  // Async updates must leave a partially typed title, description or subtask alone.
+  function syncWhenIdle() {
+    if (pending || sending || pointerDown || editingField()) return;
+    if (redrawNeeded) {
+      redrawNeeded = false;
+      applyServerPayload(confirmed);
+      render();
+    }
+    if (refreshNeeded && !refreshing) reloadFromServer(false);
+  }
+  root.addEventListener("focusout", function () { setTimeout(syncWhenIdle, 0); });
+  stageEl.addEventListener("pointerdown", function () { pointerDown = true; });
+  function endPointer() {
+    if (pointerDown) {
+      pointerDown = false;
+      setTimeout(syncWhenIdle, 0);
+    }
+  }
+  window.addEventListener("pointerup", endPointer);
+  window.addEventListener("pointercancel", endPointer);
+
+  function enqueueSave(msg, before) {
+    editVersion++;
+    if (pending) pending.message = "Batch map edits";
+    else pending = {base: before, message: msg};
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushSave, 1500);
+    ui.syncState = "pending";
+    renderSync();
+  }
+
+  async function flushSave() {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    if (!pending || sending) return;
+    var batch = pending;
+    var current = snapshot(state);
+    var draft = batch.unacknowledged || current;
+    pending = null;
+    if (current !== draft) pending = {base: draft, message: batch.message};
+    if (draft === batch.base) {
+      ui.syncState = "saved";
+      renderSync();
+      syncWhenIdle();
+      return;
+    }
+    sending = true;
     ui.syncState = "saving";
     renderSync();
-
-    saveChain = saveChain.then(function () {
-      return fetch("/api/projects/" + encodePid(state.pid) + "/map", {
+    var body = batch.retryBody || JSON.stringify(Object.assign(JSON.parse(draft), {
+      sha: confirmed.sha,
+      base: JSON.parse(batch.base),
+      message: batch.message,
+    }));
+    // Browsers cap outstanding keepalive bodies at 64 KiB.
+    keepalive = new Blob([body]).size <= 65536;
+    try {
+      var res = await fetch(mapUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Baton-CSRF": csrf,
-        },
-        body: JSON.stringify({
-          sha: state.sha,
-          message: msg,
-          groups: groupsSnap,
-          tasks: tasksSnap,
-        }),
-      }).then(function (res) {
-        return res.json().catch(function () { return {}; }).then(function (data) {
-          return { status: res.status, ok: res.ok, data: data };
-        });
-      }).then(function (r) {
-        if (r.ok) {
-          applyServerPayload(r.data);
-          ui.syncState = "saved";
-          render();
-          return;
-        }
-        if (r.status === 409 && r.data && r.data.map) {
-          applyServerPayload(r.data.map);
-          undoStack.length = 0;
-          redoStack.length = 0;
-          ui.syncState = "err";
-          showToast(S.conflict, true, false);
-          render();
-          return;
-        }
-        state.groups = cloneData(confirmed).groups;
-        state.tasks = cloneData(confirmed).tasks;
-        fixSelection();
-        ui.syncState = "err";
-        showToast((r.data && r.data.detail) || ("Error (" + r.status + ")"), true, false);
-        render();
-      }).catch(function () {
-        state.groups = cloneData(confirmed).groups;
-        state.tasks = cloneData(confirmed).tasks;
-        fixSelection();
-        ui.syncState = "err";
-        showToast("Network error while saving STATUS.md", true, false);
-        render();
-      }).finally(function () {
-        pendingSaves = Math.max(0, pendingSaves - 1);
-        if (pendingSaves === 0 && ui.syncState === "saving") ui.syncState = "saved";
-        renderSync();
+        headers: {"Content-Type": "application/json", "X-Baton-CSRF": csrf},
+        body: body,
+        keepalive: keepalive,
       });
-    });
+      var data = await res.json();
+      if (res.status === 409 && data.map) {
+        undoStack.length = redoStack.length = 0;
+        confirmed = cloneData(data.map);
+        redrawNeeded = true;
+        ui.syncState = pending ? "pending" : "err";
+        showToast(S.conflict, true, false);
+      } else if (res.ok) {
+        confirmed = cloneData(data);
+        if (data.merged) undoStack.length = redoStack.length = 0;
+        redrawNeeded = true;
+        ui.syncState = pending ? "pending" : "saved";
+      } else {
+        throw new Error(data.detail || ("HTTP " + res.status));
+      }
+    } catch (err) {
+      // A missing acknowledgement may hide a successful commit. Replay that
+      // exact request first so even a later undo can use its confirmed base.
+      if (!res || res.ok) {
+        batch.unacknowledged = draft;
+        batch.retryBody = body;
+      }
+      if (pending) batch.message = "Batch map edits";
+      pending = batch;
+      clearTimeout(saveTimer);
+      ui.syncState = "err";
+      showToast(err.message, true, false);
+    } finally {
+      sending = false;
+      renderSync();
+      if (pending && saveTimer === null && ui.syncState !== "err") flushSave();
+      else syncWhenIdle();
+    }
   }
+
+  function flushOnLeave() {
+    if (editingField()) document.activeElement.blur();
+    flushSave();
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) flushOnLeave();
+  });
+  window.addEventListener("beforeunload", function (event) {
+    flushOnLeave();
+    if (sending && (pending || !keepalive)) {
+      event.preventDefault();
+      event.returnValue = true;
+    }
+  });
+  window.addEventListener("pagehide", function () {
+    flushOnLeave();
+    if (events) events.close();
+    events = null;
+  });
 
   function commit(msg, mutate) {
     if (!canEdit()) return false;
-    var before = JSON.stringify({ groups: state.groups, tasks: state.tasks });
+    var before = snapshot(state);
     mutate();
-    var after = JSON.stringify({ groups: state.groups, tasks: state.tasks });
-    if (after === before) { render(); return false; }
+    if (snapshot(state) === before) { render(); return false; }
     undoStack.push(before);
     redoStack.length = 0;
-    var snap = JSON.parse(after);
     render();
     showToast(msg, false, true);
-    enqueueSave(msg, snap.groups, snap.tasks);
+    enqueueSave(msg, before);
     return true;
   }
 
   function undo() {
     if (!canEdit() || !undoStack.length) return;
-    redoStack.push(JSON.stringify({ groups: state.groups, tasks: state.tasks }));
+    var before = snapshot(state);
+    redoStack.push(before);
     var prev = JSON.parse(undoStack.pop());
     state.groups = prev.groups;
     state.tasks = prev.tasks;
     fixSelection();
     render();
-    enqueueSave("Undo last change", prev.groups, prev.tasks);
+    enqueueSave("Undo last change", before);
   }
 
   function redo() {
     if (!canEdit() || !redoStack.length) return;
-    undoStack.push(JSON.stringify({ groups: state.groups, tasks: state.tasks }));
+    var before = snapshot(state);
+    undoStack.push(before);
     var next = JSON.parse(redoStack.pop());
     state.groups = next.groups;
     state.tasks = next.tasks;
     fixSelection();
     render();
-    enqueueSave("Redo change", next.groups, next.tasks);
+    enqueueSave("Redo change", before);
   }
 
   function enableMap() {
-    if (!state.can_write) return;
+    if (!state.can_write || sending) return;
+    sending = true;
+    editVersion++;
     ui.syncState = "saving";
     renderSync();
     fetch("/api/projects/" + encodePid(state.pid) + "/map/enable", {
@@ -517,26 +597,68 @@
       ui.syncState = "err";
       showToast("Network error", true, false);
       renderSync();
+    }).finally(function () {
+      sending = false;
+      renderSync();
+      syncWhenIdle();
     });
   }
 
-  function reloadFromServer() {
-    ui.syncState = "saving";
-    renderSync();
-    fetch("/api/projects/" + encodePid(state.pid) + "/map?refresh=1")
-      .then(function (res) { return res.ok ? res.json() : Promise.reject(res.status); })
-      .then(function (data) {
-        applyServerPayload(data);
-        undoStack.length = 0;
-        redoStack.length = 0;
-        ui.syncState = "saved";
-        render();
-      })
-      .catch(function () {
+  async function reloadFromServer(force) {
+    if (refreshing || sending || pending) return;
+    var version = editVersion;
+    refreshNeeded = false;
+    refreshing = true;
+    try {
+      var res = await fetch(mapUrl + (force ? "?refresh=1" : ""));
+      if (res.status >= 500) throw new Error("HTTP " + res.status);
+      if (!res.ok) {
         ui.syncState = "err";
         renderSync();
-      });
+        return;
+      }
+      var data = await res.json();
+      if (version !== editVersion || sending || pending || pointerDown || editingField()) {
+        refreshNeeded = true;
+      } else if (data.sha !== confirmed.sha || force) {
+        undoStack.length = redoStack.length = 0;
+        applyServerPayload(data);
+        ui.syncState = "saved";
+        render();
+      }
+    } catch (err) {
+      ui.syncState = "err";
+      renderSync();
+      // Reconnecting delivers a new snapshot even if no other task changes.
+      if (events) events.close();
+      events = null;
+      setTimeout(connectStream, 2000);
+    } finally {
+      refreshing = false;
+      if (refreshNeeded) syncWhenIdle();
+    }
   }
+
+  function connectStream() {
+    if (!window.EventSource || events) return;
+    events = new EventSource(mapUrl + "/stream");
+    events.addEventListener("status", function (event) {
+      var live = JSON.parse(event.data);
+      liveStatus = live;
+      if (JSON.stringify(live.running) !== JSON.stringify(confirmed.running)) {
+        confirmed.running = state.running = live.running;
+        redrawNeeded = true;
+        // Cards can update while a side-panel field has uncommitted text.
+        if (editingField() && !pointerDown && !stageEl.contains(document.activeElement)) {
+          renderMap(lastLayout);
+          applyHighlight();
+        }
+      }
+      if (live.sha !== confirmed.sha) refreshNeeded = true;
+      syncWhenIdle();
+    });
+  }
+  window.addEventListener("pageshow", connectStream);
 
   // --------------------------------------------------------- mutations
   function newTask(gid, deps) {
@@ -958,6 +1080,13 @@
   }
 
   function renderSync() {
+    var button = document.getElementById("tm-save-now");
+    if (button) {
+      button.hidden = !pending;
+      button.onclick = flushSave;
+    }
+    var reload = document.getElementById("tm-reload");
+    if (reload) reload.disabled = !!pending || sending;
     var el = document.getElementById("tm-sync");
     if (!el) return;
     el.className = "tm-sync" + (ui.syncState ? " " + ui.syncState : "");
@@ -1007,6 +1136,7 @@
         '<span class="tm-chip"><b>' + counts.done + "</b> " + esc(S.done_p) + "</span>" +
       "</div>" +
       '<div class="tm-spacer"></div>' +
+      '<button type="button" class="tm-btn" id="tm-save-now" hidden>' + esc(S.save_now) + "</button>" +
       '<span id="tm-sync" class="tm-sync"></span>' +
       '<input class="tm-search" id="tm-search" placeholder="' + esc(S.filter) + '" value="' + esc(ui.filter) + '">' +
       '<button type="button" class="tm-btn' + (displayOpen ? " on" : "") + '" id="tm-display">' + esc(S.display) + " ▾</button>" +
@@ -1033,7 +1163,7 @@
     document.getElementById("tm-zout").onclick = function () { setZoom(ui.zoom - 0.1); };
     document.getElementById("tm-zin").onclick = function () { setZoom(ui.zoom + 0.1); };
     document.getElementById("tm-fit").onclick = fitToScreen;
-    document.getElementById("tm-reload").onclick = reloadFromServer;
+    document.getElementById("tm-reload").onclick = function () { reloadFromServer(true); };
     document.getElementById("tm-md").onclick = function () { ui.md = !ui.md; render(); };
 
     if (editable) {
@@ -1853,4 +1983,5 @@
   });
 
   render();
+  connectStream();
 })();

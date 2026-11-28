@@ -3,7 +3,7 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
+next: "TM-4: Dependency-aware runner & safe chain execution (\"Queue up to here\")"
 updated: 2026-11-28
 updated_by: codex
 open_source: true
@@ -64,13 +64,15 @@ links:
 - [x] [GN-26] 2026-11-27 Town Hall dynamic 2–4 participant picker + live provider quotas in sessions & schedules (`baton/townhall_bridge.py`, `baton/routes/townhall.py`, `baton/templates/townhall.html`, `baton/static/townhall.{js,css}`, `tests/test_townhall.py`, `docs/townhall.md`)
 - [x] [GN-27] 2026-11-27 Interactive per-project task map (`?tab=map` in `/p/{id}`: `baton/task_map.py`, `baton/static/task-map.{css,js}`, explicit opt-in enable commit, per-edit blob-SHA commits, 3-colour DFS cycle rejection, top-level-only progress, live running cards, and `/tasks/new` launch drafts; `tests/test_task_map.py`, `docs/project-detail.md`, `docs/AGENT_INSTRUCTIONS.md`)
 - [x] [GN-28] 2026-11-27 TM-1: Task map layout scaling (3-sweep barycenter crossing reduction with Auto/Manual toggle `M`, `task_map.transitive_edges()` hiding redundant arrows until hover/select, 3+ done folding per lane into expandable `"N done"` pill, Left→Right / Top→Bottom orientation `L`, spacing `[`/`]`, fit-to-screen `0`, Display popover & `localStorage` prefs; `tests/test_task_map.py`, `docs/task-map-roadmap.md`)
-- [ ] [GN-29] UI-7: Visual smoke test for /chat (screenshots + button contrast)
-  Turn the review harness into an opt-in test: start the app with a fake Gemini agent (as in
-  `tests/test_gemini.py`), inject a conversation with Baton's own renderers, screenshot desktop and
-  mobile in light and dark, and fail if any visible button is under 3:1 contrast. Pin Playwright
-  exactly in the `dev` extra; skip when no browser is installed. Verify: the test fails on a commit
-  that reintroduces `button { color: … !important }`.
-  Recommended: claude-code, opus, medium
+- [x] [GN-29] 2026-11-28 UI-7: Visual smoke test for /chat (screenshots + button contrast)
+  [Run the opt-in test](docs/design.md#chat-visual-smoke-test-ui-7-2026-11-28). Four Edge configurations passed and all four caught the restored global button color override.
+- [ ] [GN-33] TM-4: Dependency-aware runner & safe chain execution ("Queue up to here")
+  Bind tasks launched from the map to their project and checklist IDs. Hold dispatch until
+  predecessors are complete, preview the required agent tasks in dependency order before queueing,
+  stop at owner checkpoints, and pause descendants after a failure or cancellation.
+  Verify with runner and route tests for dispatch after merge, owner checkpoints, and failure propagation.
+  See the [TM-4 roadmap](docs/task-map-roadmap.md#tm-4-dependency-aware-runner--safe-chain-execution).
+  Recommended: codex, gpt-6.2-astra, high
 - [ ] [GN-30] Sync task-map `STATUS.md` rules to `AGENTS.md` in tracked repositories
   Copy the updated task-map bullet from [the agent instructions template](docs/AGENT_INSTRUCTIONS.md)
   into the `AGENTS.md` files for [Cairn](https://github.com/Marcobm1/Cairn/blob/main/AGENTS.md),
@@ -85,13 +87,6 @@ links:
   [Save and live-update behavior](docs/project-detail.md). Verified in Edge and with pytest (335 passed, 2 skipped).
 - [x] [GN-32] 2026-11-28 TM-3: Task map ergonomics (context menus, keyboard/deep-links, Kanban board view, editable STATUS.md drawer)
   [Board, shortcuts and Markdown Apply](docs/project-detail.md). Verified with pytest and desktop/mobile Playwright checks.
-- [ ] [GN-33] TM-4: Dependency-aware runner & safe chain execution ("Queue up to here")
-  Connect `STATUS.md` `(after: …)` dependencies to `baton/runner.py` ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)):
-  store optional `status_project_id`/`status_task_id` on `Task`, hold queued tasks until predecessors are
-  ticked, allow queueing an ancestor chain in topological order (always stopping before `(Owner)` actions),
-  and pause downstream tasks if an upstream task fails or is cancelled.
-  Verify: runner unit tests for auto-unblock on merge, stop-before-owner guard, and failure cascade pause.
-  Recommended: codex, gpt-6.2-astra, high
 - [x] [GN-34] 2026-11-27 (Marco) Try `web_search` from `/chat` with a local model in **Internet + tools** mode (needs your sign-in)
 - [x] [GN-35] 2026-11-28 (Marco) Build `baton-agents-sandbox:latest` (`docker build -f docker/agents-sandbox.Dockerfile -t baton-agents-sandbox:latest .`) and run `baton sandbox-login <claude-code|codex|gemini>` for the CLIs you want to use in **All permissions** mode on `/chat`
 - [x] [GN-36] 2026-11-28 (Marco) Decide remaining layout question from the UI review: local chat without models showing the same composer with a setup notice instead of the old "Agent" form
@@ -126,6 +121,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-28 (codex): Added the opt-in `/chat` browser smoke test with a fake Gemini, four screenshots and a 3:1 button contrast check. Verified the skip path and the historical CSS regression.
 - 2026-11-28 (codex): Checked the four target `AGENTS.md` files on GitHub for GN-30. The task-map rule still needs to be added in each repository's own worktree.
 - 2026-11-28 (codex): Added the state board, mobile layout, context menus, keyboard navigation, task links and validated Markdown Apply.
 - 2026-11-28 (codex): TM-2 groups rapid map edits, retries compatible concurrent writes once, and streams task status and STATUS.md revisions to open maps.

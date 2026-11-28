@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==9.2.0", "ruff==0.17.6"]
+dev = ["pytest==9.2.0", "ruff==0.17.6", "playwright==1.65.2"]
 
 [project.scripts]
 baton = "baton.__main__:main"

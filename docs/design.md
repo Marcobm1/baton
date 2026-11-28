@@ -178,6 +178,31 @@ that both dark blocks match, and the contrast below.
 - **Phone:** header is ☰ · title · ＋ · ⋯; composer chips sit in one row that
   scrolls sideways instead of wrapping into three.
 
+## `/chat` visual smoke test (UI-7, 2026-11-28)
+
+From the repository root, `python -m pip install -e ".[dev]"` installs the
+pinned Playwright package. Run `python -m playwright install chromium` to
+install its browser, or set `PLAYWRIGHT_CHANNEL=msedge` to use an installed
+Edge. The test skips if the selected browser is missing. [Playwright browser guide](https://playwright.dev/python/docs/browsers)
+
+```powershell
+$env:BATON_VISUAL_SMOKE = "1"
+python -m pytest -q tests/test_chat_browser.py
+```
+
+On macOS or Linux, run `BATON_VISUAL_SMOKE=1 python -m pytest -q tests/test_chat_browser.py`.
+The test uses a loopback server, a temporary chat database, and the fake
+Gemini ACP process. Baton's renderers load a saved Markdown reply and diff,
+then show a live permission request. Desktop and mobile in light and dark
+each produce a PNG in `.baton-artifacts/`.
+
+Each case checks buttons in view in the empty chat, saved conversation, and
+pending approval. It compares computed foreground and background colors,
+accounting for transparent backgrounds and opacity, and reports button names
+and ratios below 3:1. The screenshots are for manual review. Adding
+`button { color: var(--on-accent) !important; }` to `style.css` temporarily
+made all four cases fail. [Contrast formula](https://www.w3.org/WAI/WCAG22/Techniques/general/G145) · [Original regression](https://github.com/Marcobm1/baton/pull/76)
+
 ## Brand & icon: Huo (2026-11-27)
 
 - **Visible brand vs. technical internals:** the web UI and mobile

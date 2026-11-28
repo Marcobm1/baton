@@ -92,7 +92,7 @@ links:
 - [x] [GN-35] 2026-11-28 (Marco) Build `baton-agents-sandbox:latest` (`docker build -f docker/agents-sandbox.Dockerfile -t baton-agents-sandbox:latest .`) and run `baton sandbox-login <claude-code|codex|gemini>` for the CLIs you want to use in **All permissions** mode on `/chat`
 - [x] [GN-36] 2026-11-28 (Marco) Decide remaining layout question from the UI review: local chat without models showing the same composer with a setup notice instead of the old "Agent" form
 - [ ] [GN-37] (Marco) Install Huo as a PWA on your phone over Tailscale ("Add to Home Screen") and verify standalone launch and icon
-- [ ] [GN-38] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
+- [x] [GN-38] 2026-11-28 (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify
   Allow/Deny on a harmless command, restart Baton or start a new chat, and resume the saved session.
 - [x] [GN-39] 2026-11-28 (Marco) Send a first real Gemini task from Baton

@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ p.status.name }} · {{ title }}{% endblock %}
+{% block refresh %}{% if tab != 'map' %}{{ super() }}{% endif %}{% endblock %}
+{% block styles %}{% if tab == 'map' %}<link rel="stylesheet" href="/static/task-map.css?v={{ css_v }}">{% endif %}{% endblock %}
 {% block main %}
 {% set s = p.status %}
 {% import "_macros.html" as m with context %}
@@ -72,6 +74,7 @@
 
   <nav class="chips project-tabs" aria-label="{{ t.sections }}">
     <a class="chip" href="?tab=next"{% if tab == 'next' %} aria-current="true"{% endif %}>{{ t.upcoming }} <span class="count">{{ upcoming|length }}</span></a>
+    <a class="chip" href="?tab=map"{% if tab == 'map' %} aria-current="true"{% endif %}>{{ t.tab_map }}</a>
     <a class="chip" href="?tab=done"{% if tab == 'done' %} aria-current="true"{% endif %}>{{ t.finished_work }} <span class="count">{{ finished|length }}</span></a>
     <a class="chip" href="?tab=notes"{% if tab == 'notes' %} aria-current="true"{% endif %}>{{ t.notes }}{% if content.blockers %} <span class="count warn-count" title="{{ t.blockers }}">⚠ {{ content.blockers|length }}</span>{% endif %}</a>
   </nav>
@@ -114,6 +117,109 @@
       <ol class="upcoming" start="7">{% for item in upcoming[6:] %}{{ upcoming_row(item, loop.index + 6) }}{% endfor %}</ol></details>{% endif %}
   </section>
   {% elif not s.next_task and not content.owner_actions %}<p class="muted">{{ t.nothing_next }}</p>{% endif %}
+
+  {% elif tab == 'map' %}
+  <div class="tm-mobile-notice" id="tm-mobile-notice">
+    <p>{{ t.tm_mobile_notice }}</p>
+    <div class="tm-mobile-actions">
+      <a class="btn small" href="?tab=next">{{ t.tm_open_list }}</a>
+      <button type="button" class="btn ghost small" id="tm-show-mobile">{{ t.tm_show_anyway }}</button>
+    </div>
+  </div>
+  <div class="tm-shell" id="task-map-root" data-csrf="{{ csrf }}">
+    <div id="tm-banner" hidden></div>
+    <header class="tm-bar" id="tm-bar"></header>
+    <div class="tm-main" id="tm-main">
+      <div class="tm-cwrap">
+        <div class="tm-canvas" id="tm-canvas">
+          <div class="tm-sizer" id="tm-sizer">
+            <div class="tm-stage" id="tm-stage">
+              <div id="tm-lanes"></div>
+              <svg id="tm-edges"></svg>
+              <div id="tm-cards"></div>
+              <div class="tm-drop-ind" id="tm-drop-ind" hidden></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="tm-panel" id="tm-panel" hidden></aside>
+      <aside class="tm-mdp" id="tm-mdp" hidden></aside>
+      <div class="tm-toast" id="tm-toast" hidden></div>
+    </div>
+    <div class="tm-hint" id="tm-hint">{{ t.tm_hint }}</div>
+  </div>
+  <script type="application/json" id="task-map-data">{{ map_data|tojson }}</script>
+  <script type="application/json" id="task-map-strings">{{ {
+    'st_ready': t.tm_ready,
+    'st_blocked': t.tm_blocked,
+    'st_owner': t.tm_owner,
+    'st_running': t.tm_running,
+    'st_queued': t.tm_queued,
+    'st_done': t.tm_done,
+    'ready_p': t.tm_ready_p,
+    'blocked_p': t.tm_blocked_p,
+    'owner_p': t.tm_owner_p,
+    'running_p': t.tm_running_p,
+    'done_p': t.tm_done_p,
+    'filter': t.tm_filter,
+    'hide_done': t.tm_hide_done,
+    'compact': t.tm_compact,
+    'undo': t.tm_undo,
+    'redo': t.tm_redo,
+    'new_group': t.tm_new_group,
+    'new_task': t.tm_new_task,
+    'source': t.tm_source,
+    'enable_title': t.tm_enable_title,
+    'enable_desc': t.tm_enable_desc,
+    'enable_btn': t.tm_enable_btn,
+    'readonly_token': t.tm_readonly_token,
+    'saving': t.tm_saving,
+    'saved': t.tm_saved,
+    'conflict': t.tm_conflict,
+    'err_self': t.tm_err_self,
+    'err_exists': t.tm_err_exists,
+    'err_cycle': t.tm_err_cycle,
+    'err_in_drop': t.tm_err_in_drop,
+    'err_group': t.tm_err_group,
+    'err_group_dup': t.tm_err_group_dup,
+    'title': t.tm_title,
+    'owner_chk': t.tm_owner_chk,
+    'group': t.tm_group,
+    'desc': t.tm_desc,
+    'desc_ph': t.tm_desc_ph,
+    'deps': t.tm_deps,
+    'deps_none': t.tm_deps_none,
+    'dep_add': t.tm_dep_add,
+    'blocks': t.tm_blocks,
+    'blocks_none': t.tm_blocks_none,
+    'subs': t.tm_subs,
+    'sub_add': t.tm_sub_add,
+    'mark_done': t.tm_mark_done,
+    'reopen': t.tm_reopen,
+    'launch': t.tm_launch,
+    'view_active': t.tm_view_active,
+    'del': t.tm_delete,
+    'del_confirm': t.tm_delete_confirm,
+    'unlink': t.tm_unlink,
+    'group_name': t.tm_group_name,
+    'group_pfx': t.tm_group_pfx,
+    'create': t.tm_create,
+    'cancel': t.tm_cancel,
+    'copy': t.tm_copy,
+    'copied': t.tm_copied,
+    'md_note': t.tm_md_note,
+    'new_task_default': t.tm_new_task_default,
+    'add_in_group': t.tm_add_in_group,
+    'del_group': t.tm_del_group,
+    'rename_hint': t.tm_rename_hint,
+    'add_after': t.tm_add_after,
+    'port_in': t.tm_port_in,
+    'port_out': t.tm_port_out,
+    'toggle_subs': t.tm_toggle_subs,
+    'problems': t.tm_problems,
+    'reload': t.tm_reload,
+  }|tojson }}</script>
+  <script src="/static/task-map.js?v={{ css_v }}" defer></script>
 
   {% elif tab == 'done' %}
   {% macro history(entries) %}

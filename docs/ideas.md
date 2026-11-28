@@ -29,12 +29,7 @@ when ready to design and build it.
 - Optional per-project or global lightweight notes/memory injected into the
   system prompt (explicit, user-editable, never hidden).
 
-## 4. Interactive task map inside each project
-- Show tasks as movable cards. Create and edit tasks and subtasks on the canvas,
-  and draw, redirect or remove arrows between cards. Support parallel branches
-  that converge on a shared next task, as in the reference image.
-- Suggested interaction: group subtasks inside a collapsible parent and reserve
-  arrows for dependencies. For example, both implementation and tests can feed
-  into a release review. Moving a card should only change its position.
-- Consider a plus button on each card to create a connected successor, undo for
-  link edits, and a list view for small screens. Explore these in a prototype.
+## 4. Interactive task map inside each project — shipped (2026-11-27)
+- Shipped as the **Map** tab on `/p/{id}?tab=map` (`baton/task_map.py`,
+  `baton/static/task-map.{css,js}`, [docs/project-detail.md](project-detail.md)).
+

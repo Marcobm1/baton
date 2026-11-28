@@ -90,26 +90,22 @@ where a 2D dependency graph is cramped.
 
 ## TM-4: Dependency-aware runner & safe chain execution
 
-**Problem:** Today `baton/runner.py` queues tasks independently and does not
-enforce `(after: …)` dependencies from `STATUS.md`, so multi-step plans still
-require launching each stage manually once the previous PR merges.
+Shipped 2026-11-28. Right-click a target and choose **Queue up to here**.
+The preview shows each unchecked ancestor once, prerequisites first, with its
+destination and agent. Already scheduled items keep their existing run. The first unchecked owner action ends the preview.
+Confirming saves the entire prefix in one SQLite transaction. A changed
+checklist requires a new preview. Finish the owner action and preview again
+to launch the remaining steps.
 
-**Scope:**
-- **Bind Baton tasks to `STATUS.md` IDs:** store optional `status_project_id`
-  and `status_task_id` on `Task` records (populated automatically when launched
-  from the Map tab).
-- **Dependency-aware dispatch:** keep a queued task waiting while any task in
-  its `STATUS.md` `(after: …)` list is still unchecked; automatically unblock
-  and dispatch it once its predecessors finish and merge.
-- **Safe chain launch ("Queue up to here"):** right-click a target card on the
-  map to preview its undone ancestor chain in topological order and queue the
-  agent tasks with one confirmation—**always stopping before any `(Owner)`
-  action** (never bypassing human checkpoints).
-- **Post-merge verification:** after a bound task merges, check whether the
-  agent ticked `[ID]` in `STATUS.md`; if not, surface a one-click banner on the
-  card and task page to tick it.
+Map launches use the local runner. Each run stores its project and checklist ID,
+including when a `Repo:` line sends the work elsewhere. Before dispatch Baton
+reads the source project's default-branch checklist. Unchecked dependencies,
+an unreadable map or an unfinished predecessor hold the run in the queue.
+Baton retries after a run finishes and during its minute maintenance loop.
+A manually merged predecessor PR can release the chain once its checkbox is
+checked. After a merge, an unchecked item offers a completion
+action on its map card and task page.
 
-**Trade-offs:** Tighter coupling between `Runner` and `Hub` requires clear
-failure handling: if an upstream task in a chain fails or is cancelled, all
-downstream queued tasks in that chain must pause/cancel automatically with a
-clear notification rather than running against broken assumptions.
+A failed or cancelled run cancels its queued descendants. Their task pages and
+configured task notifications name the upstream step. Independent branches can
+continue. Fix the cause and preview again to start a new chain.

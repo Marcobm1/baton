@@ -230,6 +230,8 @@ def create_app(settings: Settings | None = None, *, restart=None) -> FastAPI:
 
     def _quota_tick():
         # Refresh token usage, local machine metrics, and evaluate alerts in the background.
+        if any(t.status_project_id for t in runner.queued()):
+            runner.dispatch()
         ctx.refresh_usage()
         cards = machines.list_machines(refresh_local=True)
         try:

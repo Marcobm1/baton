@@ -384,3 +384,26 @@ def test_web_restart_keeps_queued_tasks(tmp_path, monkeypatch):
         high = _wait_done(store, "20260101-000002-high")
         low = _wait_done(store, "20260101-000001-low")
     assert high.status == low.status == "done" and high.finished_at <= low.started_at
+
+
+def test_bound_dispatch_requires_merge_and_checked_dependency(tmp_path):
+    work, origin = make_repo(tmp_path)
+    gates = tmp_path / "gates"
+    gh = MergingGitHub(origin)
+    source = "## Next\n### API (AP)\n- [ ] [AP-01] First\n- [ ] [AP-02] Second (after: AP-01)\n"
+    gh.map_source = lambda pid: source
+    store, runner = _runner(tmp_path, {"x/demo": work}, gates, github=gh)
+    first, second = _task("first"), _task("second", priority="high")
+    for run, item in [(first, "AP-01"), (second, "AP-02")]:
+        run.status_project_id, run.status_task_id = "x/demo", item
+    second.predecessor_runs = [first.id]
+    runner.submit_batch([first, second])
+    assert store.get(second.id).started_at is None
+    _open(gates)
+    assert _wait_done(store, first.id).merged
+    runner.dispatch()
+    assert store.get(second.id).status == "queued"
+    source = source.replace("[ ] [AP-01]", "[x] [AP-01]")
+    runner.dispatch()
+    finished = _wait_done(store, second.id)
+    assert finished.merged and finished.started_at >= store.get(first.id).finished_at

@@ -48,11 +48,12 @@
     <p><strong>{{ t.last_step }}</strong> · <span id="task-last-step">{{ task.steps|last or t.no_step }}</span></p>
     <p id="task-progress">{{ report.progress|truncate(240) if report.progress else t.no_progress }}</p>
   {% elif task.status == 'queued' %}
-    {% if queue %}
+    {% if task.message %}<p>{{ task.message }}</p>{% elif queue %}
     <p class="queue-info"><span class="pill prio-{{ task.priority }}">{{ t.priority }} · {{ t['prio_' ~ task.priority] }}</span>
       <strong>{{ t.queue_pos|format(queue.position|ordinal) }}</strong> · {{ t.waiting_for }}
       {% if queue.waiting_for %}<a href="/tasks/{{ queue.waiting_for.id }}">{{ queue.waiting_for.title }}</a>{% else %}{{ t.waiting_slot|format(queue.running, queue.max) }}{% endif %}</p>
-    <form method="post" action="/tasks/{{ task.id }}/priority" class="priority-form">
+    {% endif %}
+    {% if queue %}<form method="post" action="/tasks/{{ task.id }}/priority" class="priority-form">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <label>{{ t.priority }}
         <select name="priority">{% for p in priorities %}<option value="{{ p }}" {% if p == task.priority %}selected{% endif %}>{{ t['prio_' ~ p] }}</option>{% endfor %}</select>

@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "TM-4: Dependency-aware runner & safe chain execution (\"Queue up to here\")"
+next: Sync task-map instructions to Cairn
 updated: 2026-11-28
-updated_by: human
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -66,23 +66,30 @@ links:
 - [x] [GN-28] 2026-11-27 TM-1: Task map layout scaling (3-sweep barycenter crossing reduction with Auto/Manual toggle `M`, `task_map.transitive_edges()` hiding redundant arrows until hover/select, 3+ done folding per lane into expandable `"N done"` pill, Left→Right / Top→Bottom orientation `L`, spacing `[`/`]`, fit-to-screen `0`, Display popover & `localStorage` prefs; `tests/test_task_map.py`, `docs/task-map-roadmap.md`)
 - [x] [GN-29] 2026-11-28 UI-7: Visual smoke test for /chat (screenshots + button contrast)
   [Run the opt-in test](docs/design.md#chat-visual-smoke-test-ui-7-2026-11-28). Four Edge configurations passed and all four caught the restored global button color override.
-- [ ] [GN-33] TM-4: Dependency-aware runner & safe chain execution ("Queue up to here")
-  Bind tasks launched from the map to their project and checklist IDs. Hold dispatch until
-  predecessors are complete, preview the required agent tasks in dependency order before queueing,
-  stop at owner checkpoints, and pause descendants after a failure or cancellation.
-  Verify with runner and route tests for dispatch after merge, owner checkpoints, and failure propagation.
-  See the [TM-4 roadmap](docs/task-map-roadmap.md#tm-4-dependency-aware-runner--safe-chain-execution).
-  Recommended: codex, gpt-6.2-astra, high
-- [ ] [GN-30] Sync task-map `STATUS.md` rules to `AGENTS.md` in tracked repositories
-  Copy the updated task-map bullet from [the agent instructions template](docs/AGENT_INSTRUCTIONS.md)
-  into the `AGENTS.md` files for [Cairn](https://github.com/Marcobm1/Cairn/blob/main/AGENTS.md),
-  [honeypot-awareness](https://github.com/Marcobm1/honeypot-awareness/blob/main/AGENTS.md),
-  [townhall](https://github.com/Marcobm1/townhall/blob/main/AGENTS.md), and
-  [proyectos](https://github.com/Marcobm1/proyectos/blob/main/AGENTS.md) in their respective worktrees.
-  The rule is missing in all four default branches as of 2026-11-28. After merging, verify that
-  each file says to preserve `### Group (PFX)`, task IDs (`[ID]`), dependencies (`(after: …)`),
-  and subtasks indented by two spaces.
-  Recommended: codex, gpt-6.2-astra, low
+- [x] [GN-33] 2026-11-28 TM-4: Dependency-aware runner & safe chain execution ("Queue up to here")
+  Map runs wait for the source checklist. Chain preview, owner checkpoints, merge checks and
+  descendant cancellation were verified locally (341 passed, 6 skipped), including Edge. See [TM-4](docs/task-map-roadmap.md#tm-4-dependency-aware-runner--safe-chain-execution).
+- [ ] [GN-30] Sync task-map instructions to Cairn
+  Copy the task-map bullet from [Baton's agent instructions](https://github.com/Marcobm1/baton/blob/main/docs/AGENT_INSTRUCTIONS.md)
+  into [Cairn's instructions](https://github.com/Marcobm1/Cairn/blob/main/AGENTS.md).
+  Verify it preserves groups, IDs, dependency suffixes and two-space indented subtasks.
+  Repo: Marcobm1/Cairn
+  Recommended: codex, gpt-6.2-sol, low
+- [ ] [GN-41] Sync task-map instructions to honeypot-awareness
+  Copy the same task-map bullet into [AGENTS.md](https://github.com/Marcobm1/honeypot-awareness/blob/main/AGENTS.md)
+  and verify groups, IDs, dependency suffixes and subtask indentation.
+  Repo: Marcobm1/honeypot-awareness
+  Recommended: codex, gpt-6.2-sol, low
+- [ ] [GN-42] Sync task-map instructions to townhall
+  Copy the same task-map bullet into [AGENTS.md](https://github.com/Marcobm1/townhall/blob/main/AGENTS.md)
+  and verify groups, IDs, dependency suffixes and subtask indentation.
+  Repo: Marcobm1/townhall
+  Recommended: codex, gpt-6.2-sol, low
+- [ ] [GN-43] Sync task-map instructions to proyectos
+  Copy the same task-map bullet into [AGENTS.md](https://github.com/Marcobm1/proyectos/blob/main/AGENTS.md)
+  and verify groups, IDs, dependency suffixes and subtask indentation.
+  Repo: Marcobm1/proyectos
+  Recommended: codex, gpt-6.2-sol, low
 - [x] [GN-31] 2026-11-28 TM-2: Task map commit coalescing, 3-way conflict merge & live SSE sync
   [Save and live-update behavior](docs/project-detail.md). Verified in Edge and with pytest (335 passed, 2 skipped).
 - [x] [GN-32] 2026-11-28 TM-3: Task map ergonomics (context menus, keyboard/deep-links, Kanban board view, editable STATUS.md drawer)
@@ -121,6 +128,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-28 (codex): Shipped TM-4 with persisted map bindings, dependency-ordered queue previews, owner checkpoints, merge verification and downstream cancellation. Split GN-30 by destination worktree.
 - 2026-11-28 (codex): Added the opt-in `/chat` browser smoke test with a fake Gemini, four screenshots and a 3:1 button contrast check. Verified the skip path and the historical CSS regression.
 - 2026-11-28 (codex): Checked the four target `AGENTS.md` files on GitHub for GN-30. The task-map rule still needs to be added in each repository's own worktree.
 - 2026-11-28 (codex): Added the state board, mobile layout, context menus, keyboard navigation, task links and validated Markdown Apply.

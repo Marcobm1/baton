@@ -65,6 +65,10 @@ class Task:
     diff_stat: dict | None = None
     artifacts: list[dict] = field(default_factory=list)
 
+    status_project_id: str = ""
+    status_task_id: str = ""
+    predecessor_runs: list[str] = field(default_factory=list)
+
     @property
     def finished(self) -> bool:
         return self.status in ("done", "no-changes", "failed", "cancelled") or (
@@ -140,6 +144,9 @@ def _task_from_row(row: sqlite3.Row) -> Task:
         started_at=row["started_at"],
         review_rating=rating if isinstance(rating, dict) else None,
         diff_stat=diff_stat if isinstance(diff_stat, dict) else None,
+        status_project_id=row["status_project_id"] or "",
+        status_task_id=row["status_task_id"] or "",
+        predecessor_runs=json.loads(row["predecessor_runs"] or "[]"),
         artifacts=artifacts if isinstance(artifacts, list) else [],
     )
 
@@ -148,8 +155,8 @@ _UPSERT_SQL = """INSERT INTO tasks(
     id, repo, title, details, agent, where_kind, created_at, status, branch, base,
     worktree, pr_url, issue_url, message, finished_at, open_pr, model, steps, effort,
     summary, issue_number, reviewer, review, reviewer_model, reviewer_effort, merged,
-    priority, started_at, review_rating, diff_stat, artifacts
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    priority, started_at, review_rating, diff_stat, artifacts, status_project_id, status_task_id, predecessor_runs
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     repo = excluded.repo,
     title = excluded.title,
@@ -180,7 +187,10 @@ ON CONFLICT(id) DO UPDATE SET
     started_at = excluded.started_at,
     review_rating = excluded.review_rating,
     diff_stat = excluded.diff_stat,
-    artifacts = excluded.artifacts"""
+    artifacts = excluded.artifacts,
+    status_project_id = excluded.status_project_id,
+    status_task_id = excluded.status_task_id,
+    predecessor_runs = excluded.predecessor_runs"""
 
 
 class TaskStore:
@@ -219,7 +229,34 @@ class TaskStore:
             ).fetchall()
         return sorted((_task_from_row(r) for r in rows), key=lambda t: (t.status == "queued", queue_key(t)))
 
+    @staticmethod
+    def latest_map_runs(history: list[Task], pid: str) -> dict[str, str]:
+        latest = {}
+        for task in history:  # all() returns newest first
+            if task.status_project_id == pid:
+                latest.setdefault(task.status_task_id, task.id)
+        return latest
+
+    def map_activity(self, pid: str, repo: str) -> list[Task]:
+        with db_connect(self.dir) as conn:
+            self._maybe_migrate(conn)
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE status IN ('queued', 'running') AND "
+                "(status_project_id = ? OR (COALESCE(status_project_id, '') = '' AND repo = ? COLLATE NOCASE))",
+                (pid, repo),
+            ).fetchall()
+        return [_task_from_row(row) for row in rows]
+
     def save(self, task: Task) -> None:
+        self.save_many([task])
+
+    def save_many(self, tasks: list[Task]) -> None:
+        with self.lock, db_connect(self.dir) as conn:
+            self._maybe_migrate(conn)
+            for task in tasks:
+                self._save(conn, task)
+
+    def _save(self, conn, task):
         params = (
             task.id, task.repo, task.title, task.details, task.agent, task.where,
             task.created_at, task.status, task.branch, task.base, task.worktree,
@@ -231,19 +268,17 @@ class TaskStore:
             json.dumps(task.review_rating) if task.review_rating is not None else None,
             json.dumps(task.diff_stat) if task.diff_stat is not None else None,
             json.dumps(task.artifacts) if task.artifacts else None,
+            task.status_project_id, task.status_task_id, json.dumps(task.predecessor_runs),
         )
-        with self.lock:
-            with db_connect(self.dir) as conn:
-                self._maybe_migrate(conn)
-                conn.execute(_UPSERT_SQL, params)
-                try:
-                    conn.execute("SAVEPOINT record_task")
-                    self.ranking.record_task(task, conn=conn)
-                    conn.execute("RELEASE SAVEPOINT record_task")
-                except sqlite3.Error as exc:
-                    conn.execute("ROLLBACK TO SAVEPOINT record_task")
-                    conn.execute("RELEASE SAVEPOINT record_task")
-                    logging.getLogger(__name__).warning("Could not index task %s: %s", task.id, exc)
+        conn.execute(_UPSERT_SQL, params)
+        try:
+            conn.execute("SAVEPOINT record_task")
+            self.ranking.record_task(task, conn=conn)
+            conn.execute("RELEASE SAVEPOINT record_task")
+        except sqlite3.Error as exc:
+            conn.execute("ROLLBACK TO SAVEPOINT record_task")
+            conn.execute("RELEASE SAVEPOINT record_task")
+            logging.getLogger(__name__).warning("Could not index task %s: %s", task.id, exc)
 
     def record_task(self, task: Task):
         try:

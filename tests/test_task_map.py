@@ -578,3 +578,108 @@ def test_complete_item_keeps_id_before_date(tmp_path, monkeypatch):
     reparsed = task_map.parse_status_map(written[0], owner_tag="Marco")
     ap02 = next(t for t in reparsed.tasks if t.id == "AP-02")
     assert ap02.done is True and ap02.date is not None
+
+
+@pytest.mark.parametrize("failure", ["failed", "cancelled"])
+def test_chain_confirmation_checkpoint_and_descendant_cancellation(tmp_path, monkeypatch, failure):
+    source = MAP_STATUS.replace("[x] [AP-01] 2026-11-20", "[ ] [AP-01]").replace(
+        "### Release (RL)", "- [ ] [AP-03] Package (after: AP-02)\n\n### Release (RL)"
+    ).replace("(after: AP-02)\n\n## Blockers", "(after: AP-03)\n- [ ] [RL-02] Ship (after: RL-01)\n\n## Blockers")
+    project = _make_project(source)
+    async def load(self, force=False):
+        return [project], []
+
+    monkeypatch.setattr(Hub, "load", load)
+    app = create_app(Settings(data_dir=tmp_path, owner_tag="(Marco)", self_update=False))
+    ctx = app.state.ctx
+    monkeypatch.setattr(ctx.runner, "agents_available", lambda: {"codex": "", "claude-code": ""})
+    monkeypatch.setattr(ctx.runner.repos, "get", lambda repo: tmp_path)
+    monkeypatch.setattr(ctx, "catalog_fn", lambda agent: {"opus": {"efforts": ["medium"]}})
+    ctx.runner.set_overheated(True)
+    monkeypatch.setattr(Hub, "map_source", lambda self, pid: source)
+    client = TestClient(app)
+    url = f"/api/projects/me/demo/map/chain?target=RL-02&sha={project.status_sha}"
+    headers = {"X-Baton-CSRF": ctx.csrf_token}
+    assert client.post(url).status_code == 403
+    plan = client.post(url, headers=headers).json()
+    assert [t["title"][:7] for t in plan["tasks"]] == ["[AP-01]", "[AP-02]", "[AP-03]"]
+    assert plan["checkpoint"].startswith("RL-01")
+    assert ctx.store.all() == []
+    assert client.post(url + "&confirm=true", headers=headers, json={}).status_code == 409
+    monkeypatch.setattr(Hub, "map_source", lambda self, pid: source + "\n")
+    assert client.post(url + "&confirm=true", headers=headers, json=plan).status_code == 409
+    assert not ctx.store.all()
+    monkeypatch.setattr(Hub, "map_source", lambda self, pid: source)
+    first_url = url.replace("target=RL-02", "target=AP-01")
+    first_plan = client.post(first_url, headers=headers).json()
+    assert client.post(first_url + "&confirm=true", headers=headers, json=first_plan).status_code == 200
+    assert client.post(url + "&confirm=true", headers=headers, json=plan).status_code == 409
+    plan = client.post(url, headers=headers).json()
+    assert plan["tasks"][0]["existing"] == ctx.store.all()[0].id
+    assert client.post(url + "&confirm=true", headers=headers, json=plan).status_code == 200
+    assert client.post(url + "&confirm=true", headers=headers, json=plan).status_code == 409
+    runs = {t.status_task_id: t for t in ctx.store.all()}
+    assert set(runs) == {"AP-01", "AP-02", "AP-03"}
+    assert all(t.status_project_id == project.id and t.status == "queued" for t in runs.values())
+    root = runs["AP-01"]
+    if failure == "failed":
+        root.status = failure
+        ctx.store.save(root)
+        ctx.runner.dispatch()
+    else:
+        assert ctx.runner.cancel(root.id)
+    for item in ("AP-02", "AP-03"):
+        run = ctx.store.get(runs[item].id)
+        assert run.status == "cancelled" and run.started_at is None
+        assert root.status_task_id in run.message and failure in run.message
+
+
+def test_map_form_binding_and_completion_banner(tmp_path, monkeypatch):
+    project = _make_project(MAP_STATUS)
+
+    async def load(self, force=False):
+        return [project], []
+
+    monkeypatch.setattr(Hub, "load", load)
+    monkeypatch.setattr(Hub, "map_source", lambda self, pid: MAP_STATUS)
+    app = create_app(Settings(data_dir=tmp_path, owner_tag="(Marco)", self_update=False))
+    ctx = app.state.ctx
+    ctx.runner.set_overheated(True)
+    monkeypatch.setattr(ctx.runner, "agents_available", lambda: {
+        "codex": "", "opencode": "missing", "claude-code": "missing", "gemini": "missing", "local": "missing",
+    })
+    monkeypatch.setattr(ctx.runner.repos, "get", lambda repo: tmp_path)
+    monkeypatch.setattr(ctx, "catalog_fn", lambda agent: {})
+    client = TestClient(app)
+    binding = {"status_project_id": project.id, "status_task_id": "AP-02"}
+    page = client.get("/tasks/new", params=binding).text
+    assert 'name="status_task_id" value="AP-02"' in page
+    assert 'name="status_project_id" value="me/demo"' in page
+    assert 'value="cloud"' not in page
+    form = {**binding, "repo": project.repo, "title": "Renamed run", "csrf": ctx.csrf_token, "where": "local:codex"}
+    for overrides in [{"status_task_id": "RL-01"}, {"where": "cloud"}, {"status_task_id": "AP-01"}]:
+        assert client.post("/tasks", data=form | overrides).status_code in (400, 409)
+    assert not ctx.store.all()
+    response = client.post("/tasks", data=form, follow_redirects=False)
+    assert response.status_code == 303
+    run, = ctx.store.all()
+    assert run.status_task_id == "AP-02" and run.status_project_id == project.id
+    assert client.get("/api/projects/me/demo/map").json()["running"]["AP-02"]["id"] == run.id
+    run.status, run.pr_url = "done", "https://github.com/me/demo/pull/1"
+    ctx.store.save(run)
+    monkeypatch.setattr(Hub, "pr_merged", lambda self, repo, number: False)
+    assert client.get("/api/projects/me/demo/map").json()["merged_items"] == []
+    monkeypatch.setattr(Hub, "pr_merged", lambda self, repo, number: True)
+    assert client.get("/api/projects/me/demo/map").json()["merged_items"] == ["AP-02"]
+    assert ctx.store.get(run.id).merged
+    assert 'action="/p/me/demo/check"' in client.get(response.headers["location"]).text
+    assert client.get("/api/projects/me/demo/map").json()["merged_items"] == ["AP-02"]
+
+
+def test_checked_intermediate_cannot_hide_an_owner_checkpoint():
+    source = MAP_STATUS.replace("## Blockers", "- [x] [RL-02] Package (after: RL-01)\n"
+                                "- [ ] [RL-03] Ship (after: RL-02)\n\n## Blockers")
+    items = task_map.execution_items(source, "(Marco)")
+    order = task_map.execution_order(items, "RL-03")
+    assert [item.id for item in order if not item.done] == ["AP-02", "RL-01", "RL-03"]
+    assert next(item.id for item in order if item.owner and not item.done) == "RL-01"

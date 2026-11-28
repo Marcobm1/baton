@@ -297,6 +297,41 @@
     return { repo: m[1], rest: rest };
   }
 
+  async function queueChain(t) {
+    var url = mapUrl + "/chain?" + new URLSearchParams({target: t.id, sha: state.sha});
+    var headers = {"Content-Type": "application/json", "X-Baton-CSRF": csrf};
+    try {
+      var response = await fetch(url, {method: "POST", headers: headers});
+      var plan = await response.json();
+      if (!response.ok) throw new Error(plan.detail);
+      var lines = plan.tasks.map(function (step) {
+        return (step.existing ? S.in_queue + " " : "") + step.title + " (" + [step.repo, step.agent, step.model, step.effort].filter(Boolean).join(", ") + ")";
+      });
+      var dialog = document.getElementById("tm-chain");
+      if (dialog.open) return;
+      var list = dialog.querySelector("ol");
+      list.replaceChildren();
+      lines.forEach(function (line) {
+        var li = document.createElement("li");
+        li.textContent = line;
+        list.appendChild(li);
+      });
+      var checkpoint = dialog.querySelector("p");
+      checkpoint.hidden = !plan.checkpoint;
+      checkpoint.textContent = S.checkpoint + " " + (plan.checkpoint || "");
+      dialog.querySelector('[value="confirm"]').disabled = !plan.tasks.some(function (step) { return !step.existing; });
+      dialog.returnValue = "";
+      dialog.showModal();
+      await new Promise(function (resolve) { dialog.addEventListener("close", resolve, {once: true}); });
+      if (dialog.returnValue !== "confirm") return;
+      response = await fetch(url + "&confirm=true", {method: "POST", headers: headers, body: JSON.stringify(plan)});
+      if (!response.ok) throw new Error((await response.json()).detail);
+      await reloadFromServer(true);
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  }
+
   function launchHref(t) {
     var p1 = parseRecommended(t.desc || "");
     var p2 = parseRepoLine(p1.rest);
@@ -320,6 +355,8 @@
     }
     var q = new URLSearchParams();
     q.set("repo", targetRepo || state.repo);
+    q.set("status_project_id", state.pid);
+    q.set("status_task_id", t.id);
     q.set("title", "[" + t.id + "] " + t.title);
     q.set("details", description);
     if (rec && rec.agent) {
@@ -352,6 +389,7 @@
     state.enabled = !!payload.enabled;
     state.can_write = !!payload.can_write;
     state.running = liveStatus && liveStatus.sha === state.sha ? liveStatus.running : payload.running || {};
+    state.merged_items = payload.merged_items || [];
     state.problems = payload.problems || [];
     state.next_markdown = payload.next_markdown || "";
     confirmed = cloneData(state);
@@ -590,7 +628,7 @@
       var data = await res.json();
       if (version !== editVersion || sending || pending || pointerDown || mdpEl.open || editingField()) {
         refreshNeeded = true;
-      } else if (data.sha !== confirmed.sha || force) {
+      } else if (data.sha !== confirmed.sha || force || JSON.stringify(data.merged_items) !== JSON.stringify(confirmed.merged_items)) {
         undoStack.length = redoStack.length = 0;
         applyServerPayload(data);
         ui.syncState = "saved";
@@ -616,6 +654,7 @@
       var live = JSON.parse(event.data);
       liveStatus = live;
       if (JSON.stringify(live.running) !== JSON.stringify(confirmed.running)) {
+        if (Object.keys(confirmed.running || {}).some(function (id) { return !live.running[id]; })) refreshNeeded = true;
         confirmed.running = state.running = live.running;
         redrawNeeded = true;
         // Cards can update while a side-panel field has uncommitted text.
@@ -1362,6 +1401,9 @@
         '<div class="tm-c-top"><span class="tm-c-id">' + esc(t.id) + '</span><span class="tm-badge">' + esc(statusLabel(st)) + "</span></div>" +
         '<div class="tm-c-title" title="' + esc(t.title) + '">' + esc(t.title) + "</div>" +
         '<div class="tm-c-foot">' +
+          (editable && !t.done && !t.owner && (state.merged_items || []).includes(t.id) ?
+            '<button type="button" class="tm-c-subs" data-act="merged-done" data-id="' + esc(t.id) + '" title="' +
+            esc(S.merged_pending) + '">' + esc(S.mark_done) + '</button>' : "") +
           (subs.length ? '<button type="button" class="tm-c-subs" data-act="subs" data-id="' + esc(t.id) + '" title="' + esc(S.toggle_subs) + '">☑ ' + subsDone + "/" + subs.length + " " + (open ? "▴" : "▾") + "</button>" : "") +
           (t.owner ? "<span>" + esc(state.owner_tag || "(Owner)") + "</span>" : "") +
           (ag ? '<span class="tm-c-agent">· ' + esc(ag) + "</span>" : "") +
@@ -1500,6 +1542,7 @@
         }).join("") +
         (editable ? '<div class="tm-subrow"><span style="width:13px"></span><input type="text" id="tm-p-subnew" placeholder="' + esc(S.sub_add) + '"></div>' : "") +
       "</div>" +
+      (!t.done && !t.owner && (state.merged_items || []).includes(t.id) ? '<p>' + esc(S.merged_pending) + "</p>" : "") +
       '<div class="tm-p-actions">' +
         (editable ? '<button type="button" class="tm-btn" id="tm-p-done">' + esc(t.done ? S.reopen : S.mark_done) + "</button>" : "") +
         (runUrl ? '<a class="tm-btn primary" href="' + esc(runUrl) + '">' + esc(S.view_active) + "</a>" : "") +
@@ -1754,6 +1797,7 @@
     var act = b.dataset.act;
     if (act === "add-lane") newTask(b.dataset.g);
     else if (act === "plus") newTask(T(b.dataset.id).group, [b.dataset.id]);
+    else if (act === "merged-done") setDone(b.dataset.id, true);
     else if (act === "subs") {
       var id = b.dataset.id;
       if (ui.expanded.has(id)) ui.expanded.delete(id); else ui.expanded.add(id);
@@ -2094,6 +2138,7 @@
     }
     if (card) {
       var t = T(card.dataset.id);
+      action(S.chain, function () { queueChain(t); }, t.done || pending || sending);
       action(S.launch, function () { location.assign(launchHref(t)); }, statusOf(t) !== "ready");
       if (canEdit()) {
         action(t.done ? S.reopen : S.mark_done, function () { setDone(t.id, !t.done); });
@@ -2135,7 +2180,7 @@
 
   // --------------------------------------------------------- keyboard shortcuts
   document.addEventListener("keydown", function (e) {
-    if (helpEl.open || mdpEl.open || menuEl.matches(":popover-open")) return;
+    if (helpEl.open || mdpEl.open || document.getElementById("tm-chain").open || menuEl.matches(":popover-open")) return;
     var typing = e.target && e.target.closest("input,textarea,select");
     var mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === "z" && !typing) {

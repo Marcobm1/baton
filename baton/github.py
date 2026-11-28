@@ -404,6 +404,19 @@ class Hub:
             "Authorization": f"Bearer {self.settings.github_token}",
         }
 
+    def pr_merged(self, repo: str, number: int) -> bool:
+        response = httpx.get(f"{API}/repos/{repo}/pulls/{number}/merge", headers=self._sync_headers(), timeout=10)
+        return response.status_code == 204
+
+    def map_source(self, pid: str) -> str:
+        """Read the current checklist from the project repository's default branch."""
+        owner, repo, *project = pid.split("/")
+        path = f"projects/{project[0]}/STATUS.md" if project else "STATUS.md"
+        headers = {**self._sync_headers(), "Accept": "application/vnd.github.raw"}
+        response = httpx.get(f"{API}/repos/{owner}/{repo}/contents/{path}", headers=headers, timeout=10)
+        response.raise_for_status()
+        return response.text
+
     def open_pr(self, repo: str, branch: str, base: str, title: str, body: str,
                 draft: bool = True) -> str:
         """Open a pull request, a draft if asked (and the plan allows it)."""

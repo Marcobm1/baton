@@ -7,6 +7,7 @@ import json
 import time
 from typing import Literal
 from urllib.parse import quote
+from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, Form, HTTPException, Query, Request
@@ -21,6 +22,7 @@ from ..task_models import opencode_groups
 from ..task_report import format_task_log, task_report
 from ..task_store import PRIORITIES, Task, UpdateInProgress, new_id
 from ..townhall_bridge import townhall_task_draft
+from ..task_map import execution_items, execution_order
 from .deps import CTX, AppContext
 
 router = APIRouter()
@@ -67,6 +69,8 @@ async def task_new(
     agent: str = "",
     model: str = "",
     effort: str = "",
+    status_project_id: str = "",
+    status_task_id: str = "",
     followup: str = "",
     from_thread: str = "",
     from_townhall: str = "",
@@ -140,7 +144,8 @@ async def task_new(
         local=local, available=available, oc_models=oc_list, oc_groups=oc_groups,
         oc_selected=oc_default, oc_payg_initial=oc_default.startswith("opencode/"),
         catalogs=catalogs,
-        cloud=ctx.settings.cloud_tasks, error=error[:300], auto_merge=ctx.settings.auto_merge,
+        status_project_id=status_project_id, status_task_id=status_task_id,
+        cloud=ctx.settings.cloud_tasks and not status_task_id, error=error[:300], auto_merge=ctx.settings.auto_merge,
         has_token=bool(ctx.settings.github_token), priorities=PRIORITIES,
         max_parallel=ctx.settings.max_parallel, draft_title=title, draft_details=details,
         initial=initial, followup=followup, details_limit=details_limit,
@@ -164,6 +169,8 @@ async def task_detail(request: Request, task_id: str, ctx: AppContext = CTX):
                     break
         except (GitHubError, httpx.RequestError):
             report_error = True
+    if task.status_task_id and task.finished:
+        await asyncio.to_thread(ctx.runner.refresh_map_merge, task)
     log = ctx.store.read_log(task.id)
     # A finished task whose item is still unchecked in STATUS.md (typical
     # after "no changes": it was already done) can be ticked from here.
@@ -173,9 +180,14 @@ async def task_detail(request: Request, task_id: str, ctx: AppContext = CTX):
         here = task.repo.casefold()
         for project in projects:
             # Its own repository, or another project's item that runs here (Repo: line).
-            item = next((i for i in project.status.sections.upcoming
-                         if i.title.casefold() == task.title.strip().casefold()
-                         and here in (project.repo.casefold(), i.repo.casefold())), None)
+            if task.status_task_id:
+                if project.id != task.status_project_id or not task.merged:
+                    continue
+                item = next((i for i in project.status.sections.upcoming if i.task_id == task.status_task_id), None)
+            else:
+                item = next((i for i in project.status.sections.upcoming
+                             if i.title.casefold() == task.title.strip().casefold()
+                             and here in (project.repo.casefold(), i.repo.casefold())), None)
             if item:
                 pending = {"project": project, "item": item}
                 break
@@ -303,6 +315,8 @@ async def task_create(
     model: str = Form(""),
     effort: str = Form(""),
     priority: str = Form("normal"),
+    status_project_id: str = Form(""),
+    status_task_id: str = Form(""),
     followup: str = Form(""),
     ctx: AppContext = CTX,
 ):
@@ -325,7 +339,21 @@ async def task_create(
     if not title:
         raise HTTPException(400, "A title is needed")
 
+    if status_project_id or status_task_id:
+        project = next((p for p in projects if p.id == status_project_id), None)
+        if not project or where == "cloud":
+            raise HTTPException(400, "Map tasks require a tracked project and local runner.")
+        try:
+            items = execution_items(project.status.source, project.status.owner_tag)
+            order = execution_order(items, status_task_id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        if not order or order[-1].owner or (order[-1].repo or project.repo).casefold() != repo.casefold():
+            raise HTTPException(409, "Checklist item is complete, owner-only, or belongs to another repository.")
+
     def back(msg: str):
+        if status_task_id:
+            raise HTTPException(409, msg)
         return RedirectResponse(f"/tasks/new?repo={quote(repo)}&error={quote(msg)}",
                                 status_code=303)
 
@@ -369,13 +397,17 @@ async def task_create(
         model = original.model if original and original.agent == agent == "local" else ""
         effort = ""
     task_id = new_id(title)
+    if status_task_id:
+        task_id += "-" + uuid4().hex[:12]
     task = Task(id=task_id, repo=repo, title=title, details=details, agent=agent,
                 where="local", created_at=time.time(), branch=f"baton/{task_id}",
                 base=by_repo[repo].branch, model=model, effort=effort,  # always ends in a PR
-                priority=priority)
+                priority=priority, status_task_id=status_task_id, status_project_id=status_project_id)
     # Queued; it starts now if its repository and a slot are free.
     try:
-        ctx.runner.submit(task)
+        await asyncio.to_thread(ctx.runner.submit, task)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     except UpdateInProgress as exc:
         raise HTTPException(503, ctx.t["update_testing"]) from exc
     return RedirectResponse(f"/tasks/{task.id}", status_code=303)

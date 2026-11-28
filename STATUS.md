@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
 updated: 2026-11-28
-updated_by: codex
+updated_by: human
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -90,7 +90,7 @@ links:
   Recommended: codex, gpt-6.2-astra, high
 - [x] [GN-34] 2026-11-27 (Marco) Try `web_search` from `/chat` with a local model in **Internet + tools** mode (needs your sign-in)
 - [x] [GN-35] 2026-11-28 (Marco) Build `baton-agents-sandbox:latest` (`docker build -f docker/agents-sandbox.Dockerfile -t baton-agents-sandbox:latest .`) and run `baton sandbox-login <claude-code|codex|gemini>` for the CLIs you want to use in **All permissions** mode on `/chat`
-- [ ] [GN-36] (Marco) Decide remaining layout question from the UI review: local chat without models showing the same composer with a setup notice instead of the old "Agent" form
+- [x] [GN-36] 2026-11-28 (Marco) Decide remaining layout question from the UI review: local chat without models showing the same composer with a setup notice instead of the old "Agent" form
 - [ ] [GN-37] (Marco) Install Huo as a PWA on your phone over Tailscale ("Add to Home Screen") and verify standalone launch and icon
 - [ ] [GN-38] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify

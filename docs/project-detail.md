@@ -147,3 +147,8 @@ Key design choices and trade-offs:
   description, subtasks, and `Recommended:` agent/model/effort.
 - **Small screens:** below `640 px`, the Map tab shows a notice pointing to the
   **Next** list view, with an opt-in button to inspect the canvas anyway.
+
+Planned follow-up phases (layout scaling, debounced/3-way-merged commits, SSE,
+context menus/Kanban view, and dependency-aware chain execution) are tracked in
+[docs/task-map-roadmap.md](task-map-roadmap.md).
+

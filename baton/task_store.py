@@ -210,6 +210,15 @@ class TaskStore:
             row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         return _task_from_row(row) if row else None
 
+    def active_for_repo(self, repo: str) -> list[Task]:
+        with db_connect(self.dir) as conn:
+            self._maybe_migrate(conn)
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE repo = ? COLLATE NOCASE "
+                "AND status IN ('queued', 'running') ORDER BY created_at DESC", (repo,)
+            ).fetchall()
+        return sorted((_task_from_row(r) for r in rows), key=lambda t: (t.status == "queued", queue_key(t)))
+
     def save(self, task: Task) -> None:
         params = (
             task.id, task.repo, task.title, task.details, task.agent, task.where,

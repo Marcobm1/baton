@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import time
 from typing import Literal
 from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
 from .. import ranking_view, task_map
 from ..github import GitHubError
@@ -155,6 +158,40 @@ async def api_project_map(pid: str, refresh: int = 0, ctx: AppContext = CTX):
     return JSONResponse(_map_payload(proj, active, ctx))
 
 
+@router.get("/api/projects/{pid:path}/map/stream")
+async def api_project_map_stream(request: Request, pid: str, ctx: AppContext = CTX):
+    projects, _ = await ctx.hub.load()
+    proj = next((p for p in projects if p.id == pid), None)
+    if proj is None:
+        raise HTTPException(404, "Unknown project")
+
+    async def stream():
+        last_sha, last_running = None, None
+        current = proj
+        last_sent = time.monotonic()
+        while not await request.is_disconnected():
+            sha = current.status_sha
+            if sha != last_sha:
+                parsed = task_map.parse_status_map(current.status.source, owner_tag=current.status.owner_tag)
+            active = await asyncio.to_thread(ctx.store.active_for_repo, current.repo)
+            running = task_map.match_running_tasks(parsed.tasks, active)
+            if sha != last_sha or running != last_running:
+                yield f"event: status\ndata: {json.dumps({'sha': sha, 'running': running})}\n\n"
+                last_sha, last_running = sha, running
+                last_sent = time.monotonic()
+            elif time.monotonic() - last_sent >= ctx.task_sse_keepalive:
+                yield ": keepalive\n\n"
+                last_sent = time.monotonic()
+            await asyncio.sleep(max(0.02, ctx.task_sse_poll))
+            projects, _ = await ctx.hub.load()
+            current = next((p for p in projects if p.id == pid), None)
+            if current is None:
+                return
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @router.post("/api/projects/{pid:path}/map/enable")
 async def api_project_map_enable(request: Request, pid: str, ctx: AppContext = CTX):
     ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
@@ -216,6 +253,10 @@ async def api_project_map_save(request: Request, pid: str, ctx: AppContext = CTX
 
     try:
         groups, tasks = task_map.validate_map_payload(body.get("groups"), body.get("tasks"))
+        local = task_map.TaskMap(groups=groups, tasks=tasks, enabled=True)
+        base = body.get("base")
+        if base is not None and not isinstance(base, dict):
+            raise ValueError("Invalid base map.")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -224,24 +265,47 @@ async def api_project_map_save(request: Request, pid: str, ctx: AppContext = CTX
     if proj is None:
         raise HTTPException(404, "Unknown project")
 
-    new_source = task_map.apply_map_to_source(
-        proj.status.source, groups, tasks, owner_tag=proj.status.owner_tag
-    )
-    try:
-        await ctx.hub.save_task_map(proj, new_source, sha, commit_msg)
-    except ValueError as exc:
-        fresh_projects, _ = await ctx.hub.load(force=True)
-        fresh = next((p for p in fresh_projects if p.id == pid), None)
+    def conflict(detail):
         payload = None
-        if fresh is not None:
-            _, active = _active_tasks_for(fresh.repo, ctx)
-            payload = _map_payload(fresh, active, ctx)
-        return JSONResponse({"detail": str(exc), "conflict": True, "map": payload}, status_code=409)
-    except (GitHubError, httpx.RequestError) as exc:
-        raise HTTPException(502, str(exc)) from exc
+        if proj is not None:
+            _, active = _active_tasks_for(proj.repo, ctx)
+            payload = _map_payload(proj, active, ctx)
+        return JSONResponse({"detail": detail, "conflict": True, "map": payload}, status_code=409)
+
+    merged_changes = False
+    for attempt in range(2):
+        # A following batch may have been edited on top of an in-flight save.
+        # Its base still describes what the user actually saw.
+        if base is not None and sha == proj.status_sha:
+            remote = task_map.parse_status_map(proj.status.source, owner_tag=proj.status.owner_tag)
+            current = remote.to_dict()
+            if attempt or any(base.get(key) != current[key] for key in ("groups", "tasks")):
+                try:
+                    original = task_map.TaskMap(*task_map.validate_map_payload(base.get("groups"), base.get("tasks")))
+                    merged = task_map.merge_task_maps(original, local, remote)
+                except ValueError as exc:
+                    return conflict(str(exc))
+                merged_changes = True
+                groups, tasks = merged.groups, merged.tasks
+                if groups == remote.groups and tasks == remote.tasks:
+                    break
+        new_source = task_map.apply_map_to_source(
+            proj.status.source, groups, tasks, owner_tag=proj.status.owner_tag
+        )
+        try:
+            await ctx.hub.save_task_map(proj, new_source, sha, commit_msg)
+            break
+        except ValueError as exc:
+            fresh_projects, _ = await ctx.hub.load(force=True)
+            proj = next((p for p in fresh_projects if p.id == pid), None)
+            if attempt or base is None or proj is None:
+                return conflict(str(exc))
+            sha = proj.status_sha
+        except (GitHubError, httpx.RequestError) as exc:
+            raise HTTPException(502, str(exc)) from exc
 
     _, active = _active_tasks_for(proj.repo, ctx)
-    return JSONResponse(_map_payload(proj, active, ctx))
+    return JSONResponse(dict(_map_payload(proj, active, ctx), merged=merged_changes))
 
 
 @router.post("/p/{pid:path}/done")

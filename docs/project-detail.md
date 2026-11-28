@@ -136,24 +136,34 @@ Key design choices and trade-offs:
   cycles immediately, and `baton/task_map.py` enforces strict three-colour DFS
   cycle rejection on every write (`400 Bad Request`). Hand-edited `STATUS.md`
   files with a cycle degrade safely on read and surface a format warning.
-- **Immediate commits with optimistic blob-SHA locking:** each map edit posts
-  to `POST /api/projects/{pid}/map` with CSRF protection (`X-Baton-CSRF`) and
-  the expected Git blob SHA. On success, the cached `Project` is updated in
-  place so rapid consecutive edits stay responsive; on a `409 Conflict` (e.g.
-  an agent updated `STATUS.md` concurrently), Baton reloads from GitHub and
-  returns the latest map so no work is overwritten.
+- **Batched commits.** A burst of edits produces one commit 1.5 seconds after
+  the last edit. **Save now**, hiding the tab and leaving the page flush the
+  pending batch. The browser sends the CSRF header, the base snapshot and the
+  expected blob SHA. Small requests use `fetch` with `keepalive`. When a second
+  batch is waiting for a response or a request exceeds the 64 KiB keepalive
+  limit, closing the page can prompt you to wait.
+- **Concurrent edits.** After a stale SHA, Baton compares the base, edited and
+  current maps by group and task ID. For example, completing `AP-01` and
+  editing `UI-03` can coexist. Baton validates the combined dependencies and
+  order, then retries once against the latest file, preserving its other
+  sections. Incompatible edits or another race return the current map with
+  HTTP 409. The editor displays a conflict notice and reloads that version.
 - **Top-level progress only:** `Status.tasks_done` / `Status.tasks_total` count
   only column-0 checkboxes so indented subtasks (`  - [ ] …`) do not inflate
   the project progress bar.
 - **Live queue and launch bridge:** active (`running` / `queued`) Baton tasks
   whose title contains `[ID]` (or matches the task title) highlight their card
-  live on the map with a direct link to `/tasks/{id}`. Clicking **Launch
+  with a direct link to `/tasks/{id}`. The map's SSE endpoint sends an initial
+  snapshot and subsequent changes, including a cleared highlight when a run
+  finishes. A changed blob SHA refreshes the map after pending edits settle.
+  Direct GitHub edits become visible when the shared Hub cache refreshes.
+  Clicking **Launch
   task…** on a ready card opens `/tasks/new` prefilled with `[ID] <title>`,
   description, subtasks, and `Recommended:` agent/model/effort.
 - **Small screens:** below `640 px`, the Map tab shows a notice pointing to the
   **Next** list view, with an opt-in button to inspect the canvas anyway.
 
-Planned follow-up phases (TM-2 commit coalescing/3-way merge/SSE, TM-3 context
-menus/Kanban view, and TM-4 dependency-aware chain execution) are tracked in
+Planned follow-up phases (TM-3 context menus/Kanban view and TM-4
+dependency-aware chain execution) are tracked in
 [docs/task-map-roadmap.md](task-map-roadmap.md).
 

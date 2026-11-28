@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
 updated: 2026-11-28
-updated_by: human
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -76,13 +76,8 @@ links:
   you plan to enable the Map tab (`Marcobm1/Cairn`, `Marcobm1/honeypot-awareness`, `Marcobm1/townhall`,
   `Marcobm1/proyectos`). Verify: every repo's `AGENTS.md` documents preserving `[ID]` and `(after: …)`.
   Recommended: codex, gpt-6.2-astra, low
-- [ ] TM-2: Task map commit coalescing, 3-way conflict merge & live SSE sync
-  Cut GitHub commit noise and keep the map live ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)):
-  add a ~1.5 s trailing debounce for rapid consecutive edits (flushing on unload), implement semantic
-  3-way merge by task/group ID in `baton/task_map.py` on `409 Conflict` so non-overlapping agent edits
-  merge automatically, and add `/api/projects/{pid}/map/stream` SSE for live running/queued status updates.
-  Verify: pytest coverage for 3-way merge (clean merge vs same-task conflict) and SSE status events.
-  Recommended: codex, gpt-6.2-astra, high
+- [x] 2026-11-28 TM-2: Task map commit coalescing, 3-way conflict merge & live SSE sync
+  [Save and live-update behavior](docs/project-detail.md). Verified in Edge and with pytest (335 passed, 2 skipped).
 - [ ] TM-3: Task map ergonomics (context menus, keyboard/deep-links, Kanban board view, editable STATUS.md drawer)
   Add right-click menus on cards/arrows/lanes, arrow-key navigation, `#ID` URL hash deep-links, `?`
   shortcuts modal, an editable `## Next` Apply drawer, and a **Graph / Board** toggle that turns mobile
@@ -112,6 +107,7 @@ links:
 - Confirm mode on the host runs approved commands as the host Windows user (Gemini Confirm covers commands only; Codex approved commands write even under `sandbox: "read-only"`).
 
 ## Decisions
+- 2026-11-28 (TM-2): Group map edits within 1.5 seconds. Keep the blob-SHA guard and retry once when the base, local and remote maps can be merged by ID.
 - 2026-11-27 (Marco): Interactive per-project task map (`?tab=map`, `baton/task_map.py`, [docs/project-detail.md](docs/project-detail.md)) stores its graph directly inside `STATUS.md` `## Next` (`### Group (PFX)`, `[ID]`, `(after: …)`, indented subtasks) so humans and agents share one source of truth. Legacy files open in read-only preview until explicitly converted via **Enable task map**; edits commit immediately with blob-SHA locking and 409 reload recovery; layout is automatic by dependency depth (no stored coordinates); progress bars count only top-level tasks so subtasks do not inflate completion.
 - 2026-11-27 (Marco): Town Hall `/townhall` (both instant sessions and recurring schedules) uses a dynamic 2–4 participant picker with no pre-selected models (2 empty slots by default, family → model cascade, live remaining quota windows shown per family, dynamic moderator selector, and consensus OpenCode guest kept independently optional alongside up to 4 manual participants; [docs/townhall.md](docs/townhall.md)).
 - 2026-11-27 (Marco): Multi-CLI Docker sandbox for **All permissions** in `/chat` (`docker/agents-sandbox.Dockerfile`, `baton/sandbox.py`, `baton sandbox-login`, [docs/agents-chat.md](docs/agents-chat.md)): Claude Code, Codex, and Gemini (`agy`) run inside disposable hardened containers (`--cap-drop=ALL`, `no-new-privileges`, `--pids-limit=256`, `--memory=4g`) mounting only `/workspace` plus one dedicated Docker named auth volume per CLI (`baton-sandbox-{claude,codex,gemini}-auth`). Baton never reads, stores, or forwards credentials; hardlinks and abliterated models remain refused (`403`).
@@ -129,6 +125,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-28 (codex): TM-2 groups rapid map edits, retries compatible concurrent writes once, and streams task status and STATUS.md revisions to open maps.
 - 2026-11-27 (antigravity): Shipped TM-1 task map layout scaling: 3-sweep barycenter crossing reduction (`M`), `task_map.transitive_edges()` redundant arrow hiding, 3+ done folding per lane, Top→Bottom orientation (`L`), spacing (`[`/`]`), fit-to-screen (`0`), Display popover, and `localStorage` prefs (`baton/task_map.py`, `baton/static/task-map.{css,js}`, `baton/routes/projects.py`, `baton/templates/project.html`, `baton/i18n.py`, `tests/test_task_map.py`, `docs/project-detail.md`, `docs/task-map-roadmap.md`).
 - 2026-11-27 (antigravity): Added future task-map improvement & optimization roadmap (`TM-1` – `TM-4`) in `docs/task-map-roadmap.md` and `STATUS.md`.
 - 2026-11-27 (antigravity): Shipped the interactive per-project task map (`?tab=map`, `baton/task_map.py`, `baton/static/task-map.{css,js}`, `baton/routes/projects.py`, `baton/templates/project.html`, `baton/status.py`, `baton/project_detail.py`, `baton/github.py`, `baton/i18n.py`, `tests/test_task_map.py`, `tests/test_design.py`, `docs/project-detail.md`, `docs/AGENT_INSTRUCTIONS.md`).

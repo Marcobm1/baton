@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "TM-4: Dependency-aware runner & safe chain execution (\"Queue up to here\")"
 updated: 2026-11-28
-updated_by: codex
+updated_by: human
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -98,6 +98,7 @@ links:
   New task → Gemini, model `gemini-3.8-flash` (low) on a small change in this
   repo; check auto-merge without review, readable log, summary, Quotas, and Telegram notice.
 - [x] [GN-40] 2026-11-28 (Marco) Live smoke checks: queue two tasks on one repo and check a blocked card (hub: Cuantización → IA local)
+- [ ] [GN-41] Nueva tarea (after: GN-33)
 
 ## Blockers
 - Confirm mode on the host runs approved commands as the host Windows user (Gemini Confirm covers commands only; Codex approved commands write even under `sandbox: "read-only"`).

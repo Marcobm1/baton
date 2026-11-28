@@ -43,6 +43,7 @@ def _map_payload(p, active, ctx: AppContext) -> dict:
         "owner_tag": p.status.owner_tag,
         "groups": [g.to_dict() for g in parsed.groups],
         "tasks": [t.to_dict() for t in parsed.tasks],
+        "transitive_edges": [list(edge) for edge in task_map.transitive_edges(parsed.tasks)],
         "problems": parsed.problems,
         "running": running,
         "next_markdown": next_md,

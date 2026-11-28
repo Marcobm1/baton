@@ -7,7 +7,7 @@ truth with zero external build steps.
 
 ---
 
-## TM-1: Layout clarity & scaling for larger graphs
+## TM-1: Layout clarity & scaling for larger graphs — shipped (2026-11-27)
 
 **Problem:** Once a project grows past ~15–20 tasks, raw file-order placement
 introduces crossing arrows, redundant transitive links (`A → C` when `A → B → C`

@@ -9,8 +9,11 @@
   var S = JSON.parse(strEl.textContent || "{}");
   var csrf = root.dataset.csrf || "";
 
-  var W = 216, H = 86, GX = 66, GY = 12, COLW = W + GX;
+  var W = 216, H = 86, GY = 12;
   var LANE_HEAD = 30, LANE_PAD = 12, BAND_GAP = 14, LEFT = 20, TOP = 16, SUB_H = 22;
+  var FOLD_DONE_MIN = 3;
+  var GAP_MIN = 34, GAP_MAX = 146, GAP_STEP = 16;
+  var PREFS_KEY = "baton-tm-prefs";
   var NS = "http://www.w3.org/2000/svg";
 
   var state = JSON.parse(dataEl.textContent || "{}");
@@ -21,14 +24,42 @@
   var saveChain = Promise.resolve();
   var pendingSaves = 0;
 
+  function loadPrefs() {
+    try {
+      return JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") || {};
+    } catch (e) {
+      return {};
+    }
+  }
+  function savePrefs() {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({
+        orientation: ui.orientation,
+        autoOrder: ui.autoOrder,
+        gap: ui.gap,
+        compact: ui.compact,
+        hideDone: ui.hideDone,
+        foldDone: ui.foldDone,
+        hideTransitive: ui.hideTransitive,
+      }));
+    } catch (e) {}
+  }
+
+  var savedPrefs = loadPrefs();
   var ui = {
     selected: null,
     selEdge: null,
     hover: null,
-    hideDone: false,
-    compact: true,
+    hideDone: !!savedPrefs.hideDone,
+    compact: savedPrefs.compact !== false,
+    foldDone: savedPrefs.foldDone !== false,
+    hideTransitive: savedPrefs.hideTransitive !== false,
+    autoOrder: savedPrefs.autoOrder !== false,
+    orientation: savedPrefs.orientation === "tb" ? "tb" : "lr",
+    gap: typeof savedPrefs.gap === "number" ? Math.min(GAP_MAX, Math.max(GAP_MIN, savedPrefs.gap)) : 66,
     zoom: 1,
     expanded: new Set(),
+    unfoldedLanes: new Set(),
     filter: "",
     md: false,
     syncState: "", // "", "saving", "saved", "err"
@@ -181,6 +212,56 @@
     up(id);
     down(id);
     return set;
+  }
+
+  function matchesFilter(t, q) {
+    if (!q) return true;
+    return (t.id + " " + t.title + " " + (t.desc || "")).toLowerCase().indexOf(q) !== -1;
+  }
+
+  // Exact DAG transitive-edge detection on the currently visible subgraph:
+  // edge (dep -> task) is transitive iff another visible dependency of `task`
+  // already reaches `dep`.
+  function computeTransitiveEdges(visTasks) {
+    var byId = {};
+    visTasks.forEach(function (t) { byId[t.id] = t; });
+    var ancestors = {};
+    var visiting = new Set();
+
+    function getAnc(tid) {
+      if (ancestors[tid]) return ancestors[tid];
+      if (visiting.has(tid)) return new Set();
+      visiting.add(tid);
+      var acc = new Set();
+      var task = byId[tid];
+      if (task) {
+        (task.deps || []).forEach(function (dep) {
+          if (byId[dep]) {
+            acc.add(dep);
+            getAnc(dep).forEach(function (a) { acc.add(a); });
+          }
+        });
+      }
+      visiting.delete(tid);
+      ancestors[tid] = acc;
+      return acc;
+    }
+    visTasks.forEach(function (t) { getAnc(t.id); });
+
+    var redundant = new Set();
+    visTasks.forEach(function (t) {
+      var validDeps = (t.deps || []).filter(function (d) { return !!byId[d]; });
+      validDeps.forEach(function (dep) {
+        for (var i = 0; i < validDeps.length; i++) {
+          var other = validDeps[i];
+          if (other !== dep && ancestors[other] && ancestors[other].has(dep)) {
+            redundant.add(dep + "->" + t.id);
+            break;
+          }
+        }
+      });
+    });
+    return redundant;
   }
 
   function parseRecommended(desc) {
@@ -343,7 +424,6 @@
           render();
           return;
         }
-        // Roll back optimistic edit on validation or GitHub error.
         state.groups = cloneData(confirmed).groups;
         state.tasks = cloneData(confirmed).tasks;
         fixSelection();
@@ -524,20 +604,122 @@
     });
   }
 
-  // --------------------------------------------------------- layout engine
-  function visible(t) {
-    return !(ui.hideDone && t.done);
+  // --------------------------------------------------------- TM-1 folding & barycenter layout
+  function laneDoneInfo(gid) {
+    var doneTasks = state.tasks.filter(function (t) { return t.group === gid && t.done; });
+    var foldable = !ui.hideDone && ui.foldDone && doneTasks.length >= FOLD_DONE_MIN;
+    var q = ui.filter.trim().toLowerCase();
+    var forceOpen = false;
+    if (foldable) {
+      if (ui.unfoldedLanes.has(gid)) forceOpen = true;
+      else if (ui.selected) {
+        var sel = T(ui.selected);
+        if (sel && sel.group === gid && sel.done) forceOpen = true;
+      }
+      if (!forceOpen && q) {
+        for (var i = 0; i < doneTasks.length; i++) {
+          if (matchesFilter(doneTasks[i], q)) { forceOpen = true; break; }
+        }
+      }
+    }
+    return {
+      doneCount: doneTasks.length,
+      foldable: foldable,
+      folded: foldable && !forceOpen,
+    };
   }
 
   function cardH(t) {
     return H + (ui.expanded.has(t.id) && t.subs && t.subs.length ? t.subs.length * SUB_H + 9 : 0);
   }
 
+  // 3-sweep barycenter crossing minimization within each (lane, depth) bucket.
+  function orderColumnsBarycenter(lanes, visTasks, visIds, maxDepth) {
+    var fileIndex = {};
+    state.tasks.forEach(function (t, i) { fileIndex[t.id] = i; });
+
+    var childrenMap = {};
+    visTasks.forEach(function (t) {
+      (t.deps || []).forEach(function (d) {
+        if (visIds.has(d)) {
+          if (!childrenMap[d]) childrenMap[d] = [];
+          childrenMap[d].push(t.id);
+        }
+      });
+    });
+
+    var rank = {};
+    lanes.forEach(function (L, laneIdx) {
+      var base = laneIdx * 1000;
+      Object.keys(L.cols).forEach(function (k) {
+        L.cols[k].forEach(function (t, idx) {
+          rank[t.id] = base + idx * 10;
+        });
+      });
+    });
+
+    function refreshRanks(depthKey) {
+      lanes.forEach(function (L, laneIdx) {
+        var col = L.cols[depthKey];
+        if (!col) return;
+        var base = laneIdx * 1000;
+        col.forEach(function (t, idx) { rank[t.id] = base + idx * 10; });
+      });
+    }
+
+    function sweep(depthKey, neighboursFn) {
+      lanes.forEach(function (L) {
+        var col = L.cols[depthKey];
+        if (!col || col.length < 2) return;
+        var scored = col.map(function (t) {
+          var ns = neighboursFn(t);
+          var score = rank[t.id];
+          if (ns.length) {
+            var sum = 0;
+            for (var i = 0; i < ns.length; i++) sum += rank[ns[i]];
+            score = sum / ns.length;
+          }
+          return { t: t, score: score, cur: rank[t.id], idx: fileIndex[t.id] };
+        });
+        scored.sort(function (a, b) {
+          if (a.score !== b.score) return a.score - b.score;
+          if (a.cur !== b.cur) return a.cur - b.cur;
+          return a.idx - b.idx;
+        });
+        L.cols[depthKey] = scored.map(function (x) { return x.t; });
+      });
+      refreshRanks(depthKey);
+    }
+
+    var parentsOf = function (t) {
+      return (t.deps || []).filter(function (d) { return visIds.has(d); });
+    };
+    var kidsOf = function (t) { return childrenMap[t.id] || []; };
+
+    for (var pass = 0; pass < 3; pass++) {
+      if (pass % 2 === 0) {
+        for (var k = 1; k <= maxDepth; k++) sweep(k, parentsOf);
+      } else {
+        for (var r = maxDepth - 1; r >= 0; r--) sweep(r, kidsOf);
+      }
+    }
+  }
+
   function layout() {
-    var vis = state.tasks.filter(visible);
+    var foldedByGroup = {};
+    state.groups.forEach(function (g) { foldedByGroup[g.id] = laneDoneInfo(g.id); });
+
+    var vis = state.tasks.filter(function (t) {
+      if (ui.hideDone && t.done) return false;
+      if (t.done && foldedByGroup[t.group] && foldedByGroup[t.group].folded) return false;
+      return true;
+    });
     var visIds = new Set(vis.map(function (t) { return t.id; }));
+    var transitiveSet = computeTransitiveEdges(vis);
+
     var depth = {};
     var visiting = new Set();
+    var maxDepth = 0;
 
     function calcDepth(t) {
       if (depth[t.id] != null) return depth[t.id];
@@ -552,6 +734,7 @@
       });
       visiting.delete(t.id);
       depth[t.id] = m + 1;
+      if (depth[t.id] > maxDepth) maxDepth = depth[t.id];
       return depth[t.id];
     }
     vis.forEach(calcDepth);
@@ -567,13 +750,112 @@
       var ks = Object.keys(cols).map(Number);
       var min = ks.length ? Math.min.apply(null, ks) : 0;
       var max = ks.length ? Math.max.apply(null, ks) : 0;
+      return {
+        g: g,
+        idx: idx,
+        ts: ts,
+        cols: cols,
+        ks: ks,
+        min: min,
+        max: max,
+        doneInfo: foldedByGroup[g.id],
+      };
+    });
+
+    if (ui.autoOrder && vis.length > 1) {
+      orderColumnsBarycenter(lanes, vis, visIds, maxDepth);
+    }
+
+    var pos = {};
+    var colStep = W + ui.gap;
+
+    if (ui.orientation === "tb") {
+      // Top-to-Bottom: depth flows along Y, cards in the same (lane, depth) sit side-by-side along X.
+      var rowGap = Math.max(LANE_HEAD + LANE_PAD * 2 + 16, Math.round(ui.gap * 1.05));
+      var levelH = {};
+      for (var lv = 0; lv <= maxDepth; lv++) {
+        var maxH = H;
+        vis.forEach(function (t) {
+          if (depth[t.id] === lv) maxH = Math.max(maxH, cardH(t));
+        });
+        levelH[lv] = maxH;
+      }
+      var levelTop = {};
+      var curY = TOP + LANE_HEAD + LANE_PAD;
+      for (var lv2 = 0; lv2 <= maxDepth; lv2++) {
+        levelTop[lv2] = curY;
+        curY += levelH[lv2] + rowGap;
+      }
+
+      lanes.forEach(function (L) {
+        var maxInRow = 1;
+        L.ks.forEach(function (k) { maxInRow = Math.max(maxInRow, L.cols[k].length); });
+        L.innerW = maxInRow * W + Math.max(0, maxInRow - 1) * GY;
+      });
+
+      var vBands = [];
+      lanes.forEach(function (L) {
+        var band = null;
+        if (ui.compact) {
+          for (var i = 0; i < vBands.length; i++) {
+            var fits = vBands[i].lanes.every(function (o) {
+              return L.max < o.min || L.min > o.max;
+            });
+            if (fits) { band = vBands[i]; break; }
+          }
+        }
+        if (!band) { band = { lanes: [] }; vBands.push(band); }
+        band.lanes.push(L);
+      });
+
+      var x = LEFT;
+      var maxY = 0;
+      vBands.forEach(function (b) {
+        var bw = Math.max.apply(null, b.lanes.map(function (L) { return L.innerW; })) + LANE_PAD * 2;
+        b.lanes.forEach(function (L) {
+          L.x = x;
+          L.w = bw;
+          L.y = levelTop[L.min] - LANE_HEAD - LANE_PAD;
+          var bottom = L.ks.length
+            ? (levelTop[L.max] + levelH[L.max] + LANE_PAD)
+            : (L.y + LANE_HEAD + LANE_PAD * 2 + 46);
+          L.hh = bottom - L.y;
+          L.ks.forEach(function (k) {
+            var cx = x + LANE_PAD;
+            L.cols[k].forEach(function (t) {
+              pos[t.id] = { x: cx, y: levelTop[k], h: cardH(t), depth: k };
+              cx += W + GY;
+            });
+          });
+          maxY = Math.max(maxY, L.y + L.hh);
+        });
+        x += bw + BAND_GAP;
+      });
+
+      var contentW = Math.max(W + LEFT * 2, x + LEFT);
+      var contentH = Math.max(240, maxY + TOP);
+      return {
+        lanes: lanes,
+        pos: pos,
+        transitive: transitiveSet,
+        levelTop: levelTop,
+        levelH: levelH,
+        contentW: contentW,
+        contentH: contentH,
+        w: contentW + 80,
+        h: Math.max(420, contentH + 70),
+      };
+    }
+
+    // Left-to-Right (default): depth flows along X, cards in the same (lane, depth) stack along Y.
+    lanes.forEach(function (L) {
       var h = 0;
-      ks.forEach(function (k) {
-        var colH = cols[k].reduce(function (a, t) { return a + cardH(t) + GY; }, 0) - GY;
+      L.ks.forEach(function (k) {
+        var colH = L.cols[k].reduce(function (a, t) { return a + cardH(t) + GY; }, 0) - GY;
         h = Math.max(h, colH);
       });
-      if (!ks.length) h = 44;
-      return { g: g, idx: idx, ts: ts, cols: cols, min: min, max: max, h: h };
+      if (!L.ks.length) h = 48;
+      L.h = h;
     });
 
     var bands = [];
@@ -591,20 +873,19 @@
       band.lanes.push(L);
     });
 
-    var pos = {};
     var y = TOP;
-    var maxX = COLW;
+    var maxX = W + LEFT;
     bands.forEach(function (b) {
       var bh = Math.max.apply(null, b.lanes.map(function (L) { return L.h; })) + LANE_HEAD + LANE_PAD * 2;
       b.lanes.forEach(function (L) {
-        L.x = LEFT + L.min * COLW;
+        L.x = LEFT + L.min * colStep;
         L.y = y;
-        L.w = (L.max - L.min) * COLW + W + LANE_PAD * 2;
+        L.w = (L.max - L.min) * colStep + W + LANE_PAD * 2;
         L.hh = bh;
-        Object.keys(L.cols).forEach(function (k) {
+        L.ks.forEach(function (k) {
           var cy = y + LANE_HEAD + LANE_PAD;
           L.cols[k].forEach(function (t) {
-            pos[t.id] = { x: LEFT + LANE_PAD + Number(k) * COLW, y: cy, h: cardH(t), depth: Number(k) };
+            pos[t.id] = { x: LEFT + LANE_PAD + k * colStep, y: cy, h: cardH(t), depth: k };
             cy += cardH(t) + GY;
           });
         });
@@ -613,7 +894,18 @@
       y += bh + BAND_GAP;
     });
 
-    return { lanes: lanes, pos: pos, w: maxX + COLW, h: Math.max(420, y + 70) };
+    var cW = maxX + LEFT;
+    var cH = y + TOP;
+    return {
+      lanes: lanes,
+      pos: pos,
+      transitive: transitiveSet,
+      colStep: colStep,
+      contentW: cW,
+      contentH: cH,
+      w: cW + colStep,
+      h: Math.max(420, cH + 60),
+    };
   }
 
   function laneAt(pt) {
@@ -625,15 +917,36 @@
     return null;
   }
 
-  function curve(x1, y1, x2, y2) {
+  function curveH(x1, y1, x2, y2) {
     var dx = Math.max(30, Math.abs(x2 - x1) * 0.5);
     return "M" + x1 + "," + y1 + " C" + (x1 + dx) + "," + y1 + " " + (x2 - dx) + "," + y2 + " " + x2 + "," + y2;
+  }
+
+  function curveV(x1, y1, x2, y2) {
+    var dy = Math.max(26, Math.abs(y2 - y1) * 0.5);
+    return "M" + x1 + "," + y1 + " C" + x1 + "," + (y1 + dy) + " " + x2 + "," + (y2 - dy) + " " + x2 + "," + y2;
+  }
+
+  function edgePath(a, b) {
+    if (ui.orientation === "tb") {
+      return {
+        d: curveV(a.x + W / 2, a.y + a.h, b.x + W / 2, b.y - 2),
+        mx: (a.x + b.x) / 2 + W / 2,
+        my: (a.y + a.h + b.y) / 2,
+      };
+    }
+    return {
+      d: curveH(a.x + W, a.y + 42, b.x - 2, b.y + 42),
+      mx: (a.x + W + b.x) / 2,
+      my: (a.y + b.y) / 2 + 42,
+    };
   }
 
   // --------------------------------------------------------- render
   function render() {
     root.classList.toggle("tm-editable", canEdit());
     root.classList.toggle("tm-readonly", !canEdit());
+    root.classList.toggle("tm-dir-tb", ui.orientation === "tb");
     lastLayout = layout();
     renderBanner();
     renderBar();
@@ -683,6 +996,7 @@
     });
     var focused = document.activeElement && document.activeElement.id === "tm-search";
     var editable = canEdit();
+    var displayOpen = !!mainEl.querySelector(".tm-display-pop");
 
     barEl.innerHTML =
       '<div class="tm-chips">' +
@@ -695,9 +1009,13 @@
       '<div class="tm-spacer"></div>' +
       '<span id="tm-sync" class="tm-sync"></span>' +
       '<input class="tm-search" id="tm-search" placeholder="' + esc(S.filter) + '" value="' + esc(ui.filter) + '">' +
-      '<button type="button" class="tm-btn' + (ui.hideDone ? " on" : "") + '" id="tm-hide">' + esc(S.hide_done) + "</button>" +
-      '<button type="button" class="tm-btn' + (ui.compact ? " on" : "") + '" id="tm-compact">' + esc(S.compact) + "</button>" +
-      '<span class="tm-seg"><button type="button" id="tm-zout" aria-label="Zoom out">−</button><span class="tm-zoomv">' + Math.round(ui.zoom * 100) + '%</span><button type="button" id="tm-zin" aria-label="Zoom in">+</button></span>' +
+      '<button type="button" class="tm-btn' + (displayOpen ? " on" : "") + '" id="tm-display">' + esc(S.display) + " ▾</button>" +
+      '<span class="tm-seg">' +
+        '<button type="button" id="tm-zout" aria-label="Zoom out">−</button>' +
+        '<span class="tm-zoomv">' + Math.round(ui.zoom * 100) + "%</span>" +
+        '<button type="button" id="tm-zin" aria-label="Zoom in">+</button>' +
+        '<button type="button" id="tm-fit" title="' + esc(S.fit_title) + '">' + esc(S.fit) + "</button>" +
+      "</span>" +
       (editable ? '<button type="button" class="tm-btn" id="tm-undo"' + (undoStack.length ? "" : " disabled") + ' title="' + esc(S.undo) + ' (Ctrl+Z)">↶</button>' : "") +
       (editable ? '<button type="button" class="tm-btn" id="tm-redo"' + (redoStack.length ? "" : " disabled") + ' title="' + esc(S.redo) + ' (Ctrl+Shift+Z)">↷</button>' : "") +
       '<button type="button" class="tm-btn" id="tm-reload" title="' + esc(S.reload) + '">↻</button>' +
@@ -708,13 +1026,13 @@
     renderSync();
 
     var s = document.getElementById("tm-search");
-    s.oninput = function () { ui.filter = s.value; applyHighlight(); };
+    s.oninput = function () { ui.filter = s.value; render(); };
     if (focused) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
 
-    document.getElementById("tm-hide").onclick = function () { ui.hideDone = !ui.hideDone; render(); };
-    document.getElementById("tm-compact").onclick = function () { ui.compact = !ui.compact; render(); };
+    document.getElementById("tm-display").onclick = function (e) { toggleDisplayPop(e.currentTarget); };
     document.getElementById("tm-zout").onclick = function () { setZoom(ui.zoom - 0.1); };
     document.getElementById("tm-zin").onclick = function () { setZoom(ui.zoom + 0.1); };
+    document.getElementById("tm-fit").onclick = fitToScreen;
     document.getElementById("tm-reload").onclick = reloadFromServer;
     document.getElementById("tm-md").onclick = function () { ui.md = !ui.md; render(); };
 
@@ -730,8 +1048,106 @@
   }
 
   function setZoom(z) {
-    ui.zoom = Math.min(1.6, Math.max(0.4, Math.round(z * 10) / 10));
+    ui.zoom = Math.min(1.6, Math.max(0.35, Math.round(z * 100) / 100));
     render();
+  }
+
+  function fitToScreen() {
+    if (!lastLayout) return;
+    var cw = canvasEl.clientWidth || 800;
+    var ch = canvasEl.clientHeight || 500;
+    var scale = Math.min((cw - 24) / lastLayout.contentW, (ch - 24) / lastLayout.contentH);
+    ui.zoom = Math.min(1.2, Math.max(0.35, Math.round(scale * 100) / 100));
+    render();
+    canvasEl.scrollLeft = 0;
+    canvasEl.scrollTop = 0;
+  }
+
+  function adjustSpacing(delta) {
+    var next = Math.min(GAP_MAX, Math.max(GAP_MIN, ui.gap + delta));
+    if (next === ui.gap) return;
+    ui.gap = next;
+    savePrefs();
+    render();
+    var rng = document.getElementById("tm-dp-gap");
+    if (rng) rng.value = String(ui.gap);
+    var lbl = document.getElementById("tm-dp-gapv");
+    if (lbl) lbl.textContent = ui.gap + " px";
+  }
+
+  function toggleDisplayPop(anchor) {
+    var existing = mainEl.querySelector(".tm-display-pop");
+    if (existing) { existing.remove(); renderBar(); return; }
+    var other = mainEl.querySelector(".tm-pop");
+    if (other) other.remove();
+
+    var pop = document.createElement("div");
+    pop.className = "tm-pop tm-display-pop";
+    var r = anchor.getBoundingClientRect();
+    var mr = mainEl.getBoundingClientRect();
+    pop.style.left = Math.max(8, Math.min(mr.width - 276, r.right - mr.left - 268)) + "px";
+    pop.style.top = "8px";
+
+    function fillPop() {
+      pop.innerHTML =
+        '<div class="tm-dp-row">' +
+          '<span class="tm-dp-label"><span>' + esc(S.orient) + '</span><span class="tm-mono">L</span></span>' +
+          '<div class="tm-dp-seg">' +
+            '<button type="button" data-dir="lr" class="' + (ui.orientation === "lr" ? "on" : "") + '">' + esc(S.orient_lr) + "</button>" +
+            '<button type="button" data-dir="tb" class="' + (ui.orientation === "tb" ? "on" : "") + '">' + esc(S.orient_tb) + "</button>" +
+          "</div>" +
+        "</div>" +
+        '<div class="tm-dp-row">' +
+          '<span class="tm-dp-label"><span>' + esc(S.order) + '</span><span class="tm-mono">M</span></span>' +
+          '<div class="tm-dp-seg">' +
+            '<button type="button" data-ord="auto" class="' + (ui.autoOrder ? "on" : "") + '">' + esc(S.order_auto) + "</button>" +
+            '<button type="button" data-ord="manual" class="' + (!ui.autoOrder ? "on" : "") + '">' + esc(S.order_manual) + "</button>" +
+          "</div>" +
+        "</div>" +
+        '<div class="tm-dp-row">' +
+          '<span class="tm-dp-label"><span>' + esc(S.spacing) + '</span><span class="tm-mono" id="tm-dp-gapv">' + ui.gap + " px</span></span>" +
+          '<input type="range" class="tm-dp-range" id="tm-dp-gap" min="' + GAP_MIN + '" max="' + GAP_MAX + '" step="' + GAP_STEP + '" value="' + ui.gap + '">' +
+        "</div>" +
+        '<div class="tm-dp-checks">' +
+          '<label class="tm-dp-chk"><input type="checkbox" id="tm-dp-compact"' + (ui.compact ? " checked" : "") + "><span>" + esc(S.compact) + "</span></label>" +
+          '<label class="tm-dp-chk"><input type="checkbox" id="tm-dp-hidedone"' + (ui.hideDone ? " checked" : "") + "><span>" + esc(S.hide_done) + "</span></label>" +
+          '<label class="tm-dp-chk"><input type="checkbox" id="tm-dp-fold"' + (ui.foldDone ? " checked" : "") + "><span>" + esc(S.fold_done) + "</span></label>" +
+          '<label class="tm-dp-chk"><input type="checkbox" id="tm-dp-trans"' + (ui.hideTransitive ? " checked" : "") + "><span>" + esc(S.hide_transitive) + "</span></label>" +
+        "</div>";
+
+      pop.querySelectorAll("[data-dir]").forEach(function (b) {
+        b.onclick = function () {
+          ui.orientation = b.dataset.dir;
+          savePrefs();
+          fillPop();
+          render();
+        };
+      });
+      pop.querySelectorAll("[data-ord]").forEach(function (b) {
+        b.onclick = function () {
+          ui.autoOrder = b.dataset.ord === "auto";
+          savePrefs();
+          fillPop();
+          render();
+        };
+      });
+      var rng = pop.querySelector("#tm-dp-gap");
+      rng.oninput = function () {
+        ui.gap = Number(rng.value);
+        savePrefs();
+        var lbl = pop.querySelector("#tm-dp-gapv");
+        if (lbl) lbl.textContent = ui.gap + " px";
+        render();
+      };
+      pop.querySelector("#tm-dp-compact").onchange = function (e) { ui.compact = e.target.checked; savePrefs(); render(); };
+      pop.querySelector("#tm-dp-hidedone").onchange = function (e) { ui.hideDone = e.target.checked; savePrefs(); render(); };
+      pop.querySelector("#tm-dp-fold").onchange = function (e) { ui.foldDone = e.target.checked; savePrefs(); render(); };
+      pop.querySelector("#tm-dp-trans").onchange = function (e) { ui.hideTransitive = e.target.checked; savePrefs(); render(); };
+    }
+
+    fillPop();
+    mainEl.appendChild(pop);
+    renderBar();
   }
 
   function renderMap(L) {
@@ -742,10 +1158,24 @@
     sizerEl.style.height = (L.h * ui.zoom) + "px";
 
     var editable = canEdit();
+    var stubsHtml = "";
+
     lanesEl.innerHTML = L.lanes.map(function (l) {
       var all = state.tasks.filter(function (t) { return t.group === l.g.id; });
       var done = all.filter(function (t) { return t.done; }).length;
       var pct = all.length ? (done / all.length * 100) : 0;
+      var di = l.doneInfo;
+      var foldPill = "";
+      if (di && di.foldable) {
+        var label = (S.done_stub || "%s done").replace("%s", String(di.doneCount));
+        var title = di.folded ? S.fold_toggle_show : S.fold_toggle_hide;
+        foldPill = '<button type="button" class="tm-lane-fold" data-act="fold-toggle" data-g="' + esc(l.g.id) + '" title="' + esc(title) + '">✓ ' + esc(label) + " " + (di.folded ? "▸" : "▾") + "</button>";
+      }
+      if (di && di.folded && !l.ts.length) {
+        var stubLabel = (S.done_stub || "%s done").replace("%s", String(di.doneCount));
+        stubsHtml += '<button type="button" class="tm-done-stub" data-act="fold-toggle" data-g="' + esc(l.g.id) +
+          '" style="left:' + (l.x + LANE_PAD) + "px;top:" + (l.y + LANE_HEAD + LANE_PAD) + "px;width:" + W + 'px;height:44px">✓ ' + esc(stubLabel) + " ▸</button>";
+      }
       return '<div class="tm-lane" data-g="' + esc(l.g.id) + '" style="left:' + l.x + "px;top:" + l.y + "px;width:" + l.w + "px;height:" + l.hh + 'px">' +
         '<div class="tm-lane-head">' +
           '<span class="tm-lane-dot c' + (l.idx % 6) + '"></span>' +
@@ -753,12 +1183,13 @@
           '<span class="tm-lane-pfx">' + esc(l.g.id) + "</span>" +
           '<span class="tm-lane-count">' + done + "/" + all.length + "</span>" +
           '<span class="tm-lane-bar"><i style="width:' + pct + '%"></i></span>' +
+          foldPill +
           (editable ? '<button type="button" class="tm-ibtn" data-act="add-lane" data-g="' + esc(l.g.id) + '" title="' + esc(S.add_in_group) + '">+</button>' : "") +
           (editable && !all.length && state.groups.length > 1 ? '<button type="button" class="tm-ibtn" data-act="lane-del" data-g="' + esc(l.g.id) + '" title="' + esc(S.del_group) + '">✕</button>' : "") +
         "</div></div>";
     }).join("");
 
-    cardsEl.innerHTML = state.tasks.filter(function (t) { return !!L.pos[t.id]; }).map(function (t) {
+    cardsEl.innerHTML = stubsHtml + state.tasks.filter(function (t) { return !!L.pos[t.id]; }).map(function (t) {
       var p = L.pos[t.id];
       var st = statusOf(t);
       var subs = t.subs || [];
@@ -796,15 +1227,22 @@
       (t.deps || []).forEach(function (dId) {
         var a = L.pos[dId];
         if (!a) return;
-        var path = curve(a.x + W, a.y + 42, b.x - 2, b.y + 42);
+        var ep = edgePath(a, b);
         var isSel = ui.selEdge && ui.selEdge.from === dId && ui.selEdge.to === t.id;
+        var isTrans = ui.hideTransitive && L.transitive.has(dId + "->" + t.id);
         var depTask = T(dId);
-        svg += '<path class="tm-edge' + (depTask && depTask.done ? " from-done" : "") + (isSel ? " sel" : "") + '" data-from="' + esc(dId) + '" data-to="' + esc(t.id) + '" d="' + path + '" marker-end="url(#' + (isSel ? "tm-arrS" : "tm-arr") + ')"/>';
+        svg += '<path class="tm-edge' + (depTask && depTask.done ? " from-done" : "") +
+          (isTrans ? " transitive" : "") + (isSel ? " sel" : "") +
+          '" data-from="' + esc(dId) + '" data-to="' + esc(t.id) + '"' +
+          (isTrans ? ' data-trans="1"' : "") +
+          ' d="' + ep.d + '" marker-end="url(#' + (isSel ? "tm-arrS" : "tm-arr") + ')"/>';
         if (editable) {
-          svg += '<path class="tm-edge-hit" data-from="' + esc(dId) + '" data-to="' + esc(t.id) + '" d="' + path + '"/>';
+          svg += '<path class="tm-edge-hit' + (isTrans && !isSel ? " transitive-off" : "") +
+            '" data-from="' + esc(dId) + '" data-to="' + esc(t.id) + '"' +
+            (isTrans ? ' data-trans="1"' : "") + ' d="' + ep.d + '"/>';
         }
         if (isSel && editable) {
-          delBtn = '<button type="button" class="tm-edge-del" data-act="edge-del" style="left:' + ((a.x + W + b.x) / 2) + "px;top:" + ((a.y + b.y) / 2 + 42) + 'px">✕ ' + esc(S.unlink) + " " + esc(dId) + " → " + esc(t.id) + "</button>";
+          delBtn = '<button type="button" class="tm-edge-del" data-act="edge-del" style="left:' + ep.mx + "px;top:" + ep.my + 'px">✕ ' + esc(S.unlink) + " " + esc(dId) + " → " + esc(t.id) + "</button>";
         }
       });
     });
@@ -823,14 +1261,29 @@
       var id = c.dataset.id;
       var t = T(id);
       c.classList.toggle("dim", !!(chain && !chain.has(id)));
-      c.classList.toggle("fout", !!(q && t && (t.id + " " + t.title + " " + (t.desc || "")).toLowerCase().indexOf(q) === -1));
+      c.classList.toggle("fout", !!(q && t && !matchesFilter(t, q)));
     });
     edgesEl.querySelectorAll("path.tm-edge").forEach(function (p) {
       if (p.classList.contains("sel")) return;
-      var on = !!(chain && chain.has(p.dataset.from) && chain.has(p.dataset.to));
+      var from = p.dataset.from;
+      var to = p.dataset.to;
+      var isTrans = p.dataset.trans === "1";
+      if (isTrans) {
+        var reveal = !!(focus && (focus === from || focus === to));
+        p.classList.toggle("rev", reveal);
+        p.classList.toggle("hl", reveal);
+        p.setAttribute("marker-end", reveal ? "url(#tm-arrH)" : "url(#tm-arr)");
+        return;
+      }
+      var on = !!(chain && chain.has(from) && chain.has(to));
       p.classList.toggle("hl", on);
       p.classList.toggle("dim", !!(chain && !on));
       p.setAttribute("marker-end", on ? "url(#tm-arrH)" : "url(#tm-arr)");
+    });
+    edgesEl.querySelectorAll("path.tm-edge-hit[data-trans='1']").forEach(function (h) {
+      var reveal = !!(focus && (focus === h.dataset.from || focus === h.dataset.to)) ||
+        !!(ui.selEdge && ui.selEdge.from === h.dataset.from && ui.selEdge.to === h.dataset.to);
+      h.classList.toggle("transitive-off", !reveal);
     });
   }
 
@@ -1057,6 +1510,8 @@
 
   stageEl.addEventListener("pointerdown", function (e) {
     if (e.button !== 0) return;
+    var pop = mainEl.querySelector(".tm-pop");
+    if (pop) { pop.remove(); renderBar(); }
     var port = e.target.closest(".tm-port");
     var card = e.target.closest(".tm-card");
     if (port && card && canEdit()) {
@@ -1088,6 +1543,10 @@
     else if (act === "subs") {
       var id = b.dataset.id;
       if (ui.expanded.has(id)) ui.expanded.delete(id); else ui.expanded.add(id);
+      render();
+    } else if (act === "fold-toggle") {
+      var fg = b.dataset.g;
+      if (ui.unfoldedLanes.has(fg)) ui.unfoldedLanes.delete(fg); else ui.unfoldedLanes.add(fg);
       render();
     } else if (act === "edge-del" && ui.selEdge) {
       unlink(ui.selEdge.from, ui.selEdge.to);
@@ -1165,8 +1624,13 @@
 
     function move(ev) {
       var pt = stagePt(ev);
-      var sy = p.y + 42;
-      temp.setAttribute("d", mode === "out" ? curve(p.x + W, sy, pt.x, pt.y) : curve(pt.x, pt.y, p.x, sy));
+      if (ui.orientation === "tb") {
+        var sx = p.x + W / 2;
+        temp.setAttribute("d", mode === "out" ? curveV(sx, p.y + p.h, pt.x, pt.y) : curveV(pt.x, pt.y, sx, p.y));
+      } else {
+        var sy = p.y + 42;
+        temp.setAttribute("d", mode === "out" ? curveH(p.x + W, sy, pt.x, pt.y) : curveH(pt.x, pt.y, p.x, sy));
+      }
       clearDropMarks();
       var el = document.elementFromPoint(ev.clientX, ev.clientY);
       var card = el && el.closest(".tm-card");
@@ -1208,14 +1672,34 @@
     var d = P[id].depth;
     var col = (lane.cols[d] || []).filter(function (t) { return t.id !== id; });
     var before = null;
-    for (var i = 0; i < col.length; i++) {
-      if (pt.y < P[col[i].id].y + P[col[i].id].h / 2) { before = col[i]; break; }
+
+    if (ui.orientation === "tb") {
+      for (var i = 0; i < col.length; i++) {
+        if (pt.x < P[col[i].id].x + W / 2) { before = col[i]; break; }
+      }
+      var afterV = before ? null : (col.length ? col[col.length - 1] : null);
+      var xV = before ? (P[before.id].x - GY / 2 - 1)
+        : afterV ? (P[afterV.id].x + W + GY / 2 - 1)
+        : (lane.x + LANE_PAD - 4);
+      var yV = lastLayout.levelTop ? lastLayout.levelTop[d] : (lane.y + LANE_HEAD + LANE_PAD);
+      return {
+        gid: lane.g.id, before: before ? before.id : null, after: afterV ? afterV.id : null,
+        x: xV, y: yV, vert: true,
+      };
+    }
+
+    for (var j = 0; j < col.length; j++) {
+      if (pt.y < P[col[j].id].y + P[col[j].id].h / 2) { before = col[j]; break; }
     }
     var after = before ? null : (col.length ? col[col.length - 1] : null);
     var y = before ? (P[before.id].y - GY / 2 - 1)
       : after ? (P[after.id].y + P[after.id].h + GY / 2 - 1)
       : (lane.y + LANE_HEAD + LANE_PAD - 4);
-    return { gid: lane.g.id, before: before ? before.id : null, after: after ? after.id : null, x: LEFT + LANE_PAD + d * COLW, y: y };
+    var colStep = lastLayout.colStep || (W + ui.gap);
+    return {
+      gid: lane.g.id, before: before ? before.id : null, after: after ? after.id : null,
+      x: LEFT + LANE_PAD + d * colStep, y: y, vert: false,
+    };
   }
 
   function startCardDrag(id, e) {
@@ -1235,9 +1719,11 @@
       target = dropTarget(id, stagePt(ev));
       if (target) {
         dropIndEl.hidden = false;
+        dropIndEl.classList.toggle("vert", !!target.vert);
         dropIndEl.style.left = target.x + "px";
         dropIndEl.style.top = target.y + "px";
-        dropIndEl.style.width = W + "px";
+        dropIndEl.style.width = target.vert ? "3px" : (W + "px");
+        dropIndEl.style.height = target.vert ? (H + "px") : "3px";
       } else {
         dropIndEl.hidden = true;
       }
@@ -1257,6 +1743,12 @@
       if (!target) { render(); return; }
       var t = T(id);
       var moved = t.group !== target.gid;
+      var switchedManual = false;
+      if (!moved && ui.autoOrder) {
+        ui.autoOrder = false;
+        savePrefs();
+        switchedManual = true;
+      }
       commit(moved ? ("Move " + id + " to " + (G(target.gid) ? G(target.gid).name : target.gid)) : ("Reorder " + id), function () {
         var arr = state.tasks;
         var task = T(id);
@@ -1266,6 +1758,7 @@
         else if (target.after) arr.splice(arr.indexOf(T(target.after)) + 1, 0, task);
         else arr.push(task);
       });
+      if (switchedManual) showToast(S.switched_manual, false, false);
     }
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -1338,6 +1831,21 @@
       render();
     } else if ((e.key === "Delete" || e.key === "Backspace") && ui.selEdge && canEdit()) {
       unlink(ui.selEdge.from, ui.selEdge.to);
+    } else if (e.key === "0") {
+      e.preventDefault();
+      fitToScreen();
+    } else if (e.key.toLowerCase() === "l") {
+      ui.orientation = ui.orientation === "lr" ? "tb" : "lr";
+      savePrefs();
+      render();
+    } else if (e.key.toLowerCase() === "m") {
+      ui.autoOrder = !ui.autoOrder;
+      savePrefs();
+      render();
+    } else if (e.key === "[") {
+      adjustSpacing(-GAP_STEP);
+    } else if (e.key === "]") {
+      adjustSpacing(GAP_STEP);
     } else if (e.key.toLowerCase() === "n" && canEdit()) {
       var sel = ui.selected ? T(ui.selected) : null;
       newTask(sel ? sel.group : state.groups[0].id);

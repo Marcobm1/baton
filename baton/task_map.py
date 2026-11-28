@@ -327,6 +327,46 @@ def _find_cycle(tasks: list[MapTask]) -> list[str]:
     return []
 
 
+def transitive_edges(tasks: list[MapTask]) -> list[tuple[str, str]]:
+    """Return ``(dep_id, task_id)`` edges already implied by a longer dependency path.
+
+    For example, if ``C`` depends on ``A`` and ``B``, and ``B`` depends on ``A``,
+    then ``("A", "C")`` is transitive: it stays in ``STATUS.md`` but can be hidden
+    by default in the graph view to reduce clutter.
+    """
+    by_id = {t.id: t for t in tasks}
+    ancestors: dict[str, set[str]] = {}
+    visiting: set[str] = set()
+
+    def get_ancestors(tid: str) -> set[str]:
+        if tid in ancestors:
+            return ancestors[tid]
+        if tid in visiting:
+            return set()
+        visiting.add(tid)
+        acc: set[str] = set()
+        task = by_id.get(tid)
+        if task:
+            for dep in task.deps:
+                if dep in by_id:
+                    acc.add(dep)
+                    acc.update(get_ancestors(dep))
+        visiting.discard(tid)
+        ancestors[tid] = acc
+        return acc
+
+    for t in tasks:
+        get_ancestors(t.id)
+
+    redundant: list[tuple[str, str]] = []
+    for t in tasks:
+        valid_deps = [d for d in t.deps if d in by_id]
+        for dep in valid_deps:
+            if any(dep in ancestors.get(other, ()) for other in valid_deps if other != dep):
+                redundant.append((dep, t.id))
+    return redundant
+
+
 def parse_status_map(source: str, *, owner_tag: str = DEFAULT_OWNER_TAG) -> TaskMap:
     """Parse the ``## Next`` section of a ``STATUS.md`` into a ``TaskMap``."""
     tag = normalize_owner_tag(owner_tag)

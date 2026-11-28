@@ -220,6 +220,27 @@ def test_match_running_tasks():
     assert matched["RL-01"]["id"] == "r2" and matched["RL-01"]["status"] == "queued"
 
 
+def test_transitive_edges_detection():
+    # A -> B -> C and redundant A -> C; plus diamond A -> D -> E, A -> E (redundant), and unrelated X -> Y.
+    tasks = [
+        task_map.MapTask(id="AP-01", group="AP", title="A", deps=[]),
+        task_map.MapTask(id="AP-02", group="AP", title="B", deps=["AP-01"]),
+        task_map.MapTask(id="AP-03", group="AP", title="C", deps=["AP-01", "AP-02"]),
+        task_map.MapTask(id="AP-04", group="AP", title="D", deps=["AP-01"]),
+        task_map.MapTask(id="AP-05", group="AP", title="E", deps=["AP-01", "AP-03", "AP-04"]),
+        task_map.MapTask(id="UI-01", group="UI", title="X", deps=[]),
+        task_map.MapTask(id="UI-02", group="UI", title="Y", deps=["UI-01"]),
+    ]
+    redundant = set(task_map.transitive_edges(tasks))
+    assert redundant == {("AP-01", "AP-03"), ("AP-01", "AP-05")}
+    # Essential edges are never flagged.
+    assert ("AP-01", "AP-02") not in redundant
+    assert ("AP-02", "AP-03") not in redundant
+    assert ("AP-03", "AP-05") not in redundant
+    assert ("AP-04", "AP-05") not in redundant
+    assert ("UI-01", "UI-02") not in redundant
+
+
 def _make_project(source: str, owner_tag: str = "Marco") -> Project:
     return Project(
         id="me/demo",
@@ -297,12 +318,12 @@ def test_map_tab_and_enable_and_save_endpoints(tmp_path, monkeypatch):
     assert "- [ ] [GN-02] Implement handlers" in current_source[0]
     assert "## Blockers\n- Waiting on review" in current_source[0]
 
-    # 5. Save an edit (link GN-01 -> GN-02 and add a new group & task) immediately.
+    # 5. Save an edit (link GN-01 -> GN-02 and GN-01/GN-02 -> GN-03) immediately.
     new_groups = en_data["groups"] + [{"id": "RL", "name": "Release"}]
     new_tasks = list(en_data["tasks"])
     new_tasks[1]["deps"] = ["GN-01"]
     new_tasks[2]["group"] = "RL"
-    new_tasks[2]["deps"] = ["GN-02"]
+    new_tasks[2]["deps"] = ["GN-01", "GN-02"]
     r_save = client.post(
         "/api/projects/me/demo/map",
         headers={"X-Baton-CSRF": csrf},
@@ -317,6 +338,7 @@ def test_map_tab_and_enable_and_save_endpoints(tmp_path, monkeypatch):
     saved = r_save.json()
     assert "(after: GN-01)" in current_source[0]
     assert "### Release (RL)" in current_source[0]
+    assert saved["transitive_edges"] == [["GN-01", "GN-03"]]
     assert len(writes) == 2
 
     # 6. Cycle submission is rejected with 400 and does not write to GitHub.

@@ -122,11 +122,16 @@ Key design choices and trade-offs:
   (`POST /api/projects/{pid}/map/enable`) writes a single commit that adds
   `### General (GN)` and `[ID]` prefixes while keeping every existing task,
   description, date, owner tag, and section outside `## Next` intact.
-- **Automatic dependency-depth layout:** columns are computed from each task's
-  dependency depth (inspired by Kanvas), and non-overlapping groups can pack
-  into shared horizontal bands (**Compact**). Because no `x/y` coordinates are
-  stored, dragging a card reorders it within its column or moves it to another
-  group—and that order maps directly to the line order in `STATUS.md`.
+- **Automatic dependency-depth layout & scaling (TM-1):** columns/levels are
+  computed from each task's dependency depth (inspired by Kanvas), with 3-sweep
+  barycenter crossing reduction (**Auto** vs **Manual** order, `M`),
+  non-overlapping lane packing (**Compact**), **Left → Right** / **Top → Bottom**
+  orientation (`L`), adjustable level spacing (`[` / `]`), and fit-to-screen
+  zoom (`0`). Redundant transitive arrows (`A → C` when `A → B → C` exists) are
+  computed via `task_map.transitive_edges()` and hidden by default—appearing
+  dashed on hover/selection—while lanes with 3+ completed tasks fold into a
+  single expandable `"N done"` pill so active work stays front and centre. All
+  view preferences persist in `localStorage` (`baton-tm-prefs`).
 - **Cycle-free DAG enforcement:** drawing an arrow in the browser checks for
   cycles immediately, and `baton/task_map.py` enforces strict three-colour DFS
   cycle rejection on every write (`400 Bad Request`). Hand-edited `STATUS.md`
@@ -148,7 +153,7 @@ Key design choices and trade-offs:
 - **Small screens:** below `640 px`, the Map tab shows a notice pointing to the
   **Next** list view, with an opt-in button to inspect the canvas anyway.
 
-Planned follow-up phases (layout scaling, debounced/3-way-merged commits, SSE,
-context menus/Kanban view, and dependency-aware chain execution) are tracked in
+Planned follow-up phases (TM-2 commit coalescing/3-way merge/SSE, TM-3 context
+menus/Kanban view, and TM-4 dependency-aware chain execution) are tracked in
 [docs/task-map-roadmap.md](task-map-roadmap.md).
 

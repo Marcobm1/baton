@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
 updated: 2026-11-28
-updated_by: human
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -72,10 +72,14 @@ links:
   that reintroduces `button { color: … !important }`.
   Recommended: claude-code, opus, medium
 - [ ] [GN-30] Sync task-map `STATUS.md` rules to `AGENTS.md` in tracked repositories
-  Copy the updated task-map bullet from `docs/AGENT_INSTRUCTIONS.md` (`### Group (PFX)`, `[ID]`,
-  `(after: …)`, and two-space indented subtasks) into `AGENTS.md` of each tracked repository where
-  you plan to enable the Map tab (`Marcobm1/Cairn`, `Marcobm1/honeypot-awareness`, `Marcobm1/townhall`,
-  `Marcobm1/proyectos`). Verify: every repo's `AGENTS.md` documents preserving `[ID]` and `(after: …)`.
+  Copy the updated task-map bullet from [the agent instructions template](docs/AGENT_INSTRUCTIONS.md)
+  into the `AGENTS.md` files for [Cairn](https://github.com/Marcobm1/Cairn/blob/main/AGENTS.md),
+  [honeypot-awareness](https://github.com/Marcobm1/honeypot-awareness/blob/main/AGENTS.md),
+  [townhall](https://github.com/Marcobm1/townhall/blob/main/AGENTS.md), and
+  [proyectos](https://github.com/Marcobm1/proyectos/blob/main/AGENTS.md) in their respective worktrees.
+  The rule is missing in all four default branches as of 2026-11-28. After merging, verify that
+  each file says to preserve `### Group (PFX)`, task IDs (`[ID]`), dependencies (`(after: …)`),
+  and subtasks indented by two spaces.
   Recommended: codex, gpt-6.2-astra, low
 - [x] [GN-31] 2026-11-28 TM-2: Task map commit coalescing, 3-way conflict merge & live SSE sync
   [Save and live-update behavior](docs/project-detail.md). Verified in Edge and with pytest (335 passed, 2 skipped).
@@ -122,6 +126,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-28 (codex): Checked the four target `AGENTS.md` files on GitHub for GN-30. The task-map rule still needs to be added in each repository's own worktree.
 - 2026-11-28 (codex): Added the state board, mobile layout, context menus, keyboard navigation, task links and validated Markdown Apply.
 - 2026-11-28 (codex): TM-2 groups rapid map edits, retries compatible concurrent writes once, and streams task status and STATUS.md revisions to open maps.
 - 2026-11-27 (antigravity): Shipped TM-1 task map layout scaling: 3-sweep barycenter crossing reduction (`M`), `task_map.transitive_edges()` redundant arrow hiding, 3+ done folding per lane, Top→Bottom orientation (`L`), spacing (`[`/`]`), fit-to-screen (`0`), Display popover, and `localStorage` prefs (`baton/task_map.py`, `baton/static/task-map.{css,js}`, `baton/routes/projects.py`, `baton/templates/project.html`, `baton/i18n.py`, `tests/test_task_map.py`, `docs/project-detail.md`, `docs/task-map-roadmap.md`).

@@ -91,3 +91,59 @@ through the authenticated `/api/tasks/{id}/artifacts/{filename}` endpoint with
 lightbox gallery on `/tasks/{id}` and `/p/{id}?tab=done`, and the first image
 is attached to Telegram task-completion notifications when Telegram is enabled.
 
+## Interactive task map (`?tab=map`, 2026-11-27)
+
+Every project page includes a **Map** tab alongside **Next**, **Done**, and
+**Notes**. Instead of maintaining a second database or JSON file that could
+drift out of sync with `STATUS.md`, the graph lives directly inside the
+`## Next` section of `STATUS.md`:
+
+```markdown
+## Next
+
+### API (AP)
+- [x] [AP-01] 2026-11-20 Define the REST endpoints
+  - [x] Draft the OpenAPI spec
+- [ ] [AP-02] Implement the handlers (after: AP-01)
+  Handlers for /tasks and /groups, with validation.
+  Recommended: claude-code, opus, medium
+  - [x] GET /tasks
+  - [ ] POST /tasks
+
+### Release (RL)
+- [ ] [RL-01] (Owner) Approve and merge (after: AP-02)
+```
+
+Key design choices and trade-offs:
+
+- **Explicit opt-in for existing projects:** a legacy `STATUS.md` without
+  `### Group (PFX)` subheadings or `[ID]` prefixes opens in **read-only preview
+  mode** with provisional `GN-01`… IDs. Clicking **Enable task map**
+  (`POST /api/projects/{pid}/map/enable`) writes a single commit that adds
+  `### General (GN)` and `[ID]` prefixes while keeping every existing task,
+  description, date, owner tag, and section outside `## Next` intact.
+- **Automatic dependency-depth layout:** columns are computed from each task's
+  dependency depth (inspired by Kanvas), and non-overlapping groups can pack
+  into shared horizontal bands (**Compact**). Because no `x/y` coordinates are
+  stored, dragging a card reorders it within its column or moves it to another
+  group—and that order maps directly to the line order in `STATUS.md`.
+- **Cycle-free DAG enforcement:** drawing an arrow in the browser checks for
+  cycles immediately, and `baton/task_map.py` enforces strict three-colour DFS
+  cycle rejection on every write (`400 Bad Request`). Hand-edited `STATUS.md`
+  files with a cycle degrade safely on read and surface a format warning.
+- **Immediate commits with optimistic blob-SHA locking:** each map edit posts
+  to `POST /api/projects/{pid}/map` with CSRF protection (`X-Baton-CSRF`) and
+  the expected Git blob SHA. On success, the cached `Project` is updated in
+  place so rapid consecutive edits stay responsive; on a `409 Conflict` (e.g.
+  an agent updated `STATUS.md` concurrently), Baton reloads from GitHub and
+  returns the latest map so no work is overwritten.
+- **Top-level progress only:** `Status.tasks_done` / `Status.tasks_total` count
+  only column-0 checkboxes so indented subtasks (`  - [ ] …`) do not inflate
+  the project progress bar.
+- **Live queue and launch bridge:** active (`running` / `queued`) Baton tasks
+  whose title contains `[ID]` (or matches the task title) highlight their card
+  live on the map with a direct link to `/tasks/{id}`. Clicking **Launch
+  task…** on a ready card opens `/tasks/new` prefilled with `[ID] <title>`,
+  description, subtasks, and `Recommended:` agent/model/effort.
+- **Small screens:** below `640 px`, the Map tab shows a notice pointing to the
+  **Next** list view, with an opt-in button to inspect the canvas anyway.

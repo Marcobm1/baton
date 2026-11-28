@@ -293,13 +293,26 @@ class Hub:
             head = re.sub(r"(?m)^(updated:[^\r\n]*)", lambda m: f"{m.group(1)}{eol}updated_by: {by}", head, count=1)
         return head
 
+    @staticmethod
+    def _tick_line(raw_line: str, today: str) -> str:
+        # Preserve canonical `- [x] [ID] YYYY-MM-DD ...` ordering when a task ID is present.
+        id_line = re.sub(
+            r"\[ \]\s+(\[[A-Z][A-Z0-9]{0,3}-\d{1,4}\])\s*",
+            lambda m: f"[x] {m.group(1)} {today} ",
+            raw_line,
+            count=1,
+        )
+        if id_line != raw_line:
+            return id_line
+        return re.sub(r"\[ \]\s*", f"[x] {today} ", raw_line, count=1)
+
     async def complete_owner_action(self, project: Project, line: int, sha: str) -> None:
         status = project.status
         if sha != project.status_sha or not any(item.line == line for item in status.sections.owner_actions):
             raise ValueError("This action changed. Reload the project.")
         lines = status.body.splitlines(keepends=True)
         today = dt.date.today().isoformat()
-        lines[line] = re.sub(r"\[ \]\s*", f"[x] {today} ", lines[line], count=1)
+        lines[line] = self._tick_line(lines[line], today)
         head = self._stamp_frontmatter(status.source.removesuffix(status.body), today, "human")
         await self._write_status(project, head + "".join(lines), sha, "Complete owner action in STATUS.md")
 
@@ -315,7 +328,7 @@ class Hub:
             raise ValueError("This task changed. Reload the project.")
         lines = status.body.splitlines(keepends=True)
         today = dt.date.today().isoformat()
-        lines[line] = re.sub(r"\[ \]\s*", f"[x] {today} ", lines[line], count=1)
+        lines[line] = self._tick_line(lines[line], today)
         body = "".join(lines)
         remaining = [item.title for item in sections(body, owner_tag=status.owner_tag).upcoming]
         nxt = remaining[0] if remaining else ""
@@ -327,7 +340,25 @@ class Hub:
         await self._write_status(project, head + body, sha,
                                  f"Mark done in STATUS.md: {items[0].title[:60]}")
 
-    async def _write_status(self, project: Project, source: str, sha: str, message: str) -> None:
+    async def save_task_map(self, project: Project, source: str, sha: str, message: str) -> str:
+        """Commit an updated STATUS.md produced by the interactive task map.
+
+        Uses optimistic blob-SHA concurrency and updates the cached Project in
+        place on success so consecutive map edits stay responsive without
+        re-fetching every repository in the hub.
+        """
+        if sha != project.status_sha:
+            self._cache = None
+            raise ValueError("STATUS.md changed. Reload the project.")
+        await self._write_status(project, source, sha, message, keep_cache=True)
+        project.status = status_mod.parse(
+            source, fallback_name=project.status.name, owner_tag=self.settings.owner_tag
+        )
+        return project.status_sha
+
+    async def _write_status(
+        self, project: Project, source: str, sha: str, message: str, *, keep_cache: bool = False
+    ) -> None:
         payload = {"branch": project.branch, "sha": sha, "message": message,
                    "content": base64.b64encode(source.encode("utf-8")).decode("ascii")}
         async with self._client() as client:
@@ -338,7 +369,8 @@ class Hub:
         if response.status_code != 200:
             raise GitHubError(f"GitHub could not update STATUS.md ({response.status_code}). "
                               "Check Contents: write permission and branch protection.")
-        self._cache = None
+        if not keep_cache:
+            self._cache = None
 
     async def create_issue(self, repo: str, title: str, body: str) -> dict[str, Any]:
         """Open an issue (needs a token with Issues: write on that repo)."""

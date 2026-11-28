@@ -34,6 +34,10 @@ dashboard and other AI agents read it to know what to do next.
     (agent: claude-code, codex, gemini, opencode or local) with what fits it best;
     if it must be done in another repository, add `Repo: <owner/repo>`;
     Prefix finished titles with YYYY-MM-DD when the completion date is known;
+  - if `## Next` uses task-map groups (`### Group (PFX)`), task IDs (`[AP-01]`),
+    dependencies (`(after: AP-00)`), or two-space indented subtasks (`  - [ ] …`),
+    preserve those prefixes, groups, and dependencies (when ticking a task with
+    an ID, place the date after the ID: `- [x] [AP-01] YYYY-MM-DD Title`);
   - update "Blockers" and "Decisions" if they changed;
   - add one line at the top of "Log": `- YYYY-MM-DD (tool): what changed`.
 - Keep it short: `STATUS.md` is a dashboard, not a diary. Details belong in

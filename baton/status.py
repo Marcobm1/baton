@@ -42,7 +42,8 @@ PRIORITIES = ("high", "medium", "low")
 REQUIRED = ("name", "status", "updated")
 
 _FRONT_MATTER = re.compile(r"\A﻿?---\s*\r?\n(.*?)\r?\n---\s*(?:\r?\n|\Z)", re.S)
-_BOX = re.compile(r"^\s*[-*+]\s+\[( |x|X)\]\s", re.M)
+# Only top-level checkboxes count toward project progress (indented subtasks do not).
+_BOX = re.compile(r"^[-*+]\s+\[( |x|X)\]\s", re.M)
 
 
 @dataclass

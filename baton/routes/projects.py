@@ -7,15 +7,48 @@ from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import ranking_view
+from .. import ranking_view, task_map
 from ..github import GitHubError
 from ..project_detail import finished_items, summary_headline
 from ..task_store import queue_key
 from .deps import CTX, AppContext
 
 router = APIRouter()
+
+
+def _active_tasks_for(repo: str, ctx: AppContext):
+    tasks = [task for task in ctx.store.all() if task.repo.casefold() == repo.casefold()]
+    active = sorted(
+        (task for task in tasks if task.status in ("running", "queued")),
+        key=lambda task: (task.status == "queued", queue_key(task)),
+    )
+    return tasks, active
+
+
+def _map_payload(p, active, ctx: AppContext) -> dict:
+    parsed = task_map.parse_status_map(p.status.source, owner_tag=p.status.owner_tag)
+    running = task_map.match_running_tasks(parsed.tasks, active)
+    next_md = f"## Next\n\n{task_map.serialize_next_body(parsed.groups, parsed.tasks, owner_tag=p.status.owner_tag)}"
+    return {
+        "pid": p.id,
+        "name": p.status.name,
+        "repo": p.repo,
+        "path": p.path,
+        "branch": p.branch,
+        "sha": p.status_sha,
+        "enabled": parsed.enabled,
+        "can_write": bool(ctx.settings.github_token),
+        "owner_tag": p.status.owner_tag,
+        "groups": [g.to_dict() for g in parsed.groups],
+        "tasks": [t.to_dict() for t in parsed.tasks],
+        "problems": parsed.problems,
+        "running": running,
+        "next_markdown": next_md,
+        "provisional_details": ctx.t["provisional_details"],
+        "from_project_fmt": ctx.t["from_project"],
+    }
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -91,25 +124,123 @@ async def projects_page(
 
 
 @router.get("/p/{pid:path}", response_class=HTMLResponse)
-async def project(request: Request, pid: str, tab: Literal["next", "done", "notes"] = "next",
+async def project(request: Request, pid: str, tab: Literal["next", "map", "done", "notes"] = "next",
                   page_number: int = Query(1, alias="page"), ctx: AppContext = CTX):
     projects, _ = await ctx.hub.load()
     for p in projects:
         if p.id == pid:
             content = p.status.sections
-            tasks = [task for task in ctx.store.all() if task.repo.casefold() == p.repo.casefold()]
-            active = sorted((task for task in tasks if task.status in ("running", "queued")),
-                            key=lambda task: (task.status == "queued", queue_key(task)))
+            tasks, active = _active_tasks_for(p.repo, ctx)
             finished = finished_items(content, tasks)
+            map_data = _map_payload(p, active, ctx) if tab == "map" else None
             return ctx.page(
                 request, "project.html", "projects", p=p, content=content, tab=tab,
                 upcoming=content.upcoming, checked=sum(item.checked for item in content.checklist),
                 finished=finished, done_page=ranking_view.paginate(finished, page_number, 10),
                 notes=len(content.blockers) + len(content.decisions) + len(content.log),
                 active=active, queue=ctx.runner.queue_info(), pulls=await ctx.hub.open_pulls(p.repo),
-                summary_headline=summary_headline,
+                summary_headline=summary_headline, map_data=map_data,
             )
     raise HTTPException(404, "Unknown project")
+
+
+@router.get("/api/projects/{pid:path}/map")
+async def api_project_map(pid: str, refresh: int = 0, ctx: AppContext = CTX):
+    projects, _ = await ctx.hub.load(force=bool(refresh))
+    proj = next((p for p in projects if p.id == pid), None)
+    if proj is None:
+        raise HTTPException(404, "Unknown project")
+    _, active = _active_tasks_for(proj.repo, ctx)
+    return JSONResponse(_map_payload(proj, active, ctx))
+
+
+@router.post("/api/projects/{pid:path}/map/enable")
+async def api_project_map_enable(request: Request, pid: str, ctx: AppContext = CTX):
+    ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
+    if not ctx.settings.github_token:
+        raise HTTPException(400, "GITHUB_TOKEN is required to save map edits.")
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, "Invalid JSON payload.") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Invalid JSON payload.")
+    sha = str(body.get("sha") or "").strip()
+    if not sha:
+        raise HTTPException(400, "Missing STATUS.md sha.")
+
+    projects, _ = await ctx.hub.load()
+    proj = next((p for p in projects if p.id == pid), None)
+    if proj is None:
+        raise HTTPException(404, "Unknown project")
+
+    parsed = task_map.parse_status_map(proj.status.source, owner_tag=proj.status.owner_tag)
+    new_source = task_map.apply_map_to_source(
+        proj.status.source, parsed.groups, parsed.tasks, owner_tag=proj.status.owner_tag
+    )
+    try:
+        await ctx.hub.save_task_map(proj, new_source, sha, "Enable task map in STATUS.md")
+    except ValueError as exc:
+        fresh_projects, _ = await ctx.hub.load(force=True)
+        fresh = next((p for p in fresh_projects if p.id == pid), None)
+        payload = None
+        if fresh is not None:
+            _, active = _active_tasks_for(fresh.repo, ctx)
+            payload = _map_payload(fresh, active, ctx)
+        return JSONResponse({"detail": str(exc), "conflict": True, "map": payload}, status_code=409)
+    except (GitHubError, httpx.RequestError) as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+    _, active = _active_tasks_for(proj.repo, ctx)
+    return JSONResponse(_map_payload(proj, active, ctx))
+
+
+@router.post("/api/projects/{pid:path}/map")
+async def api_project_map_save(request: Request, pid: str, ctx: AppContext = CTX):
+    ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
+    if not ctx.settings.github_token:
+        raise HTTPException(400, "GITHUB_TOKEN is required to save map edits.")
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, "Invalid JSON payload.") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Invalid JSON payload.")
+
+    sha = str(body.get("sha") or "").strip()
+    if not sha:
+        raise HTTPException(400, "Missing STATUS.md sha.")
+    raw_msg = " ".join(str(body.get("message") or "").split()).strip()
+    commit_msg = f"Update task map: {raw_msg[:100]}" if raw_msg else "Update task map in STATUS.md"
+
+    try:
+        groups, tasks = task_map.validate_map_payload(body.get("groups"), body.get("tasks"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    projects, _ = await ctx.hub.load()
+    proj = next((p for p in projects if p.id == pid), None)
+    if proj is None:
+        raise HTTPException(404, "Unknown project")
+
+    new_source = task_map.apply_map_to_source(
+        proj.status.source, groups, tasks, owner_tag=proj.status.owner_tag
+    )
+    try:
+        await ctx.hub.save_task_map(proj, new_source, sha, commit_msg)
+    except ValueError as exc:
+        fresh_projects, _ = await ctx.hub.load(force=True)
+        fresh = next((p for p in fresh_projects if p.id == pid), None)
+        payload = None
+        if fresh is not None:
+            _, active = _active_tasks_for(fresh.repo, ctx)
+            payload = _map_payload(fresh, active, ctx)
+        return JSONResponse({"detail": str(exc), "conflict": True, "map": payload}, status_code=409)
+    except (GitHubError, httpx.RequestError) as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+    _, active = _active_tasks_for(proj.repo, ctx)
+    return JSONResponse(_map_payload(proj, active, ctx))
 
 
 @router.post("/p/{pid:path}/done")

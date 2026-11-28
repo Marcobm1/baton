@@ -49,7 +49,7 @@ def test_theme_switch_on_every_page(tmp_path, monkeypatch, lang):
 def test_colours_live_only_in_the_token_blocks():
     rest = CSS[CSS.index(":root {\n  --sans"):]          # everything after the tokens
     assert not HEX.findall(rest) and "rgb(" not in rest
-    for name in ("quotas.css", "models.css", "machines.css", "chat.css", "townhall.css"):
+    for name in ("quotas.css", "models.css", "machines.css", "chat.css", "townhall.css", "task-map.css"):
         assert not HEX.findall((STATIC / name).read_text(encoding="utf-8")), name
 
 
@@ -94,7 +94,7 @@ def test_no_important_on_bare_element_selectors():
     # `button { color: x !important }` beats every class on every button, so a
     # chip that sets its own text colour turns invisible. That happened in the
     # dark theme of /chat (suggestion chips, the attach button, Sign out).
-    for name in ("style.css", "quotas.css", "models.css", "machines.css", "chat.css", "townhall.css"):
+    for name in ("style.css", "quotas.css", "models.css", "machines.css", "chat.css", "townhall.css", "task-map.css"):
         for selectors, body in _rules((STATIC / name).read_text(encoding="utf-8")):
             if "!important" not in body or selectors.lstrip().startswith("@"):
                 continue

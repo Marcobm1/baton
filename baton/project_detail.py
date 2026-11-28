@@ -67,6 +67,10 @@ def target_repo(detail: str) -> tuple[str, str]:
     return match[1], (detail[:match.start()] + detail[end:]).strip()
 
 
+_TASK_ID_PREFIX = re.compile(r"^\[([A-Z][A-Z0-9]{0,3}-\d{1,4})\]\s*")
+_TASK_AFTER_SUFFIX = re.compile(r"\s*\(after:\s*([^)]*)\)\s*$", re.I)
+
+
 @dataclass
 class ChecklistItem:
     title: str
@@ -76,6 +80,8 @@ class ChecklistItem:
     line: int = 0
     repo: str = ""          # where the task is done, if not in the project's repository
     owner_tag: str = DEFAULT_OWNER_TAG
+    task_id: str = ""
+    deps: list[str] = field(default_factory=list)
 
     @property
     def owner_action(self) -> bool:
@@ -88,6 +94,16 @@ class ChecklistItem:
         return self.title
 
     def __post_init__(self):
+        if not self.task_id:
+            match = _TASK_ID_PREFIX.match(self.title)
+            if match:
+                self.task_id = match.group(1)
+                self.title = self.title[match.end():].strip()
+        if not self.deps:
+            match = _TASK_AFTER_SUFFIX.search(self.title)
+            if match:
+                self.deps = [d.strip() for d in match.group(1).split(",") if d.strip()]
+                self.title = self.title[:match.start()].strip()
         if not self.recommended:
             self.recommended, self.detail = recommendation(self.detail)
         if not self.repo:
@@ -116,6 +132,7 @@ _markdown = MarkdownIt("commonmark")
 _HEADINGS = {"siguiente": "next", "próximo": "next", "próximas tareas": "next",
              "hecho recientemente": "done recently", "bloqueos": "blockers",
              "decisiones": "decisions", "registro": "log"}
+_KNOWN_SECTIONS = {"next", "done recently", "blockers", "decisions", "log"}
 _marker = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s*")
 _checkbox = re.compile(r"^\[([ xX])\]\s+(.+)")
 
@@ -128,8 +145,12 @@ def sections(body: str, *, owner_tag: str = DEFAULT_OWNER_TAG) -> Sections:
     section = ""
     for i, token in enumerate(tokens):
         if token.type == "heading_open" and token.level == 0:
-            section = tokens[i + 1].content.strip().rstrip(":").strip().casefold()
-            section = _HEADINGS.get(section, section)
+            heading = tokens[i + 1].content.strip().rstrip(":").strip().casefold()
+            heading = _HEADINGS.get(heading, heading)
+            # Group subheadings (### API (AP)) inside ## Next belong to the task map,
+            # while H1/H2 or known top-level sections switch sections as before.
+            if token.tag in ("h1", "h2") or heading in _KNOWN_SECTIONS or section != "next":
+                section = heading
             continue
         is_item = token.type == "list_item_open" and token.level == 1
         is_paragraph = token.type == "paragraph_open" and token.level == 0

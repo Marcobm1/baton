@@ -55,6 +55,7 @@
     } catch (e) {}
   }
 
+  var phone = window.matchMedia("(width < 640px)");
   var savedPrefs = loadPrefs();
   var ui = {
     selected: null,
@@ -71,7 +72,7 @@
     expanded: new Set(),
     unfoldedLanes: new Set(),
     filter: "",
-    md: false,
+    view: phone.matches ? "board" : "graph",
     syncState: "", // "", "saving", "saved", "err"
     armedDelete: false,
   };
@@ -91,16 +92,13 @@
   var mainEl = document.getElementById("tm-main");
   var hintEl = document.getElementById("tm-hint");
 
-  // Mobile "Show map anyway" toggle
-  var showMobileBtn = document.getElementById("tm-show-mobile");
-  var mobileNotice = document.getElementById("tm-mobile-notice");
-  if (showMobileBtn) {
-    showMobileBtn.addEventListener("click", function () {
-      root.classList.add("tm-force-mobile");
-      if (mobileNotice) mobileNotice.hidden = true;
-      render();
-    });
-  }
+  var graphEl = document.getElementById("tm-graph");
+  var boardEl = document.getElementById("tm-board");
+  var helpEl = document.getElementById("tm-help");
+  var menuEl = document.getElementById("tm-menu");
+  var lastSelection = null;
+
+  phone.addEventListener("change", function () { setView(phone.matches ? "board" : "graph"); });
 
   function cloneData(src) {
     return JSON.parse(JSON.stringify({
@@ -332,34 +330,6 @@
     return "/tasks/new?" + q.toString();
   }
 
-  function serializePreview() {
-    var valid = new Set(state.tasks.map(function (t) { return t.id; }));
-    var out = ["## Next"];
-    state.groups.forEach(function (g) {
-      out.push("", "### " + g.name + " (" + g.id + ")");
-      state.tasks.forEach(function (t) {
-        if (t.group !== g.id) return;
-        var parts = ["- [" + (t.done ? "x" : " ") + "] [" + t.id + "]"];
-        if (t.done && t.date) parts.push(t.date);
-        if (t.owner) parts.push(state.owner_tag || "(Owner)");
-        parts.push(t.title);
-        var deps = (t.deps || []).filter(function (d) { return valid.has(d); });
-        var line = parts.join(" ");
-        if (deps.length) line += " (after: " + deps.join(", ") + ")";
-        out.push(line);
-        if (t.desc) {
-          t.desc.split("\n").forEach(function (dl) {
-            out.push(dl.trim() ? "  " + dl : "");
-          });
-        }
-        (t.subs || []).forEach(function (s) {
-          out.push("  - [" + (s.done ? "x" : " ") + "] " + s.text);
-        });
-      });
-    });
-    return out.join("\n") + "\n";
-  }
-
   // --------------------------------------------------------- toast & persistence
   var toastTimer = null;
   function showToast(text, isErr, withUndo) {
@@ -407,7 +377,7 @@
 
   // Async updates must leave a partially typed title, description or subtask alone.
   function syncWhenIdle() {
-    if (pending || sending || pointerDown || editingField()) return;
+    if (pending || sending || pointerDown || mdpEl.open || editingField()) return;
     if (redrawNeeded) {
       redrawNeeded = false;
       applyServerPayload(confirmed);
@@ -512,7 +482,7 @@
   });
   window.addEventListener("beforeunload", function (event) {
     flushOnLeave();
-    if (sending && (pending || !keepalive)) {
+    if ((sending && (pending || !keepalive)) || (mdpEl.open && mdText.value !== mdBase.next_markdown)) {
       event.preventDefault();
       event.returnValue = true;
     }
@@ -618,7 +588,7 @@
         return;
       }
       var data = await res.json();
-      if (version !== editVersion || sending || pending || pointerDown || editingField()) {
+      if (version !== editVersion || sending || pending || pointerDown || mdpEl.open || editingField()) {
         refreshNeeded = true;
       } else if (data.sha !== confirmed.sha || force) {
         undoStack.length = redoStack.length = 0;
@@ -650,8 +620,7 @@
         redrawNeeded = true;
         // Cards can update while a side-panel field has uncommitted text.
         if (editingField() && !pointerDown && !stageEl.contains(document.activeElement)) {
-          renderMap(lastLayout);
-          applyHighlight();
+          renderView();
         }
       }
       if (live.sha !== confirmed.sha) refreshNeeded = true;
@@ -661,13 +630,14 @@
   window.addEventListener("pageshow", connectStream);
 
   // --------------------------------------------------------- mutations
-  function newTask(gid, deps) {
+  function newTask(gid, deps, successor) {
     if (!canEdit()) return;
     var id = nextId(gid);
     ui.selected = id;
     ui.selEdge = null;
     deps = deps || [];
     commit("Add " + id + (deps.length ? " after " + deps.join(", ") : ""), function () {
+      if (successor) T(successor).deps.push(id);
       state.tasks.push({
         id: id,
         group: gid,
@@ -832,7 +802,7 @@
     state.groups.forEach(function (g) { foldedByGroup[g.id] = laneDoneInfo(g.id); });
 
     var vis = state.tasks.filter(function (t) {
-      if (ui.hideDone && t.done) return false;
+      if (ui.hideDone && t.done && t.id !== ui.selected) return false;
       if (t.done && foldedByGroup[t.group] && foldedByGroup[t.group].folded) return false;
       return true;
     });
@@ -1069,14 +1039,18 @@
     root.classList.toggle("tm-editable", canEdit());
     root.classList.toggle("tm-readonly", !canEdit());
     root.classList.toggle("tm-dir-tb", ui.orientation === "tb");
-    lastLayout = layout();
+    if (menuEl.matches(":popover-open")) menuEl.hidePopover();
+    if (ui.selected !== lastSelection) {
+      history.replaceState(history.state, "", location.pathname + location.search + (ui.selected ? "#" + ui.selected : ""));
+      lastSelection = ui.selected;
+    }
+    var focusedCard = document.activeElement.matches(".tm-card");
     renderBanner();
     renderBar();
-    renderMap(lastLayout);
+    renderView();
     renderPanel();
-    renderMd();
-    applyHighlight();
-    if (hintEl) hintEl.hidden = !canEdit();
+    if (focusedCard && ui.selected) focusCard(ui.selected);
+    if (hintEl) hintEl.hidden = !canEdit() || ui.view === "board";
   }
 
   function renderSync() {
@@ -1085,6 +1059,8 @@
       button.hidden = !pending;
       button.onclick = flushSave;
     }
+    var source = document.getElementById("tm-md");
+    if (source) source.disabled = !!pending || sending;
     var reload = document.getElementById("tm-reload");
     if (reload) reload.disabled = !!pending || sending;
     var el = document.getElementById("tm-sync");
@@ -1128,7 +1104,9 @@
     var displayOpen = !!mainEl.querySelector(".tm-display-pop");
 
     barEl.innerHTML =
-      '<div class="tm-chips">' +
+      '<span class="tm-seg tm-view">' + ["graph", "board"].map(function (view) {
+        return '<button type="button" data-view="' + view + '" aria-pressed="' + (ui.view === view) + '">' + esc(S[view]) + '</button>';
+      }).join("") + '</span><div class="tm-chips"' + (ui.view === "board" ? " hidden" : "") + '>' +
         '<span class="tm-chip"><b>' + counts.ready + "</b> " + esc(S.ready_p) + "</span>" +
         '<span class="tm-chip"><b>' + counts.blocked + "</b> " + esc(S.blocked_p) + "</span>" +
         (counts.owner ? '<span class="tm-chip"><b>' + counts.owner + "</b> " + esc(S.owner_p) + "</span>" : "") +
@@ -1138,9 +1116,9 @@
       '<div class="tm-spacer"></div>' +
       '<button type="button" class="tm-btn" id="tm-save-now" hidden>' + esc(S.save_now) + "</button>" +
       '<span id="tm-sync" class="tm-sync"></span>' +
-      '<input class="tm-search" id="tm-search" placeholder="' + esc(S.filter) + '" value="' + esc(ui.filter) + '">' +
-      '<button type="button" class="tm-btn' + (displayOpen ? " on" : "") + '" id="tm-display">' + esc(S.display) + " ▾</button>" +
-      '<span class="tm-seg">' +
+      '<input class="tm-search" id="tm-search" aria-label="' + esc(S.filter) + '" placeholder="' + esc(S.filter) + '" value="' + esc(ui.filter) + '">' +
+      '<button type="button" class="tm-btn' + (displayOpen ? " on" : "") + '" id="tm-display"' + (ui.view === "board" ? " hidden" : "") + '>' + esc(S.display) + " ▾</button>" +
+      '<span class="tm-seg"' + (ui.view === "board" ? " hidden" : "") + '>' +
         '<button type="button" id="tm-zout" aria-label="Zoom out">−</button>' +
         '<span class="tm-zoomv">' + Math.round(ui.zoom * 100) + "%</span>" +
         '<button type="button" id="tm-zin" aria-label="Zoom in">+</button>' +
@@ -1149,7 +1127,8 @@
       (editable ? '<button type="button" class="tm-btn" id="tm-undo"' + (undoStack.length ? "" : " disabled") + ' title="' + esc(S.undo) + ' (Ctrl+Z)">↶</button>' : "") +
       (editable ? '<button type="button" class="tm-btn" id="tm-redo"' + (redoStack.length ? "" : " disabled") + ' title="' + esc(S.redo) + ' (Ctrl+Shift+Z)">↷</button>' : "") +
       '<button type="button" class="tm-btn" id="tm-reload" title="' + esc(S.reload) + '">↻</button>' +
-      '<button type="button" class="tm-btn' + (ui.md ? " on" : "") + '" id="tm-md">' + esc(S.source) + "</button>" +
+      '<button type="button" class="tm-btn" id="tm-shortcuts" aria-label="' + esc(S.shortcuts) + '" title="' + esc(S.shortcuts) + '">?</button>' +
+      '<button type="button" class="tm-btn" id="tm-md">' + esc(S.source) + "</button>" +
       (editable ? '<button type="button" class="tm-btn" id="tm-group">' + esc(S.new_group) + "</button>" : "") +
       (editable ? '<button type="button" class="tm-btn primary" id="tm-new">' + esc(S.new_task) + "</button>" : "");
 
@@ -1164,7 +1143,14 @@
     document.getElementById("tm-zin").onclick = function () { setZoom(ui.zoom + 0.1); };
     document.getElementById("tm-fit").onclick = fitToScreen;
     document.getElementById("tm-reload").onclick = function () { reloadFromServer(true); };
-    document.getElementById("tm-md").onclick = function () { ui.md = !ui.md; render(); };
+    document.getElementById("tm-md").onclick = openMarkdown;
+    document.getElementById("tm-shortcuts").onclick = function () { helpEl.showModal(); };
+    barEl.querySelectorAll("[data-view]").forEach(function (btn) {
+      btn.onclick = function () {
+        setView(btn.dataset.view);
+        barEl.querySelector('[data-view="' + ui.view + '"]').focus();
+      };
+    });
 
     if (editable) {
       document.getElementById("tm-undo").onclick = undo;
@@ -1280,6 +1266,51 @@
     renderBar();
   }
 
+  function setView(view) {
+    var pop = mainEl.querySelector(".tm-pop");
+    if (pop) pop.remove();
+    ui.view = view;
+    ui.selEdge = ui.hover = null;
+    render();
+  }
+
+  function renderView() {
+    var board = ui.view === "board";
+    graphEl.hidden = board;
+    boardEl.hidden = !board;
+    if (board) {
+      renderBoard();
+    } else {
+      lastLayout = layout();
+      renderMap(lastLayout);
+      applyHighlight();
+    }
+  }
+
+  function renderBoard() {
+    var columns = {blocked: [], ready: [], owner: [], running: [], done: []};
+    var q = ui.filter.trim().toLowerCase();
+    state.tasks.forEach(function (t) {
+      if (!matchesFilter(t, q)) return;
+      var st = statusOf(t);
+      columns[st === "queued" ? "running" : st].push(
+        '<button type="button" class="tm-card tm-s-' + st + (ui.selected === t.id ? " sel" : "") +
+        '" data-id="' + esc(t.id) + '"><span class="tm-c-top"><span class="tm-c-id">' + esc(t.id) +
+        '</span><span class="tm-badge">' + esc(statusLabel(st)) + '</span></span><span class="tm-c-title">' +
+        esc(t.title) + '</span></button>'
+      );
+    });
+    boardEl.innerHTML = Object.keys(columns).map(function (st) {
+      return '<section class="tm-column" data-state="' + st + '"><h3>' + esc(statusLabel(st)) +
+        '<span>' + columns[st].length + '</span></h3>' + columns[st].join("") + '</section>';
+    }).join("");
+  }
+
+  boardEl.addEventListener("click", function (event) {
+    var card = event.target.closest(".tm-card");
+    if (card) selectCard(card.dataset.id);
+  });
+
   function renderMap(L) {
     stageEl.style.width = L.w + "px";
     stageEl.style.height = L.h + "px";
@@ -1327,7 +1358,7 @@
       var open = ui.expanded.has(t.id);
       var rec = parseRecommended(t.desc || "").rec;
       var ag = rec.agent || (t.recommended && t.recommended.agent) || "";
-      return '<div class="tm-card tm-s-' + st + (ui.selected === t.id ? " sel" : "") + '" data-id="' + esc(t.id) + '" style="left:' + p.x + "px;top:" + p.y + "px;width:" + W + "px;height:" + p.h + 'px">' +
+      return '<div tabindex="0" class="tm-card tm-s-' + st + (ui.selected === t.id ? " sel" : "") + '" data-id="' + esc(t.id) + '" style="left:' + p.x + "px;top:" + p.y + "px;width:" + W + "px;height:" + p.h + 'px">' +
         '<div class="tm-c-top"><span class="tm-c-id">' + esc(t.id) + '</span><span class="tm-badge">' + esc(statusLabel(st)) + "</span></div>" +
         '<div class="tm-c-title" title="' + esc(t.title) + '">' + esc(t.title) + "</div>" +
         '<div class="tm-c-foot">' +
@@ -1366,11 +1397,9 @@
           '" data-from="' + esc(dId) + '" data-to="' + esc(t.id) + '"' +
           (isTrans ? ' data-trans="1"' : "") +
           ' d="' + ep.d + '" marker-end="url(#' + (isSel ? "tm-arrS" : "tm-arr") + ')"/>';
-        if (editable) {
-          svg += '<path class="tm-edge-hit' + (isTrans && !isSel ? " transitive-off" : "") +
+        svg += '<path class="tm-edge-hit' + (isTrans && !isSel ? " transitive-off" : "") +
             '" data-from="' + esc(dId) + '" data-to="' + esc(t.id) + '"' +
             (isTrans ? ' data-trans="1"' : "") + ' d="' + ep.d + '"/>';
-        }
         if (isSel && editable) {
           delBtn = '<button type="button" class="tm-edge-del" data-act="edge-del" style="left:' + ep.mx + "px;top:" + ep.my + 'px">✕ ' + esc(S.unlink) + " " + esc(dId) + " → " + esc(t.id) + "</button>";
         }
@@ -1436,7 +1465,7 @@
     var subsDone = subs.filter(function (x) { return x.done; }).length;
 
     panelEl.innerHTML =
-      '<div class="tm-p-head"><span class="tm-c-id">' + esc(t.id) + '</span><span class="tm-badge st-' + st + '">' + esc(statusLabel(st)) + '</span><span class="tm-spacer"></span><button type="button" class="tm-ibtn" id="tm-p-close" aria-label="Close">✕</button></div>' +
+      '<div class="tm-p-head"><span class="tm-c-id">' + esc(t.id) + '</span><span class="tm-badge st-' + st + '">' + esc(statusLabel(st)) + '</span><span class="tm-spacer"></span><button type="button" class="tm-ibtn" id="tm-p-close" aria-label="' + esc(S.close) + '">✕</button></div>' +
       '<label class="tm-f"><span>' + esc(S.title) + '</span><input type="text" id="tm-p-title" maxlength="200" value="' + esc(t.title) + '"' + dis + "></label>" +
       '<label class="tm-chk"><input type="checkbox" id="tm-p-owner"' + (t.owner ? " checked" : "") + dis + "><span>" + esc((S.owner_chk || "%s").replace("%s", state.owner_tag || "(Owner)")) + "</span></label>" +
       '<label class="tm-f"><span>' + esc(S.group) + '</span><select id="tm-p-group"' + dis + ">" +
@@ -1481,7 +1510,7 @@
 
     ui.armedDelete = false;
     var id = t.id;
-    document.getElementById("tm-p-close").onclick = function () { ui.selected = null; render(); };
+    document.getElementById("tm-p-close").onclick = closePanel;
 
     if (!editable) return;
 
@@ -1568,22 +1597,77 @@
     }
   }
 
-  function renderMd() {
-    if (!ui.md) { mdpEl.hidden = true; return; }
-    mdpEl.hidden = false;
-    var text = serializePreview();
-    mdpEl.innerHTML =
-      '<div class="tm-p-head"><b>STATUS.md · ## Next</b><span class="tm-spacer"></span><button type="button" class="tm-ibtn" id="tm-md-close" aria-label="Close">✕</button></div>' +
-      '<div class="tm-muted">' + esc(S.md_note) + "</div>" +
-      "<pre>" + esc(text) + "</pre>" +
-      '<div><button type="button" class="tm-btn" id="tm-md-copy">' + esc(S.copy) + "</button></div>";
-    document.getElementById("tm-md-close").onclick = function () { ui.md = false; render(); };
-    document.getElementById("tm-md-copy").onclick = function () {
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).then(function () { showToast(S.copied, false, false); });
-      }
-    };
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(S.copied, false, false);
+    } catch (err) {
+      showToast(S.copy_error, true, false);
+    }
   }
+
+  var mdText = document.getElementById("tm-md-text");
+  var mdApply = document.getElementById("tm-md-apply");
+  var mdError = document.getElementById("tm-md-error");
+  var mdClose = document.getElementById("tm-md-close");
+  var mdBase;
+
+  function openMarkdown() {
+    if (pending || sending) return;
+    mdBase = confirmed;
+    mdText.value = mdBase.next_markdown;
+    mdText.readOnly = !canEdit();
+    mdApply.hidden = !canEdit();
+    mdApply.disabled = true;
+    mdError.hidden = true;
+    mdpEl.showModal();
+    mdText.focus();
+  }
+
+  mdText.oninput = function () { mdApply.disabled = mdText.value === mdBase.next_markdown; };
+  mdClose.onclick = function () { mdpEl.close(); };
+  mdpEl.oncancel = function (e) { if (sending) e.preventDefault(); };
+  mdpEl.onclose = function () {
+    document.getElementById("tm-md").focus();
+    syncWhenIdle();
+  };
+  document.getElementById("tm-md-copy").onclick = function () { copyText(mdText.value); };
+  mdApply.onclick = async function () {
+    if (!canEdit() || sending || pending) return;
+    sending = true;
+    editVersion++;
+    mdApply.disabled = mdClose.disabled = mdText.readOnly = true;
+    mdError.hidden = true;
+    try {
+      var res = await fetch(mapUrl, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-Baton-CSRF": csrf},
+        body: JSON.stringify({sha: mdBase.sha, base: JSON.parse(snapshot(mdBase)),
+          next_markdown: mdText.value, message: "Edit ## Next"}),
+      });
+      var data = await res.json();
+      if (res.status === 409 && data.map) {
+        applyServerPayload(data.map);
+        undoStack.length = redoStack.length = 0;
+        throw new Error(S.md_conflict);
+      }
+      if (!res.ok) throw new Error(data.detail || ("HTTP " + res.status));
+      undoStack.length = redoStack.length = 0;
+      if (!data.merged) undoStack.push(snapshot(mdBase));
+      applyServerPayload(data);
+      ui.syncState = "saved";
+      mdpEl.close();
+      showToast(S.saved, false, false);
+    } catch (err) {
+      mdError.textContent = err.message;
+      mdError.hidden = false;
+    } finally {
+      sending = mdClose.disabled = mdText.readOnly = false;
+      mdApply.disabled = false;
+      render();
+      syncWhenIdle();
+    }
+  };
 
   // --------------------------------------------------------- group popover
   function openGroupPop(anchor) {
@@ -1681,11 +1765,7 @@
     } else if (act === "edge-del" && ui.selEdge) {
       unlink(ui.selEdge.from, ui.selEdge.to);
     } else if (act === "lane-del" && canEdit()) {
-      var gid = b.dataset.g;
-      var grp = G(gid);
-      commit("Delete empty group " + (grp ? grp.name : gid), function () {
-        state.groups = state.groups.filter(function (x) { return x.id !== gid; });
-      });
+      deleteGroup(b.dataset.g);
     }
   });
 
@@ -1702,6 +1782,10 @@
   stageEl.addEventListener("dblclick", function (e) {
     var n = e.target.closest('[data-act="rename"]');
     if (!n || !canEdit()) return;
+    renameGroup(n);
+  });
+
+  function renameGroup(n) {
     var gid = n.closest(".tm-lane").dataset.g;
     var g = G(gid);
     var inp = document.createElement("input");
@@ -1727,7 +1811,7 @@
       if (ev.key === "Escape") done(false);
     };
     inp.onblur = function () { done(true); };
-  });
+  }
 
   stageEl.addEventListener("pointerover", function (e) {
     var c = e.target.closest(".tm-card");
@@ -1863,9 +1947,7 @@
       window.removeEventListener("pointerup", up);
       dropIndEl.hidden = true;
       if (!dragging) {
-        ui.selected = id;
-        ui.selEdge = null;
-        render();
+        selectCard(id);
         return;
       }
       el.classList.remove("dragging");
@@ -1931,8 +2013,129 @@
     window.addEventListener("pointerup", up);
   }
 
+  function deleteGroup(gid) {
+    if (state.groups.length < 2 || state.tasks.some(function (t) { return t.group === gid; })) return;
+    commit("Delete empty group " + G(gid).name, function () {
+      state.groups = state.groups.filter(function (g) { return g.id !== gid; });
+    });
+  }
+
+  function focusCard(id) {
+    var surface = ui.view === "board" ? boardEl : cardsEl;
+    var card = surface.querySelector('.tm-card[data-id="' + CSS.escape(id) + '"]');
+    if (card) {
+      card.focus({preventScroll: true});
+      card.scrollIntoView({block: "nearest", inline: "nearest"});
+    }
+  }
+
+  function selectCard(id) {
+    ui.selected = id;
+    ui.selEdge = ui.hover = null;
+    if (!matchesFilter(T(id), ui.filter.trim().toLowerCase())) ui.filter = "";
+    render();
+    focusCard(id);
+    if (phone.matches) document.getElementById("tm-p-close").focus();
+  }
+
+  function closePanel() {
+    var id = ui.selected;
+    ui.selected = null;
+    render();
+    if (id) focusCard(id);
+  }
+
+  function followHash() {
+    var id = location.hash.slice(1);
+    if (T(id)) selectCard(id);
+    else if (ui.selected) { ui.selected = null; render(); }
+  }
+  window.addEventListener("hashchange", followHash);
+
+  function moveSelection(key) {
+    var surface = ui.view === "board" ? boardEl : cardsEl;
+    var cards = Array.from(surface.querySelectorAll(".tm-card:not(.fout)"));
+    var current = cards.includes(document.activeElement) ? document.activeElement :
+      cards.find(function (card) { return card.dataset.id === ui.selected; });
+    if (!current) {
+      if (cards.length) selectCard(cards[0].dataset.id);
+      return;
+    }
+    var origin = current.getBoundingClientRect();
+    var horizontal = key === "ArrowLeft" || key === "ArrowRight";
+    var sign = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1;
+    var nearest = null, best = Infinity;
+    cards.forEach(function (card) {
+      var rect = card.getBoundingClientRect();
+      var dx = rect.left - origin.left, dy = rect.top - origin.top;
+      var along = sign * (horizontal ? dx : dy);
+      var across = Math.abs(horizontal ? dy : dx);
+      var score = along + 2 * across;
+      if (along > 1 && score < best) { nearest = card; best = score; }
+    });
+    if (nearest) selectCard(nearest.dataset.id);
+  }
+
+  root.addEventListener("contextmenu", function (e) {
+    var card = e.target.closest(".tm-card");
+    var edge = e.target.closest(".tm-edge-hit");
+    var lane = e.target.closest(".tm-lane");
+    if (!card && !edge && !(lane && canEdit())) return;
+    e.preventDefault();
+    menuEl.replaceChildren();
+    function action(label, run, disabled) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.textContent = label;
+      button.disabled = !!disabled;
+      button.onclick = function () { menuEl.hidePopover(); run(); };
+      menuEl.appendChild(button);
+    }
+    if (card) {
+      var t = T(card.dataset.id);
+      action(S.launch, function () { location.assign(launchHref(t)); }, statusOf(t) !== "ready");
+      if (canEdit()) {
+        action(t.done ? S.reopen : S.mark_done, function () { setDone(t.id, !t.done); });
+        action(S.add_after, function () { newTask(t.group, [t.id]); });
+        action(S.add_before, function () { newTask(t.group, [], t.id); });
+      }
+      action(S.copy_id, function () { copyText(t.id); });
+      if (canEdit()) action(S.del, function () {
+        selectCard(t.id);
+        var del = document.getElementById("tm-p-del");
+        del.click();
+        del.focus();
+      });
+    } else if (edge) {
+      var from = edge.dataset.from, to = edge.dataset.to;
+      action(S.jump_from + " · " + from, function () { selectCard(from); });
+      action(S.jump_to + " · " + to, function () { selectCard(to); });
+      if (canEdit()) action(S.unlink, function () { unlink(from, to); });
+    } else {
+      var gid = lane.dataset.g;
+      action(S.add_in_group, function () { newTask(gid); });
+      action(S.rename_group, function () { renameGroup(lane.querySelector(".tm-lane-name")); });
+      action(S.del_group, function () { deleteGroup(gid); }, !lane.querySelector('[data-act="lane-del"]'));
+    }
+    menuEl.showPopover();
+    var box = menuEl.getBoundingClientRect();
+    menuEl.style.left = Math.max(0, Math.min(e.clientX, innerWidth - box.width)) + "px";
+    menuEl.style.top = Math.max(0, Math.min(e.clientY, innerHeight - box.height)) + "px";
+    menuEl.querySelector("button:not(:disabled)").focus();
+  });
+
+  menuEl.onkeydown = function (e) {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    var buttons = Array.from(menuEl.querySelectorAll("button:not(:disabled)"));
+    var i = buttons.indexOf(document.activeElement) + (e.key === "ArrowDown" ? 1 : -1);
+    buttons[(i + buttons.length) % buttons.length].focus();
+  };
+
   // --------------------------------------------------------- keyboard shortcuts
   document.addEventListener("keydown", function (e) {
+    if (helpEl.open || mdpEl.open || menuEl.matches(":popover-open")) return;
     var typing = e.target && e.target.closest("input,textarea,select");
     var mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === "z" && !typing) {
@@ -1949,32 +2152,42 @@
       if (e.key === "Escape") e.target.blur();
       return;
     }
-    if (e.key === "/") {
+    if (mod || e.altKey) return;
+    if (e.key === "?") {
+      e.preventDefault();
+      helpEl.showModal();
+    } else if (e.key.startsWith("Arrow") && !panelEl.contains(e.target)) {
+      e.preventDefault();
+      moveSelection(e.key);
+    } else if (e.key === "Enter" && (e.target.matches(".tm-card") || (ui.selected && e.target === document.body))) {
+      e.preventDefault();
+      selectCard(e.target.dataset.id || ui.selected);
+      document.getElementById(canEdit() ? "tm-p-title" : "tm-p-close").focus();
+    } else if (e.key === "/") {
       e.preventDefault();
       var s = document.getElementById("tm-search");
       if (s) s.focus();
     } else if (e.key === "Escape") {
       var pop = mainEl.querySelector(".tm-pop");
       if (pop) pop.remove();
-      ui.selected = null;
       ui.selEdge = null;
-      render();
+      closePanel();
     } else if ((e.key === "Delete" || e.key === "Backspace") && ui.selEdge && canEdit()) {
       unlink(ui.selEdge.from, ui.selEdge.to);
-    } else if (e.key === "0") {
+    } else if (ui.view === "graph" && e.key === "0") {
       e.preventDefault();
       fitToScreen();
-    } else if (e.key.toLowerCase() === "l") {
+    } else if (ui.view === "graph" && e.key.toLowerCase() === "l") {
       ui.orientation = ui.orientation === "lr" ? "tb" : "lr";
       savePrefs();
       render();
-    } else if (e.key.toLowerCase() === "m") {
+    } else if (ui.view === "graph" && e.key.toLowerCase() === "m") {
       ui.autoOrder = !ui.autoOrder;
       savePrefs();
       render();
-    } else if (e.key === "[") {
+    } else if (ui.view === "graph" && e.key === "[") {
       adjustSpacing(-GAP_STEP);
-    } else if (e.key === "]") {
+    } else if (ui.view === "graph" && e.key === "]") {
       adjustSpacing(GAP_STEP);
     } else if (e.key.toLowerCase() === "n" && canEdit()) {
       var sel = ui.selected ? T(ui.selected) : null;
@@ -1982,6 +2195,7 @@
     }
   });
 
-  render();
+  if (T(location.hash.slice(1))) followHash();
+  else render();
   connectStream();
 })();

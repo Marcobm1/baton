@@ -33,7 +33,6 @@ def _active_tasks_for(repo: str, ctx: AppContext):
 def _map_payload(p, active, ctx: AppContext) -> dict:
     parsed = task_map.parse_status_map(p.status.source, owner_tag=p.status.owner_tag)
     running = task_map.match_running_tasks(parsed.tasks, active)
-    next_md = f"## Next\n\n{task_map.serialize_next_body(parsed.groups, parsed.tasks, owner_tag=p.status.owner_tag)}"
     return {
         "pid": p.id,
         "name": p.status.name,
@@ -49,7 +48,7 @@ def _map_payload(p, active, ctx: AppContext) -> dict:
         "transitive_edges": [list(edge) for edge in task_map.transitive_edges(parsed.tasks)],
         "problems": parsed.problems,
         "running": running,
-        "next_markdown": next_md,
+        "next_markdown": task_map.next_markdown(p.status.source),
         "provisional_details": ctx.t["provisional_details"],
         "from_project_fmt": ctx.t["from_project"],
     }
@@ -251,19 +250,31 @@ async def api_project_map_save(request: Request, pid: str, ctx: AppContext = CTX
     raw_msg = " ".join(str(body.get("message") or "").split()).strip()
     commit_msg = f"Update task map: {raw_msg[:100]}" if raw_msg else "Update task map in STATUS.md"
 
+    projects, _ = await ctx.hub.load()
+    proj = next((p for p in projects if p.id == pid), None)
+    if proj is None:
+        raise HTTPException(404, "Unknown project")
+
+    stored = task_map.parse_status_map(proj.status.source, owner_tag=proj.status.owner_tag)
+    existing_titles = {t.id: t.title for t in stored.tasks}
     try:
-        groups, tasks = task_map.validate_map_payload(body.get("groups"), body.get("tasks"))
-        local = task_map.TaskMap(groups=groups, tasks=tasks, enabled=True)
+        if "next_markdown" in body:
+            if not isinstance(body["next_markdown"], str):
+                raise ValueError("Expected Markdown text.")
+            if not stored.enabled:
+                raise ValueError("Enable the task map before editing Markdown.")
+            local = task_map.parse_status_map(body["next_markdown"], owner_tag=proj.status.owner_tag,
+                                              strict=True, existing_titles=existing_titles)
+            groups, tasks = local.groups, local.tasks
+        else:
+            groups, tasks = task_map.validate_map_payload(body.get("groups"), body.get("tasks"),
+                                                         existing_titles=existing_titles)
+            local = task_map.TaskMap(groups=groups, tasks=tasks, enabled=True)
         base = body.get("base")
         if base is not None and not isinstance(base, dict):
             raise ValueError("Invalid base map.")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-
-    projects, _ = await ctx.hub.load()
-    proj = next((p for p in projects if p.id == pid), None)
-    if proj is None:
-        raise HTTPException(404, "Unknown project")
 
     def conflict(detail):
         payload = None
@@ -281,7 +292,9 @@ async def api_project_map_save(request: Request, pid: str, ctx: AppContext = CTX
             current = remote.to_dict()
             if attempt or any(base.get(key) != current[key] for key in ("groups", "tasks")):
                 try:
-                    original = task_map.TaskMap(*task_map.validate_map_payload(base.get("groups"), base.get("tasks")))
+                    original = task_map.TaskMap(*task_map.validate_map_payload(
+                        base.get("groups"), base.get("tasks"), existing_titles=existing_titles
+                    ))
                     merged = task_map.merge_task_maps(original, local, remote)
                 except ValueError as exc:
                     return conflict(str(exc))

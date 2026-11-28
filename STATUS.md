@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
 updated: 2026-11-28
-updated_by: human
+updated_by: codex
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -79,12 +79,8 @@ links:
   Recommended: codex, gpt-6.2-astra, low
 - [x] [GN-31] 2026-11-28 TM-2: Task map commit coalescing, 3-way conflict merge & live SSE sync
   [Save and live-update behavior](docs/project-detail.md). Verified in Edge and with pytest (335 passed, 2 skipped).
-- [ ] [GN-32] TM-3: Task map ergonomics (context menus, keyboard/deep-links, Kanban board view, editable STATUS.md drawer)
-  Add right-click menus on cards/arrows/lanes, arrow-key navigation, `#ID` URL hash deep-links, `?`
-  shortcuts modal, an editable `## Next` Apply drawer, and a **Graph / Board** toggle that turns mobile
-  screens (`< 640 px`) into a usable single-column state Kanban view ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)).
-  Verify: `tests/test_design.py` passes (tokens-only CSS) and Playwright checks desktop + mobile Board view.
-  Recommended: claude-code, opus, medium
+- [x] [GN-32] 2026-11-28 TM-3: Task map ergonomics (context menus, keyboard/deep-links, Kanban board view, editable STATUS.md drawer)
+  [Board, shortcuts and Markdown Apply](docs/project-detail.md). Verified with pytest and desktop/mobile Playwright checks.
 - [ ] [GN-33] TM-4: Dependency-aware runner & safe chain execution ("Queue up to here")
   Connect `STATUS.md` `(after: …)` dependencies to `baton/runner.py` ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)):
   store optional `status_project_id`/`status_task_id` on `Task`, hold queued tasks until predecessors are
@@ -126,6 +122,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-28 (codex): Added the state board, mobile layout, context menus, keyboard navigation, task links and validated Markdown Apply.
 - 2026-11-28 (codex): TM-2 groups rapid map edits, retries compatible concurrent writes once, and streams task status and STATUS.md revisions to open maps.
 - 2026-11-27 (antigravity): Shipped TM-1 task map layout scaling: 3-sweep barycenter crossing reduction (`M`), `task_map.transitive_edges()` redundant arrow hiding, 3+ done folding per lane, Top→Bottom orientation (`L`), spacing (`[`/`]`), fit-to-screen (`0`), Display popover, and `localStorage` prefs (`baton/task_map.py`, `baton/static/task-map.{css,js}`, `baton/routes/projects.py`, `baton/templates/project.html`, `baton/i18n.py`, `tests/test_task_map.py`, `docs/project-detail.md`, `docs/task-map-roadmap.md`).
 - 2026-11-27 (antigravity): Added future task-map improvement & optimization roadmap (`TM-1` – `TM-4`) in `docs/task-map-roadmap.md` and `STATUS.md`.

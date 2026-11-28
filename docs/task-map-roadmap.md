@@ -63,7 +63,7 @@ save.
 
 ---
 
-## TM-3: Canvas ergonomics, Kanban board toggle & mobile workflow
+## TM-3: Canvas ergonomics, Kanban board toggle & mobile workflow — shipped (2026-11-28)
 
 **Problem:** Power users benefit from faster keyboard/context-menu flows, deep
 links to specific task IDs, and a state-oriented view—especially on phones

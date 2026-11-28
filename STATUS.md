@@ -74,6 +74,33 @@ links:
   you plan to enable the Map tab (`Marcobm1/Cairn`, `Marcobm1/honeypot-awareness`, `Marcobm1/townhall`,
   `Marcobm1/proyectos`). Verify: every repo's `AGENTS.md` documents preserving `[ID]` and `(after: …)`.
   Recommended: codex, gpt-6.2-astra, low
+- [ ] TM-1: Task map layout scaling (crossing reduction, transitive edge hiding, done folding, fit/orientation)
+  Optimize `?tab=map` for larger graphs ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)):
+  add 2–3 sweep barycenter auto-ordering with Manual order toggle, hide transitive edges by default
+  (shown dashed on hover/select), fold 3+ finished tasks per lane into an expandable `"N done"` stub,
+  and add fit-to-screen (`0`), Left→Right / Top→Bottom orientation (`L`), and spacing controls (`[`/`]`).
+  Verify: unit tests for transitive reduction + Playwright smoke test on a 20-task graph with zero JS errors.
+  Recommended: claude-code, opus, medium
+- [ ] TM-2: Task map commit coalescing, 3-way conflict merge & live SSE sync
+  Cut GitHub commit noise and keep the map live ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)):
+  add a ~1.5 s trailing debounce for rapid consecutive edits (flushing on unload), implement semantic
+  3-way merge by task/group ID in `baton/task_map.py` on `409 Conflict` so non-overlapping agent edits
+  merge automatically, and add `/api/projects/{pid}/map/stream` SSE for live running/queued status updates.
+  Verify: pytest coverage for 3-way merge (clean merge vs same-task conflict) and SSE status events.
+  Recommended: codex, gpt-6.2-astra, high
+- [ ] TM-3: Task map ergonomics (context menus, keyboard/deep-links, Kanban board view, editable STATUS.md drawer)
+  Add right-click menus on cards/arrows/lanes, arrow-key navigation, `#ID` URL hash deep-links, `?`
+  shortcuts modal, an editable `## Next` Apply drawer, and a **Graph / Board** toggle that turns mobile
+  screens (`< 640 px`) into a usable single-column state Kanban view ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)).
+  Verify: `tests/test_design.py` passes (tokens-only CSS) and Playwright checks desktop + mobile Board view.
+  Recommended: claude-code, opus, medium
+- [ ] TM-4: Dependency-aware runner & safe chain execution ("Queue up to here")
+  Connect `STATUS.md` `(after: …)` dependencies to `baton/runner.py` ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)):
+  store optional `status_project_id`/`status_task_id` on `Task`, hold queued tasks until predecessors are
+  ticked, allow queueing an ancestor chain in topological order (always stopping before `(Owner)` actions),
+  and pause downstream tasks if an upstream task fails or is cancelled.
+  Verify: runner unit tests for auto-unblock on merge, stop-before-owner guard, and failure cascade pause.
+  Recommended: codex, gpt-6.2-astra, high
 - [x] 2026-11-27 (Marco) Try `web_search` from `/chat` with a local model in **Internet + tools** mode (needs your sign-in)
 - [ ] (Marco) Build `baton-agents-sandbox:latest` (`docker build -f docker/agents-sandbox.Dockerfile -t baton-agents-sandbox:latest .`) and run `baton sandbox-login <claude-code|codex|gemini>` for the CLIs you want to use in **All permissions** mode on `/chat`
 - [ ] (Marco) Decide remaining layout question from the UI review: local chat without models showing the same composer with a setup notice instead of the old "Agent" form
@@ -107,6 +134,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-27 (antigravity): Added future task-map improvement & optimization roadmap (`TM-1` – `TM-4`) in `docs/task-map-roadmap.md` and `STATUS.md`.
 - 2026-11-27 (antigravity): Shipped the interactive per-project task map (`?tab=map`, `baton/task_map.py`, `baton/static/task-map.{css,js}`, `baton/routes/projects.py`, `baton/templates/project.html`, `baton/status.py`, `baton/project_detail.py`, `baton/github.py`, `baton/i18n.py`, `tests/test_task_map.py`, `tests/test_design.py`, `docs/project-detail.md`, `docs/AGENT_INSTRUCTIONS.md`).
 - 2026-11-27 (antigravity): Replaced the fixed 3-model Town Hall form with a dynamic 2–4 participant picker (2 empty slots by default, family → model cascade with live quota windows from `baton/quotas.py`, dynamic moderator sync, optional consensus guest kept independent, and mirrored in Scheduled reviews; `tests/test_townhall.py`, `docs/townhall.md`).
 - 2026-11-27 (antigravity): Added real Docker sandbox for **All permissions** in `/chat` for Claude Code, Codex, and Gemini (`agy`): `docker/agents-sandbox.Dockerfile`, per-agent isolated Docker named auth volumes + `baton sandbox-login`, fail-closed `isolated=True` guards across `baton/chat_claude.py`, `baton/chat_codex.py`, and `baton/agent_chat.py`, UI readiness wiring in `baton/routes/chat.py` & `baton/static/agents-chat.js`, tests in `tests/test_sandbox.py`, and docs in `docs/agents-chat.md`.

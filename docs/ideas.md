@@ -33,3 +33,9 @@ when ready to design and build it.
 - Shipped as the **Map** tab on `/p/{id}?tab=map` (`baton/task_map.py`,
   `baton/static/task-map.{css,js}`, [docs/project-detail.md](project-detail.md)).
 
+## 5. External Gemini (`agy`) CLI token accounting & runtime silent-failure counter
+- Raised during the [2026-11-28 Town Hall audit](townhall-audit-2026-11-28.md) (`00df1695b2bb`):
+  - If the Antigravity CLI (`agy`) exposes local session usage logs in the future, extend `baton/usage.py` to count external `agy` runs alongside `~/.baton/gemini-usage.jsonl` while strictly preserving the numbers-only rule (never reading conversation text).
+  - Optional live runtime counter on `/machines` tracking caught background exceptions after the static AST gate (`[GN-41]`) is in place.
+
+

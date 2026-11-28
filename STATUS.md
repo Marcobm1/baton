@@ -3,9 +3,9 @@ name: Baton (hub + quotas)
 status: active
 priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
-next: "TM-4: Dependency-aware runner & safe chain execution (\"Queue up to here\")"
+next: "Isolate _quota_tick, surface background errors, tri-state GPU busy & AST exception gate"
 updated: 2026-11-28
-updated_by: human
+updated_by: opencode
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -14,6 +14,7 @@ links:
 ---
 
 ## Done recently
+- 2026-11-28: Reviewed Town Hall session `00df1695b2bb` (*"Revision general de la pagina, fallos, bugs, psobiles mejoras, futura tareas."*, `open_floor` with `gemini-4-argon`, `glm-5.3`, and consensus guest `deepseek-v4-pro`), distilled the technical audit with exact file/line references in `docs/townhall-audit-2026-11-28.md`, and created prioritized follow-up tasks `[GN-41]` – `[GN-43]` plus `[GN-33]` (`TM-4`) notes in `STATUS.md` and `docs/task-map-roadmap.md`.
 - 2026-11-27: TM-1 task map layout scaling: added 3-sweep barycenter crossing reduction (**Auto** vs **Manual** card order, `M`), exact DAG transitive-edge detection (`task_map.transitive_edges()`, hidden by default and shown dashed on hover/select), automatic folding of 3+ completed tasks per lane into an expandable `"N done"` pill, **Left → Right** / **Top → Bottom** orientation (`L`), spacing slider (`[`/`]`), fit-to-screen zoom (`0`), **Display ▾** popover, and `localStorage` preference persistence (`baton/task_map.py`, `baton/routes/projects.py`, `baton/static/task-map.{css,js}`, `baton/templates/project.html`, `baton/i18n.py`, `tests/test_task_map.py`, `docs/project-detail.md`, `docs/task-map-roadmap.md`).
 - 2026-11-27: Interactive per-project task map (`?tab=map`): added a Kanvas-inspired dependency graph tab inside every project page (`baton/task_map.py`, `baton/routes/projects.py`, `baton/templates/project.html`, `baton/static/task-map.{css,js}`, `baton/i18n.py`) stored directly in `STATUS.md` `## Next` (`### Group (PFX)`, `[ID]`, `(after: …)`, indented subtasks) with explicit opt-in conversion for legacy files (`POST /api/projects/{pid}/map/enable`), immediate per-edit GitHub commits guarded by optimistic blob-SHA concurrency & 409 reload recovery, strict 3-colour DFS cycle rejection, top-level-only progress counting (`baton/status.py`, `baton/project_detail.py`), live running-task matching, and `/tasks/new` launch drafts (`tests/test_task_map.py`, `tests/test_design.py`, `docs/project-detail.md`, `docs/AGENT_INSTRUCTIONS.md`).
 - 2026-11-27: Town Hall dynamic 2–4 participant picker & live provider quotas: replaced the fixed 3-model form on `/townhall` (both **Start a Town Hall** and **Scheduled reviews**) with a dynamic 2–4 slot picker starting with 2 empty slots (no pre-selected models, family → model cascade, **+ Add model** up to 4, remove down to 2, live remaining quota windows next to each family from `baton/quotas.py`, dynamic moderator selector, and consensus guest kept independently optional; `baton/townhall_bridge.py`, `baton/routes/townhall.py`, `baton/templates/townhall.html`, `baton/static/townhall.{js,css}`, `tests/test_townhall.py`, `docs/townhall.md`).
@@ -66,8 +67,29 @@ links:
 - [x] [GN-28] 2026-11-27 TM-1: Task map layout scaling (3-sweep barycenter crossing reduction with Auto/Manual toggle `M`, `task_map.transitive_edges()` hiding redundant arrows until hover/select, 3+ done folding per lane into expandable `"N done"` pill, Left→Right / Top→Bottom orientation `L`, spacing `[`/`]`, fit-to-screen `0`, Display popover & `localStorage` prefs; `tests/test_task_map.py`, `docs/task-map-roadmap.md`)
 - [x] [GN-29] 2026-11-28 UI-7: Visual smoke test for /chat (screenshots + button contrast)
   [Run the opt-in test](docs/design.md#chat-visual-smoke-test-ui-7-2026-11-28). Four Edge configurations passed and all four caught the restored global button color override.
+- [x] [GN-44] 2026-11-28 Review Town Hall audit (`00df1695b2bb`) and prepare actionable follow-up tasks
+  Distilled the 2026-11-28 `open_floor` deliberation (`gemini-4-argon`, `glm-5.3`, `deepseek-v4-pro`) into [docs/townhall-audit-2026-11-28.md](docs/townhall-audit-2026-11-28.md) and queued `[GN-41]` – `[GN-43]` plus `[GN-33]` (`TM-4`) refinements.
+- [ ] [GN-41] Isolate _quota_tick, surface background errors, tri-state GPU busy & AST exception gate
+  Follow [docs/townhall-audit-2026-11-28.md §1](docs/townhall-audit-2026-11-28.md#1-silent-exception-handling--background-loop-isolation-gn-41):
+  1. In `baton/web.py:231-261`, isolate each step of `_quota_tick()` in its own `try/except Exception:` with `logging.getLogger(__name__).exception(...)` so a failure in `refresh_usage()` cannot skip `scheduler.tick()` or `townhall_svc.tick_schedules()`, and log top-level `_loop()` errors.
+  2. In `baton/routes/deps.py:132-205`, record typed errors (`type(e).__name__`) in `usage_cache` and `gemini_state["msg"]` on background refresh failure instead of `pass`, and log warnings in `baton/notify.py:252` and `baton/runner.py:399` (preserving explicit `task.model`).
+  3. Change `local_gpu_busy` (`baton/routes/machines.py:25-30`, `baton/web.py:235-243`, `baton/alerts.py:328-340`) to tri-state `bool | None` so an exception in `models.overview()` returns `None` (skipping `gpu_unusual` evaluation) instead of `False` (falsely reporting GPU idle).
+  4. Add an AST test in `tests/test_silent_exceptions.py` that rejects any bare `except Exception: pass` across `baton/**/*.py` unless annotated with `# noqa: BLE001 — <reason>`, and add `"OPENCODE_CONFIG_CONTENT"` to `agent_env()`'s strip list in `baton/security.py` so `pytest` runs cleanly inside OpenCode tasks. Verify with `pytest -q`.
+  Recommended: codex, gpt-6.2-astra, medium
+- [ ] [GN-42] Fix Town Hall `_active` memory retention and unify scheduled runs with live SSE
+  Follow [docs/townhall-audit-2026-11-28.md §2](docs/townhall-audit-2026-11-28.md#2-town-hall-session-lifecycle--scheduled-sse-parity-gn-42):
+  1. In `baton/townhall_bridge.py:273, 317-342`, bound or prune finished `ActiveTownHall` records from `self._active` after completion so event lists do not accumulate indefinitely in RAM while `/api/townhall/{id}/events` falls back cleanly to `self.store.get(id)`.
+  2. In `baton/townhall_bridge.py:360-372`, make `tick_schedules()` launch due schedules through `start_session()` (or register them in `self._active` asynchronously) so scheduled Town Halls expose `active_count()`, live SSE streaming, and `cancel_session()` without blocking `_quota_tick()`.
+  Verify with unit tests in `tests/test_townhall.py` covering finished-session eviction and live SSE/cancellation for scheduled runs.
+  Recommended: codex, gpt-6.2-astra, medium
+- [ ] [GN-43] Harden Task Map Markdown drawer leading blank lines and SSE stream resilience
+  Follow [docs/townhall-audit-2026-11-28.md §3](docs/townhall-audit-2026-11-28.md#3-task-map-tabmap-markdown-drawer--sse-stream-resilience-gn-43):
+  1. In `baton/task_map.py:381-387`, strip leading blank lines (`source.lstrip("\r\n")`) when `strict=True` before computing `_find_next_span()` so pasting or editing `## Next` in the drawer with leading blank lines does not fail with `400 Bad Request`.
+  2. In `baton/routes/projects.py:167-189`, guard `await ctx.hub.load()` inside `/api/projects/{pid}/map/stream` with `try/except Exception:` and retain the last known `current` project snapshot on transient errors so the SSE stream stays connected.
+  Verify with unit tests in `tests/test_task_map.py`.
+  Recommended: opencode, opencode-go/deepseek-v4-pro
 - [ ] [GN-33] TM-4: Dependency-aware runner & safe chain execution ("Queue up to here")
-  Bind tasks launched from the map to their project and checklist IDs. Hold dispatch until
+  Bind tasks launched from the map to their project and checklist IDs (`status_project_id` and `status_task_id` on `Task` in `baton/task_store.py`, used as primary keys by `task_map.match_running_tasks()` before title heuristics; see [Town Hall audit §4](docs/townhall-audit-2026-11-28.md#4-input-to-tm-4-gn-33-explicit-task-to-map-primary-keys)). Hold dispatch until
   predecessors are complete, preview the required agent tasks in dependency order before queueing,
   stop at owner checkpoints, and pause descendants after a failure or cancellation.
   Verify with runner and route tests for dispatch after merge, owner checkpoints, and failure propagation.
@@ -121,6 +143,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-28 (opencode): Reviewed Town Hall session `00df1695b2bb`, documented findings and implementation specs in `docs/townhall-audit-2026-11-28.md`, and added tasks `[GN-41]` – `[GN-43]` plus `[GN-33]` (`TM-4`) refinements to `STATUS.md`.
 - 2026-11-28 (codex): Added the opt-in `/chat` browser smoke test with a fake Gemini, four screenshots and a 3:1 button contrast check. Verified the skip path and the historical CSS regression.
 - 2026-11-28 (codex): Checked the four target `AGENTS.md` files on GitHub for GN-30. The task-map rule still needs to be added in each repository's own worktree.
 - 2026-11-28 (codex): Added the state board, mobile layout, context menus, keyboard navigation, task links and validated Markdown Apply.

@@ -147,6 +147,14 @@
           <button type="button" class="tm-btn primary" id="tm-md-apply">{{ t.tm_apply }}</button>
         </div>
       </dialog>
+      <dialog class="tm-help" id="tm-chain" aria-labelledby="tm-chain-title">
+        <strong id="tm-chain-title">{{ t.tm_chain }}</strong>
+        <ol></ol><p class="warn small" hidden></p>
+        <form method="dialog" class="tm-p-actions">
+          <button class="tm-btn" value="cancel" autofocus>{{ t.tm_close }}</button>
+          <button class="tm-btn primary" value="confirm">{{ t.tm_queue_confirm }}</button>
+        </form>
+      </dialog>
       <dialog class="tm-help" id="tm-help" aria-labelledby="tm-help-title">
         <div class="tm-p-head"><strong id="tm-help-title">{{ t.tm_shortcuts }}</strong><span class="tm-spacer"></span>
           <form method="dialog"><button class="tm-ibtn" aria-label="{{ t.tm_close }}">✕</button></form></div>
@@ -211,6 +219,7 @@
     'sub_add': t.tm_sub_add,
     'mark_done': t.tm_mark_done,
     'reopen': t.tm_reopen,
+    'in_queue': t.tm_in_queue, 'chain': t.tm_chain, 'checkpoint': t.tm_checkpoint, 'merged_pending': t.tm_merged_pending,
     'launch': t.tm_launch,
     'view_active': t.tm_view_active,
     'del': t.tm_delete,

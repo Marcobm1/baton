@@ -297,6 +297,9 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE tasks ADD COLUMN diff_stat TEXT")
     if "artifacts" not in cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN artifacts TEXT")
+    for name in ("status_project_id", "status_task_id", "predecessor_runs"):
+        if name not in cols:
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} TEXT")
     msg_cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_messages)")}
     if msg_cols and "tools" not in msg_cols:
         # Tool calls of an assistant turn (JSON list), so a reopened chat

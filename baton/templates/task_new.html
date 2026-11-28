@@ -7,6 +7,7 @@
 {% if error %}<p class="warn small">{{ error }}</p>{% endif %}
 <form method="post" action="/tasks" class="task-form">
   <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if status_task_id %}<input type="hidden" name="status_project_id" value="{{ status_project_id }}"><input type="hidden" name="status_task_id" value="{{ status_task_id }}">{% endif %}
   {% if followup %}<input type="hidden" name="followup" value="{{ followup }}">{% endif %}
   <label class="wide">{{ t.repo }}
     {% if repo_missing %}<p class="warn small">{{ t.repo_unavailable|format(repo_missing) }}</p>{% endif %}

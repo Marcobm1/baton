@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from uuid import uuid4
 from typing import Literal
 from urllib.parse import quote
 
@@ -15,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Stre
 from .. import ranking_view, task_map
 from ..github import GitHubError
 from ..project_detail import finished_items, summary_headline
-from ..task_store import queue_key
+from ..task_store import Task, UpdateInProgress, new_id, queue_key
 from .deps import CTX, AppContext
 
 router = APIRouter()
@@ -30,9 +31,19 @@ def _active_tasks_for(repo: str, ctx: AppContext):
     return tasks, active
 
 
-def _map_payload(p, active, ctx: AppContext) -> dict:
+def _map_payload(p, ctx: AppContext) -> dict:
     parsed = task_map.parse_status_map(p.status.source, owner_tag=p.status.owner_tag)
+    active = ctx.store.map_activity(p.id, p.repo)
     running = task_map.match_running_tasks(parsed.tasks, active)
+    unchecked = {item.id for item in parsed.tasks if not item.owner and not item.done}
+    history = ctx.store.all()
+    latest = ctx.store.latest_map_runs(history, p.id)
+    merged = []
+    for run in history:
+        if run.status_task_id in unchecked and latest.get(run.status_task_id) == run.id:
+            ctx.runner.refresh_map_merge(run)
+            if run.merged:
+                merged.append(run.status_task_id)
     return {
         "pid": p.id,
         "name": p.status.name,
@@ -48,6 +59,7 @@ def _map_payload(p, active, ctx: AppContext) -> dict:
         "transitive_edges": [list(edge) for edge in task_map.transitive_edges(parsed.tasks)],
         "problems": parsed.problems,
         "running": running,
+        "merged_items": merged,
         "next_markdown": task_map.next_markdown(p.status.source),
         "provisional_details": ctx.t["provisional_details"],
         "from_project_fmt": ctx.t["from_project"],
@@ -135,7 +147,7 @@ async def project(request: Request, pid: str, tab: Literal["next", "map", "done"
             content = p.status.sections
             tasks, active = _active_tasks_for(p.repo, ctx)
             finished = finished_items(content, tasks)
-            map_data = _map_payload(p, active, ctx) if tab == "map" else None
+            map_data = await asyncio.to_thread(_map_payload, p, ctx) if tab == "map" else None
             return ctx.page(
                 request, "project.html", "projects", p=p, content=content, tab=tab,
                 upcoming=content.upcoming, checked=sum(item.checked for item in content.checklist),
@@ -153,8 +165,96 @@ async def api_project_map(pid: str, refresh: int = 0, ctx: AppContext = CTX):
     proj = next((p for p in projects if p.id == pid), None)
     if proj is None:
         raise HTTPException(404, "Unknown project")
-    _, active = _active_tasks_for(proj.repo, ctx)
-    return JSONResponse(_map_payload(proj, active, ctx))
+    return JSONResponse(await asyncio.to_thread(_map_payload, proj, ctx))
+
+
+@router.post("/api/projects/{pid:path}/map/chain")
+async def map_chain(request: Request, pid: str, target: str, sha: str, confirm: bool = False,
+                    ctx: AppContext = CTX):
+    ctx.check_post(request, request.headers.get("x-baton-csrf", ""))
+    projects, _ = await ctx.hub.load()
+    project = next((p for p in projects if p.id == pid), None)
+    if project is None:
+        raise HTTPException(404, "Unknown project")
+    if sha != project.status_sha:
+        raise HTTPException(409, "The checklist changed. Reload and preview again.")
+    try:
+        items = task_map.execution_items(project.status.source, project.status.owner_tag)
+        order = task_map.execution_order(items, target)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    history = ctx.store.all()
+    latest = ctx.store.latest_map_runs(history, pid)
+    active = {t.status_task_id: t for t in history if t.status_project_id == pid and t.status in ("queued", "running")}
+    destinations = {p.repo.casefold(): p for p in projects}
+    available = ctx.runner.agents_available()
+    tasks, preview, ancestors = [], [], {}
+    checkpoint = None
+    for item in order:
+        parents = list(dict.fromkeys(r for dep in item.deps for r in ancestors[dep]))
+        if item.done:
+            ancestors[item.id] = parents
+            continue
+        if item.owner:
+            checkpoint = f"{item.id} {item.title}"
+            break
+        if item.id in active:
+            run = active[item.id]
+            ancestors[item.id] = [*parents, *run.predecessor_runs, run.id]
+            preview.append({"title": f"[{item.id}] {item.title}", "repo": run.repo, "agent": run.agent,
+                            "model": run.model, "effort": run.effort, "existing": run.id})
+            continue
+        repo = (item.repo or project.repo).casefold()
+        dest = destinations.get(repo)
+        if not dest or not ctx.runner.repos.get(dest.repo):
+            raise HTTPException(409, f"{item.id}: local repository unavailable.")
+        rec = item.recommended
+        agent = rec.get("agent") or next((a for a in ("codex", "claude-code", "gemini")
+                                           if available.get(a) == ""), "")
+        model, effort = rec.get("model", ""), rec.get("effort", "")
+        if agent == "local":
+            model = model or ctx.runner.local_model
+        if not agent or available.get(agent, "unknown"):
+            raise HTTPException(409, f"{item.id}: local agent unavailable.")
+        if agent == "opencode":
+            if model not in await asyncio.to_thread(ctx.opencode_models_fn):
+                raise HTTPException(409, f"{item.id}: unavailable OpenCode model.")
+        elif agent != "local" and (model or effort):
+            options = await asyncio.to_thread(ctx.catalog_fn, agent)
+            if model not in options or (effort and effort not in options[model]["efforts"]):
+                raise HTTPException(409, f"{item.id}: unavailable model or effort.")
+        title = f"[{item.id}] {item.title}"
+        run = new_id(title) + "-" + uuid4().hex[:12]
+        ancestors[item.id] = [*parents, run]
+        details = [f"Checklist: {project.repo}/{project.path} [{item.id}]", item.desc]
+        details.extend(f"- [{'x' if sub.done else ' '}] {sub.text}" for sub in item.subs)
+        tasks.append(Task(id=run, repo=dest.repo, title=title, details="\n".join(details),
+                          agent=agent, model=model, effort=effort, where="local", created_at=time.time(),
+                          branch=f"baton/{run}", base=dest.branch, status_project_id=pid,
+                          status_task_id=item.id, predecessor_runs=parents))
+        preview.append({"title": title, "repo": dest.repo, "agent": agent, "model": model, "effort": effort})
+    previous = {key: latest.get(key, "") for key in ancestors if not items[key].done}
+    plan = {"tasks": preview, "checkpoint": checkpoint, "sha": sha, "previous": previous}
+    if confirm:
+        try:
+            confirmed = await request.json()
+        except ValueError as exc:
+            raise HTTPException(400, "Missing confirmed plan.") from exc
+        if confirmed != plan:
+            raise HTTPException(409, "Execution plan changed. Preview again.")
+        try:
+            source = await asyncio.to_thread(ctx.hub.map_source, pid)
+        except (GitHubError, httpx.HTTPError) as exc:
+            raise HTTPException(502, "Could not verify the current project checklist.") from exc
+        if source != project.status.source:
+            raise HTTPException(409, "The checklist changed. Reload and preview again.")
+        try:
+            await asyncio.to_thread(ctx.runner.submit_batch, tasks, previous)
+        except UpdateInProgress as exc:
+            raise HTTPException(503, ctx.t["update_testing"]) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+    return plan
 
 
 @router.get("/api/projects/{pid:path}/map/stream")
@@ -172,7 +272,7 @@ async def api_project_map_stream(request: Request, pid: str, ctx: AppContext = C
             sha = current.status_sha
             if sha != last_sha:
                 parsed = task_map.parse_status_map(current.status.source, owner_tag=current.status.owner_tag)
-            active = await asyncio.to_thread(ctx.store.active_for_repo, current.repo)
+            active = await asyncio.to_thread(ctx.store.map_activity, current.id, current.repo)
             running = task_map.match_running_tasks(parsed.tasks, active)
             if sha != last_sha or running != last_running:
                 yield f"event: status\ndata: {json.dumps({'sha': sha, 'running': running})}\n\n"
@@ -222,14 +322,11 @@ async def api_project_map_enable(request: Request, pid: str, ctx: AppContext = C
         fresh = next((p for p in fresh_projects if p.id == pid), None)
         payload = None
         if fresh is not None:
-            _, active = _active_tasks_for(fresh.repo, ctx)
-            payload = _map_payload(fresh, active, ctx)
+            payload = await asyncio.to_thread(_map_payload, fresh, ctx)
         return JSONResponse({"detail": str(exc), "conflict": True, "map": payload}, status_code=409)
     except (GitHubError, httpx.RequestError) as exc:
         raise HTTPException(502, str(exc)) from exc
-
-    _, active = _active_tasks_for(proj.repo, ctx)
-    return JSONResponse(_map_payload(proj, active, ctx))
+    return JSONResponse(await asyncio.to_thread(_map_payload, proj, ctx))
 
 
 @router.post("/api/projects/{pid:path}/map")
@@ -276,11 +373,10 @@ async def api_project_map_save(request: Request, pid: str, ctx: AppContext = CTX
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    def conflict(detail):
+    async def conflict(detail):
         payload = None
         if proj is not None:
-            _, active = _active_tasks_for(proj.repo, ctx)
-            payload = _map_payload(proj, active, ctx)
+            payload = await asyncio.to_thread(_map_payload, proj, ctx)
         return JSONResponse({"detail": detail, "conflict": True, "map": payload}, status_code=409)
 
     merged_changes = False
@@ -297,7 +393,7 @@ async def api_project_map_save(request: Request, pid: str, ctx: AppContext = CTX
                     ))
                     merged = task_map.merge_task_maps(original, local, remote)
                 except ValueError as exc:
-                    return conflict(str(exc))
+                    return await conflict(str(exc))
                 merged_changes = True
                 groups, tasks = merged.groups, merged.tasks
                 if groups == remote.groups and tasks == remote.tasks:
@@ -312,13 +408,11 @@ async def api_project_map_save(request: Request, pid: str, ctx: AppContext = CTX
             fresh_projects, _ = await ctx.hub.load(force=True)
             proj = next((p for p in fresh_projects if p.id == pid), None)
             if attempt or base is None or proj is None:
-                return conflict(str(exc))
+                return await conflict(str(exc))
             sha = proj.status_sha
         except (GitHubError, httpx.RequestError) as exc:
             raise HTTPException(502, str(exc)) from exc
-
-    _, active = _active_tasks_for(proj.repo, ctx)
-    return JSONResponse(dict(_map_payload(proj, active, ctx), merged=merged_changes))
+    return JSONResponse(dict(await asyncio.to_thread(_map_payload, proj, ctx), merged=merged_changes))
 
 
 @router.post("/p/{pid:path}/done")

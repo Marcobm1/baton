@@ -873,6 +873,35 @@ def apply_map_to_source(
     )
 
 
+def execution_items(source: str, owner_tag: str) -> dict[str, MapTask]:
+    """Reject ambiguous IDs or edges before using the map to launch agents."""
+    section = next_markdown(source)
+    titles = {t.id: t.title for t in parse_status_map(section, owner_tag=owner_tag).tasks}
+    parsed = parse_status_map(section, owner_tag=owner_tag, strict=True, existing_titles=titles)
+    return {t.id: t for t in parsed.tasks}
+
+
+def execution_order(items: dict[str, MapTask], target: str) -> list[MapTask]:
+    """Visit each ancestor once, including checked items that still have prerequisites."""
+    if target not in items:
+        raise ValueError(f"Missing checklist item {target}.")
+    if items[target].done:
+        return []
+    order = []
+    visited = set()
+
+    def visit(item):
+        if item.id in visited:
+            return
+        visited.add(item.id)
+        for dep in item.deps:
+            visit(items[dep])
+        order.append(item)
+
+    visit(items[target])
+    return order
+
+
 def match_running_tasks(map_tasks: list[MapTask], active_tasks: list[Any]) -> dict[str, dict[str, str]]:
     """Map task IDs from the graph to currently running/queued Baton tasks."""
     matched: dict[str, dict[str, str]] = {}
@@ -886,6 +915,11 @@ def match_running_tasks(map_tasks: list[MapTask], active_tasks: list[Any]) -> di
 
     for bt in active_tasks:
         title = str(getattr(bt, "title", "") or "").strip()
+        if getattr(bt, "status_task_id", ""):
+            if bt.status_task_id in known_ids:
+                matched[bt.status_task_id] = {"id": bt.id, "status": bt.status, "title": title,
+                                              "url": f"/tasks/{quote(bt.id, safe='')}"}
+            continue
         if not title:
             continue
         target_id: str | None = None

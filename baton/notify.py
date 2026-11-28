@@ -101,7 +101,10 @@ class Notifier:
         es = self.lang == "es"
         status = str(getattr(task, "status", "") or "")
         merged = bool(getattr(task, "merged", False))
-        if status == "done":
+        if status == "cancelled":
+            icon = "\u23f8"
+            state = "Cadena detenida" if es else "Chain stopped"
+        elif status == "done":
             icon = "✅"
             state = ("Fusionada" if merged else "Terminada") if es else ("Merged" if merged else "Done")
         else:
@@ -283,11 +286,12 @@ class Notifier:
         return None
 
     def notify_task(self, task: Any) -> None:
-        """Hook for `runner.on_finished`: notifies on done/failed tasks (skips cancelled)."""
+        """Notify on completed work, failures and chains stopped by an upstream task."""
         if not self.configured or not self.notify_tasks:
             return
         status = str(getattr(task, "status", "") or "")
-        if status not in ("done", "failed"):
+        chain_stopped = status == "cancelled" and getattr(task, "message", "").startswith("Chain stopped because ")
+        if status not in ("done", "failed") and not chain_stopped:
             return
         title, body = self.format_task(task)
         photo = self._first_task_photo(task) if status == "done" else None

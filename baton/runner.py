@@ -63,6 +63,7 @@ from .ping import _NO_WINDOW, agent_env, find_agy, find_claude, find_codex
 from .proc import attach_job, close_job, kill_tree
 from .ranking import Ranking, review_verdict as review_verdict
 from .review_merge import finish_pr, pick_reviewer, resolve_reviewer_model, run_review, wait_for_tests
+from .task_map import execution_items, execution_order
 from .task_models import catalog
 from .task_store import (
     PRIORITIES as PRIORITIES,
@@ -173,25 +174,93 @@ class Runner:
     def submit(self, task: Task) -> None:
         """Put a local task in the queue; it starts as soon as its repository
         and one of the `max_parallel` slots are free (maybe right now)."""
-        if task.agent == "local" and not task.model:
-            task.model = self.local_model
-        task.status = "queued"
+        self.submit_batch([task])
+
+    def submit_batch(self, tasks: list[Task], expected_runs: dict[str, str] | None = None) -> None:
         with self._lock:
             if self._updating:
                 raise UpdateInProgress
-            self.store.save(task)
+            history = self.store.all() if any(t.status_task_id for t in tasks) else []
+            active = {(t.status_project_id, t.status_task_id) for t in history if t.status in ("running", "queued")}
+            if expected_runs and tasks:
+                latest = self.store.latest_map_runs(history, tasks[0].status_project_id)
+                if any(latest.get(key, "") != value for key, value in expected_runs.items()):
+                    raise ValueError("A checklist item has been queued since the preview. Preview again.")
+            for task in tasks:
+                if task.status_task_id and (task.status_project_id, task.status_task_id) in active:
+                    raise ValueError(f"{task.status_task_id} is already queued or running.")
+                if task.agent == "local" and not task.model:
+                    task.model = self.local_model
+                task.status = "queued"
+            self.store.save_many(tasks)
         self.dispatch()
+
+    def refresh_map_merge(self, task: Task) -> None:
+        """Discover a manual merge after Baton left a bound task's PR open."""
+        if not task.status_task_id or task.status != "done" or task.merged or not task.pr_url:
+            return
+        try:
+            merged = self.github.pr_merged(task.repo, pr_number(task.pr_url))
+        except Exception:
+            return  # Keep waiting while GitHub is unavailable.
+        if merged:
+            task.merged = True
+            self.store.save(task)
 
     def dispatch(self) -> None:
         """Start queued tasks while there are free slots. Called when a task
         is submitted, when one finishes and when Baton starts."""
+        # Network reads must not hold the lock used to cancel a running agent.
+        snapshot = self.store.all()
+        candidates = sorted((t for t in snapshot if t.where == "local" and t.status == "queued"), key=queue_key)
+        required_runs = {run for t in candidates for run in t.predecessor_runs}
+        for parent in snapshot:
+            if parent.id in required_runs:
+                self.refresh_map_merge(parent)
+        stopped = []
+        maps = {}
+        for pid in {t.status_project_id for t in candidates if t.status_project_id}:
+            try:
+                maps[pid] = execution_items(self.github.map_source(pid), self.owner_tag)
+            except ValueError as exc:
+                maps[pid] = f"Waiting for a valid checklist: {exc}"
+            except Exception:
+                maps[pid] = "Waiting for the current project checklist."
         with self._lock:
-            if self._updating or self._overheated:
-                return
             busy = {t.repo.casefold() for t in self._active.values()}
-            for task in self.queued():
-                if len(self._active) >= self.max_parallel:
-                    break
+            records = {t.id: t for t in self.store.all()}
+            for candidate in candidates:
+                task = records.get(candidate.id)
+                if not task or task.status != "queued":
+                    continue
+                if task.status_task_id:
+                    parents = [records.get(run) for run in task.predecessor_runs]
+                    failed = next((p for p in parents if p and p.status in ("failed", "cancelled")), None)
+                    if failed:
+                        task.status, task.finished_at = "cancelled", time.time()
+                        task.message = f"Chain stopped because {failed.status_task_id} was {failed.status}."
+                        self.store.save(task)
+                        stopped.append(task)
+                        continue
+                    items = maps[task.status_project_id]
+                    if isinstance(items, dict) and task.status_task_id in items and items[task.status_task_id].done:
+                        task.status, task.finished_at = "no-changes", time.time()
+                        task.message = "Checklist item already completed while queued."
+                        self.store.save(task)
+                        continue
+                    reason = items if isinstance(items, str) else self._map_wait(task, items)
+                    if not reason and any(p is None or not p.finished for p in parents):
+                        reason = "Waiting for predecessor runs to finish."
+                    if not reason and any(p.pr_url and not p.merged for p in parents):
+                        reason = "Waiting for predecessor pull requests to merge."
+                    if reason:
+                        if reason != task.message:
+                            task.message = reason
+                            self.store.save(task)
+                        continue
+                    task.message = ""
+                if self._updating or self._overheated or len(self._active) >= self.max_parallel:
+                    continue
                 repo_key = task.repo.casefold()
                 if repo_key in busy:       # one task at a time per repository
                     continue
@@ -205,6 +274,24 @@ class Runner:
                 self._cancel_events[task.id] = threading.Event()
                 busy.add(repo_key)
                 thread.start()
+        if self.on_finished:
+            for task in stopped:
+                self.on_finished(task)
+
+    def _map_wait(self, task, items):
+        try:
+            order = execution_order(items, task.status_task_id)
+        except ValueError as exc:
+            return f"Waiting for a valid checklist: {exc}"
+        item = order[-1]
+        if item.owner:
+            return "Waiting at an owner checkpoint."
+        if (item.repo or "/".join(task.status_project_id.split("/")[:2])).casefold() != task.repo.casefold():
+            return "Checklist destination changed. Cancel and queue again."
+        waiting = [t.id for t in order[:-1] if not t.done]
+        if waiting:
+            return "Waiting for checklist items: " + ", ".join(waiting)
+        return ""
 
     def set_priority(self, task_id: str, priority: str) -> bool:
         """Change the priority of a queued task. False if it isn't queued."""
@@ -295,6 +382,7 @@ class Runner:
         running here (or is already committing its result, which only takes
         a moment)."""
         if self._cancel_queued(task_id):
+            self.dispatch()
             return True
         with self._lock:
             thread = self._threads.get(task_id)

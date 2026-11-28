@@ -21,11 +21,16 @@ def test_graph_and_board(tmp_path, monkeypatch):
         return [project], []
 
     monkeypatch.setattr(Hub, "load", projects)
-    client = TestClient(create_app(Settings(data_dir=tmp_path, lang="en", self_update=False)))
+    client = TestClient(create_app(Settings(data_dir=tmp_path, lang="en", owner_tag="(Marco)", self_update=False)))
+    ctx = client.app.state.ctx
+    monkeypatch.setattr(ctx.runner, "agents_available", lambda: {"claude-code": ""})
+    monkeypatch.setattr(ctx.runner.repos, "get", lambda repo: tmp_path)
+    monkeypatch.setattr(ctx, "catalog_fn", lambda agent: {"opus": {"efforts": ["medium"]}})
     # Serve the real read-only template and assets without starting background
     # workers or connecting to GitHub. SSE has separate route coverage.
     def serve(route):
-        res = client.get(route.request.url)
+        res = client.request(route.request.method, route.request.url, content=route.request.post_data,
+                             headers=route.request.headers)
         route.fulfill(status=res.status_code, content_type=res.headers["content-type"], body=res.content)
 
     with pw.sync_playwright() as driver:
@@ -46,6 +51,18 @@ def test_graph_and_board(tmp_path, monkeypatch):
         page.keyboard.press("?")
         pw.expect(page.locator("#tm-help")).to_be_visible()
         page.keyboard.press("Escape")
+
+        page.locator('#tm-graph .tm-card[data-id="RL-01"]').click(button="right")
+        page.get_by_text("Queue up to here", exact=True).filter(visible=True).click()
+        dialog = page.locator("#tm-chain")
+        pw.expect(dialog).to_be_visible()
+        pw.expect(dialog.locator("li")).to_have_count(1)
+        pw.expect(dialog.locator("li")).to_contain_text("[AP-02] Implement handlers")
+        pw.expect(dialog.locator("p")).to_contain_text("RL-01 Approve release")
+        page.screenshot(path=tmp_path / "chain-preview.png")
+        page.keyboard.press("Escape")
+        pw.expect(dialog).to_be_hidden()
+        assert ctx.store.all() == []
 
         page.locator('[data-view="board"]').click()
         board = page.locator("#tm-board")

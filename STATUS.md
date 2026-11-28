@@ -95,7 +95,7 @@ links:
 - [ ] [GN-38] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify
   Allow/Deny on a harmless command, restart Baton or start a new chat, and resume the saved session.
-- [ ] [GN-39] (Marco) Send a first real Gemini task from Baton
+- [x] [GN-39] 2026-11-28 (Marco) Send a first real Gemini task from Baton
   New task → Gemini, model `gemini-3.8-flash` (low) on a small change in this
   repo; check auto-merge without review, readable log, summary, Quotas, and Telegram notice.
 - [x] [GN-40] 2026-11-28 (Marco) Live smoke checks: queue two tasks on one repo and check a blocked card (hub: Cuantización → IA local)

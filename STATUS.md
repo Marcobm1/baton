@@ -14,6 +14,7 @@ links:
 ---
 
 ## Done recently
+- 2026-11-27: TM-1 task map layout scaling: added 3-sweep barycenter crossing reduction (**Auto** vs **Manual** card order, `M`), exact DAG transitive-edge detection (`task_map.transitive_edges()`, hidden by default and shown dashed on hover/select), automatic folding of 3+ completed tasks per lane into an expandable `"N done"` pill, **Left → Right** / **Top → Bottom** orientation (`L`), spacing slider (`[`/`]`), fit-to-screen zoom (`0`), **Display ▾** popover, and `localStorage` preference persistence (`baton/task_map.py`, `baton/routes/projects.py`, `baton/static/task-map.{css,js}`, `baton/templates/project.html`, `baton/i18n.py`, `tests/test_task_map.py`, `docs/project-detail.md`, `docs/task-map-roadmap.md`).
 - 2026-11-27: Interactive per-project task map (`?tab=map`): added a Kanvas-inspired dependency graph tab inside every project page (`baton/task_map.py`, `baton/routes/projects.py`, `baton/templates/project.html`, `baton/static/task-map.{css,js}`, `baton/i18n.py`) stored directly in `STATUS.md` `## Next` (`### Group (PFX)`, `[ID]`, `(after: …)`, indented subtasks) with explicit opt-in conversion for legacy files (`POST /api/projects/{pid}/map/enable`), immediate per-edit GitHub commits guarded by optimistic blob-SHA concurrency & 409 reload recovery, strict 3-colour DFS cycle rejection, top-level-only progress counting (`baton/status.py`, `baton/project_detail.py`), live running-task matching, and `/tasks/new` launch drafts (`tests/test_task_map.py`, `tests/test_design.py`, `docs/project-detail.md`, `docs/AGENT_INSTRUCTIONS.md`).
 - 2026-11-27: Town Hall dynamic 2–4 participant picker & live provider quotas: replaced the fixed 3-model form on `/townhall` (both **Start a Town Hall** and **Scheduled reviews**) with a dynamic 2–4 slot picker starting with 2 empty slots (no pre-selected models, family → model cascade, **+ Add model** up to 4, remove down to 2, live remaining quota windows next to each family from `baton/quotas.py`, dynamic moderator selector, and consensus guest kept independently optional; `baton/townhall_bridge.py`, `baton/routes/townhall.py`, `baton/templates/townhall.html`, `baton/static/townhall.{js,css}`, `tests/test_townhall.py`, `docs/townhall.md`).
 - 2026-11-27: Multi-CLI Docker sandbox for **All permissions** in `/chat`: unlocked hardened Docker isolation for **Claude Code**, **Codex**, and **Gemini (`agy`)** via `docker/agents-sandbox.Dockerfile`, per-agent isolated Docker named auth volumes (`baton-sandbox-{claude,codex,gemini}-auth`), `baton sandbox-login <agent>`, `BATON_AGENTS_SANDBOX_IMAGE`, fail-closed `isolated=True` guards across `baton/chat_claude.py`, `baton/chat_codex.py`, and `baton/agent_chat.py`, hardlink & abliterated guards, and full unit/integration test coverage (`tests/test_sandbox.py`, `docs/agents-chat.md`).
@@ -61,6 +62,7 @@ links:
 - [x] 2026-11-27 Multi-CLI Docker sandbox for All permissions in `/chat` (Claude Code, Codex, Gemini via `docker/agents-sandbox.Dockerfile`, isolated named auth volumes, `baton sandbox-login`, fail-closed `isolated=True` guards, `tests/test_sandbox.py`, `docs/agents-chat.md`)
 - [x] 2026-11-27 Town Hall dynamic 2–4 participant picker + live provider quotas in sessions & schedules (`baton/townhall_bridge.py`, `baton/routes/townhall.py`, `baton/templates/townhall.html`, `baton/static/townhall.{js,css}`, `tests/test_townhall.py`, `docs/townhall.md`)
 - [x] 2026-11-27 Interactive per-project task map (`?tab=map` in `/p/{id}`: `baton/task_map.py`, `baton/static/task-map.{css,js}`, explicit opt-in enable commit, per-edit blob-SHA commits, 3-colour DFS cycle rejection, top-level-only progress, live running cards, and `/tasks/new` launch drafts; `tests/test_task_map.py`, `docs/project-detail.md`, `docs/AGENT_INSTRUCTIONS.md`)
+- [x] 2026-11-27 TM-1: Task map layout scaling (3-sweep barycenter crossing reduction with Auto/Manual toggle `M`, `task_map.transitive_edges()` hiding redundant arrows until hover/select, 3+ done folding per lane into expandable `"N done"` pill, Left→Right / Top→Bottom orientation `L`, spacing `[`/`]`, fit-to-screen `0`, Display popover & `localStorage` prefs; `tests/test_task_map.py`, `docs/task-map-roadmap.md`)
 - [ ] UI-7: Visual smoke test for /chat (screenshots + button contrast)
   Turn the review harness into an opt-in test: start the app with a fake Gemini agent (as in
   `tests/test_gemini.py`), inject a conversation with Baton's own renderers, screenshot desktop and
@@ -74,13 +76,6 @@ links:
   you plan to enable the Map tab (`Marcobm1/Cairn`, `Marcobm1/honeypot-awareness`, `Marcobm1/townhall`,
   `Marcobm1/proyectos`). Verify: every repo's `AGENTS.md` documents preserving `[ID]` and `(after: …)`.
   Recommended: codex, gpt-6.2-astra, low
-- [ ] TM-1: Task map layout scaling (crossing reduction, transitive edge hiding, done folding, fit/orientation)
-  Optimize `?tab=map` for larger graphs ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)):
-  add 2–3 sweep barycenter auto-ordering with Manual order toggle, hide transitive edges by default
-  (shown dashed on hover/select), fold 3+ finished tasks per lane into an expandable `"N done"` stub,
-  and add fit-to-screen (`0`), Left→Right / Top→Bottom orientation (`L`), and spacing controls (`[`/`]`).
-  Verify: unit tests for transitive reduction + Playwright smoke test on a 20-task graph with zero JS errors.
-  Recommended: claude-code, opus, medium
 - [ ] TM-2: Task map commit coalescing, 3-way conflict merge & live SSE sync
   Cut GitHub commit noise and keep the map live ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)):
   add a ~1.5 s trailing debounce for rapid consecutive edits (flushing on unload), implement semantic
@@ -134,6 +129,7 @@ links:
 - 2026-11-25: Phase 1–3 hardening, isolated Docker sandbox (`baton/sandbox.py`, hardlink guard), Windows verification fixes, and auto-merge policy ([docs/security.md](docs/security.md), [docs/auto-merge.md](docs/auto-merge.md), [docs/history.md](docs/history.md)).
 
 ## Log
+- 2026-11-27 (antigravity): Shipped TM-1 task map layout scaling: 3-sweep barycenter crossing reduction (`M`), `task_map.transitive_edges()` redundant arrow hiding, 3+ done folding per lane, Top→Bottom orientation (`L`), spacing (`[`/`]`), fit-to-screen (`0`), Display popover, and `localStorage` prefs (`baton/task_map.py`, `baton/static/task-map.{css,js}`, `baton/routes/projects.py`, `baton/templates/project.html`, `baton/i18n.py`, `tests/test_task_map.py`, `docs/project-detail.md`, `docs/task-map-roadmap.md`).
 - 2026-11-27 (antigravity): Added future task-map improvement & optimization roadmap (`TM-1` – `TM-4`) in `docs/task-map-roadmap.md` and `STATUS.md`.
 - 2026-11-27 (antigravity): Shipped the interactive per-project task map (`?tab=map`, `baton/task_map.py`, `baton/static/task-map.{css,js}`, `baton/routes/projects.py`, `baton/templates/project.html`, `baton/status.py`, `baton/project_detail.py`, `baton/github.py`, `baton/i18n.py`, `tests/test_task_map.py`, `tests/test_design.py`, `docs/project-detail.md`, `docs/AGENT_INSTRUCTIONS.md`).
 - 2026-11-27 (antigravity): Replaced the fixed 3-model Town Hall form with a dynamic 2–4 participant picker (2 empty slots by default, family → model cascade with live quota windows from `baton/quotas.py`, dynamic moderator sync, optional consensus guest kept independent, and mirrored in Scheduled reviews; `tests/test_townhall.py`, `docs/townhall.md`).

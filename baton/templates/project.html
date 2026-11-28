@@ -146,7 +146,7 @@
       <aside class="tm-mdp" id="tm-mdp" hidden></aside>
       <div class="tm-toast" id="tm-toast" hidden></div>
     </div>
-    <div class="tm-hint" id="tm-hint">{{ t.tm_hint }}</div>
+    <div class="tm-hint" id="tm-hint">{{ t.tm_hint_tm1 }}</div>
   </div>
   <script type="application/json" id="task-map-data">{{ map_data|tojson }}</script>
   <script type="application/json" id="task-map-strings">{{ {
@@ -218,6 +218,22 @@
     'toggle_subs': t.tm_toggle_subs,
     'problems': t.tm_problems,
     'reload': t.tm_reload,
+    'display': t.tm_display,
+    'orient': t.tm_orient,
+    'orient_lr': t.tm_orient_lr,
+    'orient_tb': t.tm_orient_tb,
+    'order': t.tm_order,
+    'order_auto': t.tm_order_auto,
+    'order_manual': t.tm_order_manual,
+    'spacing': t.tm_spacing,
+    'fold_done': t.tm_fold_done,
+    'hide_transitive': t.tm_hide_transitive,
+    'done_stub': t.tm_done_stub,
+    'fold_toggle_show': t.tm_fold_toggle_show,
+    'fold_toggle_hide': t.tm_fold_toggle_hide,
+    'fit': t.tm_fit,
+    'fit_title': t.tm_fit_title,
+    'switched_manual': t.tm_switched_manual,
   }|tojson }}</script>
   <script src="/static/task-map.js?v={{ css_v }}" defer></script>
 

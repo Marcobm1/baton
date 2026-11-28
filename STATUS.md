@@ -5,7 +5,7 @@ priority: high
 summary: Open-source hub that shows every STATUS.md in my GitHub repos, plus Claude, Codex, Gemini and OpenCode Go quota windows.
 next: "UI-7: Visual smoke test for /chat (screenshots + button contrast)"
 updated: 2026-11-28
-updated_by: codex
+updated_by: human
 open_source: true
 tags: [tooling, ai-agents]
 links:
@@ -35,73 +35,74 @@ links:
 - 2026-11-26: UX-1/2/3 overhaul: global UI decluttering, Projects & Tasks remodel with automatic `git diff --cached --numstat`, structured agent reports, secure local `.baton-artifacts/` image gallery, and Telegram `sendPhoto` delivery.
 
 ## Next
-- [x] 2026-11-25 Hardening Phases 1–3 (security, auth, Job Objects, modularization, SQLite WAL, live task SSE, readable Gemini logs)
-- [x] 2026-11-25 Isolated Docker container for the All permissions mode (`baton/sandbox.py`, `docker/opencode-sandbox.Dockerfile`, hardlink guard)
-- [x] 2026-11-25 (Marco) Verify Phases 1–3 on Windows, enable BATON_ACCESS_KEY, sign in on desktop/phone, and build Docker sandbox image
-- [x] 2026-11-25 Agents chat for OpenCode, Claude Code and Codex in Baton, with tools (`baton/chat_claude.py`, `baton/chat_codex.py`, `chat_sessions` resume)
-- [x] 2026-11-25 Monitoring for other computers and servers, and alerts (Phases M1–M3: `/machines`, `baton monitor-agent`, `AlertEngine`, Telegram + Webhook notifications for alerts & finished/failed tasks, [docs/machines.md](docs/machines.md))
-- [x] 2026-11-26 Hardening Phase 4: open-source release cleanup (`BATON_OWNER_TAG`, `BATON_CHAT_SCRATCH`, `BATON_SCHEDULED_TASK`, generic defaults and scrubbed docs/tests, [docs/hardening-roadmap.md](docs/hardening-roadmap.md))
-- [x] 2026-11-26 UX-1: Global UI decluttering and layout fixes (`tests/test_ux_cleanup.py`)
-- [x] 2026-11-26 UX-2: Remodel Projects and Tasks views with automatic git diff stats (`baton/worktree.py`, `baton/db.py`, `baton/routes/projects.py`, `tests/test_ux_projects.py`)
-- [x] 2026-11-26 UX-3: Structured agent reports + local image artifacts gallery + Telegram photo (`baton/artifacts.py`, `baton/static/lightbox.js`, `tests/test_ux_artifacts.py`)
-- [x] 2026-11-26 (Marco) Configure Telegram bot, `BATON_OWNER_TAG`, and `BATON_CHAT_SCRATCH` in `.env` and test notifications on `/machines`
-- [x] 2026-11-26 Chat-1: Persistent SQLite chat history sidebar, upgraded Markdown (tables + code copy), sticky auto-scroll, and regenerate/edit actions (`baton/chat_history.py`, `tests/test_chat_history.py`)
-- [x] 2026-11-26 Chat-2: Agent tool grouping + Chat-to-Task bridge + Telegram approval alerts (`baton/agent_chat.py`, `baton/notify.py`, `tests/test_chat_phase2_ux.py`)
-- [x] 2026-11-26 Chat-3: Chat image attachments (vision) + local system prompt presets + context usage meter (`baton/models.py`, `baton/routes/chat.py`, `tests/test_chat_vision_presets.py`)
-- [x] 2026-11-26 Local model tool-calling harness in `/chat`: opt-in Internet + utilities + allowlisted-folder file/command tools with mandatory Allow/Deny on writes, commands, and `.env` reads (`baton/local_harness.py`, `docs/local-harness.md`, `tests/test_local_harness.py`)
-- [x] 2026-11-26 UI-0: Fix invisible buttons and the always-visible "Convert to task" link (global `button` rule no longer forces its colour with `!important`; `[hidden]` always wins; `tests/test_design.py`)
-- [x] 2026-11-26 UI-1: Near-black dark theme (Claude Code desktop look — neutral charcoal/near-black tokens in `baton/static/style.css`, updated `docs/design.md`, WCAG AA verified in `tests/test_design.py`)
-- [x] 2026-11-26 UI-2: Full-height `/chat` layout like Claude Code desktop (`body.page-chat`, flush history column, slim header with title/folder/git branch and `⋯` menu, centred `760 px` scroll viewport, bottom-anchored composer dock, mobile drawer & tab bar preserved; `tests/test_design.py`, `docs/design.md`)
-- [x] 2026-11-26 UI-3: Composer as the control centre (bottom-row chips for agent, readable model names, effort, folder, mode, preset/resume with upward popovers, locked-not-hidden state when started, `Enter`/`Shift+Enter`/`Shift+Tab`/`Esc` shortcuts; `baton/task_models.py`, `baton/static/chat-common.js`, `tests/test_design.py`)
-- [x] 2026-11-26 UI-4: Claude Code-style messages (cardless assistant prose, compact one-line tool rows with status dots, line-numbered inline diffs with collapsed context, inline approvals with `1`/`2` keys, live `"Thinking… Ns"` timer, unified status line with context; `baton/static/chat-common.js`, `baton/static/chat.css`, `tests/test_design.py`)
-- [x] 2026-11-27 UI-5: One chat component for local models and agents (merged the two branches of `baton/templates/chat.html` into one composer & message shell with `_chat_strings()` and moved the shared message/tool/diff/approval renderer into `baton/static/chat-common.js`; `tests/test_design.py`, `docs/design.md`)
-- [x] 2026-11-26 Fix flaky Windows test `tests/test_models.py::test_thermal_guard_without_page_visits[False]` (`LocalModels._state()` now retries transient Windows `PermissionError` during `os.replace`, and `_save()` uses a PID/thread-scoped temp file)
-- [x] 2026-11-27 Local SearXNG running on Marco's PC (`baton-searxng` on `127.0.0.1:8888`), `BATON_SEARCH_URL` in `.env`, Baton restarted; `web_search` verified with Baton's own code (Docker Desktop needed stale sockets removed, see docs/local-harness.md)
-- [x] 2026-11-27 UI-6: `/chat` polish after review (Shift+Tab only from the message box, short folder name in the header, translated tool kinds/plurals/Copy, tool rows and diffs saved in SQLite and restored on reload, search falls back when SearXNG is down, SearXNG image pinned by digest, one "new chat", round send button, neutral Deny, no keys prose, edits open, think chevron, quieter status line, cleaner empty state, mobile header and one-row chips)
-- [x] 2026-11-27 UI-8: Claude Code desktop look across the whole app + collapsible global sidebar rail + mobile PWA (warm off-white light palette, neutral `--primary`/`--on-primary` actions, collapsible `56 px` rail defaulting collapsed on `/chat`, horizontally scrollable mobile `.tab-bar`, dynamic auth-exempt `/manifest.webmanifest` + PNG Huo icons; `tests/test_design.py`, `docs/design.md`)
-- [x] 2026-11-27 Multi-CLI Docker sandbox for All permissions in `/chat` (Claude Code, Codex, Gemini via `docker/agents-sandbox.Dockerfile`, isolated named auth volumes, `baton sandbox-login`, fail-closed `isolated=True` guards, `tests/test_sandbox.py`, `docs/agents-chat.md`)
-- [x] 2026-11-27 Town Hall dynamic 2–4 participant picker + live provider quotas in sessions & schedules (`baton/townhall_bridge.py`, `baton/routes/townhall.py`, `baton/templates/townhall.html`, `baton/static/townhall.{js,css}`, `tests/test_townhall.py`, `docs/townhall.md`)
-- [x] 2026-11-27 Interactive per-project task map (`?tab=map` in `/p/{id}`: `baton/task_map.py`, `baton/static/task-map.{css,js}`, explicit opt-in enable commit, per-edit blob-SHA commits, 3-colour DFS cycle rejection, top-level-only progress, live running cards, and `/tasks/new` launch drafts; `tests/test_task_map.py`, `docs/project-detail.md`, `docs/AGENT_INSTRUCTIONS.md`)
-- [x] 2026-11-27 TM-1: Task map layout scaling (3-sweep barycenter crossing reduction with Auto/Manual toggle `M`, `task_map.transitive_edges()` hiding redundant arrows until hover/select, 3+ done folding per lane into expandable `"N done"` pill, Left→Right / Top→Bottom orientation `L`, spacing `[`/`]`, fit-to-screen `0`, Display popover & `localStorage` prefs; `tests/test_task_map.py`, `docs/task-map-roadmap.md`)
-- [ ] UI-7: Visual smoke test for /chat (screenshots + button contrast)
+### General (GN)
+- [x] [GN-01] 2026-11-25 Hardening Phases 1–3 (security, auth, Job Objects, modularization, SQLite WAL, live task SSE, readable Gemini logs)
+- [x] [GN-02] 2026-11-25 Isolated Docker container for the All permissions mode (`baton/sandbox.py`, `docker/opencode-sandbox.Dockerfile`, hardlink guard)
+- [x] [GN-03] 2026-11-25 (Marco) Verify Phases 1–3 on Windows, enable BATON_ACCESS_KEY, sign in on desktop/phone, and build Docker sandbox image
+- [x] [GN-04] 2026-11-25 Agents chat for OpenCode, Claude Code and Codex in Baton, with tools (`baton/chat_claude.py`, `baton/chat_codex.py`, `chat_sessions` resume)
+- [x] [GN-05] 2026-11-25 Monitoring for other computers and servers, and alerts (Phases M1–M3: `/machines`, `baton monitor-agent`, `AlertEngine`, Telegram + Webhook notifications for alerts & finished/failed tasks, [docs/machines.md](docs/machines.md))
+- [x] [GN-06] 2026-11-26 Hardening Phase 4: open-source release cleanup (`BATON_OWNER_TAG`, `BATON_CHAT_SCRATCH`, `BATON_SCHEDULED_TASK`, generic defaults and scrubbed docs/tests, [docs/hardening-roadmap.md](docs/hardening-roadmap.md))
+- [x] [GN-07] 2026-11-26 UX-1: Global UI decluttering and layout fixes (`tests/test_ux_cleanup.py`)
+- [x] [GN-08] 2026-11-26 UX-2: Remodel Projects and Tasks views with automatic git diff stats (`baton/worktree.py`, `baton/db.py`, `baton/routes/projects.py`, `tests/test_ux_projects.py`)
+- [x] [GN-09] 2026-11-26 UX-3: Structured agent reports + local image artifacts gallery + Telegram photo (`baton/artifacts.py`, `baton/static/lightbox.js`, `tests/test_ux_artifacts.py`)
+- [x] [GN-10] 2026-11-26 (Marco) Configure Telegram bot, `BATON_OWNER_TAG`, and `BATON_CHAT_SCRATCH` in `.env` and test notifications on `/machines`
+- [x] [GN-11] 2026-11-26 Chat-1: Persistent SQLite chat history sidebar, upgraded Markdown (tables + code copy), sticky auto-scroll, and regenerate/edit actions (`baton/chat_history.py`, `tests/test_chat_history.py`)
+- [x] [GN-12] 2026-11-26 Chat-2: Agent tool grouping + Chat-to-Task bridge + Telegram approval alerts (`baton/agent_chat.py`, `baton/notify.py`, `tests/test_chat_phase2_ux.py`)
+- [x] [GN-13] 2026-11-26 Chat-3: Chat image attachments (vision) + local system prompt presets + context usage meter (`baton/models.py`, `baton/routes/chat.py`, `tests/test_chat_vision_presets.py`)
+- [x] [GN-14] 2026-11-26 Local model tool-calling harness in `/chat`: opt-in Internet + utilities + allowlisted-folder file/command tools with mandatory Allow/Deny on writes, commands, and `.env` reads (`baton/local_harness.py`, `docs/local-harness.md`, `tests/test_local_harness.py`)
+- [x] [GN-15] 2026-11-26 UI-0: Fix invisible buttons and the always-visible "Convert to task" link (global `button` rule no longer forces its colour with `!important`; `[hidden]` always wins; `tests/test_design.py`)
+- [x] [GN-16] 2026-11-26 UI-1: Near-black dark theme (Claude Code desktop look — neutral charcoal/near-black tokens in `baton/static/style.css`, updated `docs/design.md`, WCAG AA verified in `tests/test_design.py`)
+- [x] [GN-17] 2026-11-26 UI-2: Full-height `/chat` layout like Claude Code desktop (`body.page-chat`, flush history column, slim header with title/folder/git branch and `⋯` menu, centred `760 px` scroll viewport, bottom-anchored composer dock, mobile drawer & tab bar preserved; `tests/test_design.py`, `docs/design.md`)
+- [x] [GN-18] 2026-11-26 UI-3: Composer as the control centre (bottom-row chips for agent, readable model names, effort, folder, mode, preset/resume with upward popovers, locked-not-hidden state when started, `Enter`/`Shift+Enter`/`Shift+Tab`/`Esc` shortcuts; `baton/task_models.py`, `baton/static/chat-common.js`, `tests/test_design.py`)
+- [x] [GN-19] 2026-11-26 UI-4: Claude Code-style messages (cardless assistant prose, compact one-line tool rows with status dots, line-numbered inline diffs with collapsed context, inline approvals with `1`/`2` keys, live `"Thinking… Ns"` timer, unified status line with context; `baton/static/chat-common.js`, `baton/static/chat.css`, `tests/test_design.py`)
+- [x] [GN-20] 2026-11-27 UI-5: One chat component for local models and agents (merged the two branches of `baton/templates/chat.html` into one composer & message shell with `_chat_strings()` and moved the shared message/tool/diff/approval renderer into `baton/static/chat-common.js`; `tests/test_design.py`, `docs/design.md`)
+- [x] [GN-21] 2026-11-26 Fix flaky Windows test `tests/test_models.py::test_thermal_guard_without_page_visits[False]` (`LocalModels._state()` now retries transient Windows `PermissionError` during `os.replace`, and `_save()` uses a PID/thread-scoped temp file)
+- [x] [GN-22] 2026-11-27 Local SearXNG running on Marco's PC (`baton-searxng` on `127.0.0.1:8888`), `BATON_SEARCH_URL` in `.env`, Baton restarted; `web_search` verified with Baton's own code (Docker Desktop needed stale sockets removed, see docs/local-harness.md)
+- [x] [GN-23] 2026-11-27 UI-6: `/chat` polish after review (Shift+Tab only from the message box, short folder name in the header, translated tool kinds/plurals/Copy, tool rows and diffs saved in SQLite and restored on reload, search falls back when SearXNG is down, SearXNG image pinned by digest, one "new chat", round send button, neutral Deny, no keys prose, edits open, think chevron, quieter status line, cleaner empty state, mobile header and one-row chips)
+- [x] [GN-24] 2026-11-27 UI-8: Claude Code desktop look across the whole app + collapsible global sidebar rail + mobile PWA (warm off-white light palette, neutral `--primary`/`--on-primary` actions, collapsible `56 px` rail defaulting collapsed on `/chat`, horizontally scrollable mobile `.tab-bar`, dynamic auth-exempt `/manifest.webmanifest` + PNG Huo icons; `tests/test_design.py`, `docs/design.md`)
+- [x] [GN-25] 2026-11-27 Multi-CLI Docker sandbox for All permissions in `/chat` (Claude Code, Codex, Gemini via `docker/agents-sandbox.Dockerfile`, isolated named auth volumes, `baton sandbox-login`, fail-closed `isolated=True` guards, `tests/test_sandbox.py`, `docs/agents-chat.md`)
+- [x] [GN-26] 2026-11-27 Town Hall dynamic 2–4 participant picker + live provider quotas in sessions & schedules (`baton/townhall_bridge.py`, `baton/routes/townhall.py`, `baton/templates/townhall.html`, `baton/static/townhall.{js,css}`, `tests/test_townhall.py`, `docs/townhall.md`)
+- [x] [GN-27] 2026-11-27 Interactive per-project task map (`?tab=map` in `/p/{id}`: `baton/task_map.py`, `baton/static/task-map.{css,js}`, explicit opt-in enable commit, per-edit blob-SHA commits, 3-colour DFS cycle rejection, top-level-only progress, live running cards, and `/tasks/new` launch drafts; `tests/test_task_map.py`, `docs/project-detail.md`, `docs/AGENT_INSTRUCTIONS.md`)
+- [x] [GN-28] 2026-11-27 TM-1: Task map layout scaling (3-sweep barycenter crossing reduction with Auto/Manual toggle `M`, `task_map.transitive_edges()` hiding redundant arrows until hover/select, 3+ done folding per lane into expandable `"N done"` pill, Left→Right / Top→Bottom orientation `L`, spacing `[`/`]`, fit-to-screen `0`, Display popover & `localStorage` prefs; `tests/test_task_map.py`, `docs/task-map-roadmap.md`)
+- [ ] [GN-29] UI-7: Visual smoke test for /chat (screenshots + button contrast)
   Turn the review harness into an opt-in test: start the app with a fake Gemini agent (as in
   `tests/test_gemini.py`), inject a conversation with Baton's own renderers, screenshot desktop and
   mobile in light and dark, and fail if any visible button is under 3:1 contrast. Pin Playwright
   exactly in the `dev` extra; skip when no browser is installed. Verify: the test fails on a commit
   that reintroduces `button { color: … !important }`.
   Recommended: claude-code, opus, medium
-- [ ] Sync task-map `STATUS.md` rules to `AGENTS.md` in tracked repositories
+- [ ] [GN-30] Sync task-map `STATUS.md` rules to `AGENTS.md` in tracked repositories
   Copy the updated task-map bullet from `docs/AGENT_INSTRUCTIONS.md` (`### Group (PFX)`, `[ID]`,
   `(after: …)`, and two-space indented subtasks) into `AGENTS.md` of each tracked repository where
   you plan to enable the Map tab (`Marcobm1/Cairn`, `Marcobm1/honeypot-awareness`, `Marcobm1/townhall`,
   `Marcobm1/proyectos`). Verify: every repo's `AGENTS.md` documents preserving `[ID]` and `(after: …)`.
   Recommended: codex, gpt-6.2-astra, low
-- [x] 2026-11-28 TM-2: Task map commit coalescing, 3-way conflict merge & live SSE sync
+- [x] [GN-31] 2026-11-28 TM-2: Task map commit coalescing, 3-way conflict merge & live SSE sync
   [Save and live-update behavior](docs/project-detail.md). Verified in Edge and with pytest (335 passed, 2 skipped).
-- [ ] TM-3: Task map ergonomics (context menus, keyboard/deep-links, Kanban board view, editable STATUS.md drawer)
+- [ ] [GN-32] TM-3: Task map ergonomics (context menus, keyboard/deep-links, Kanban board view, editable STATUS.md drawer)
   Add right-click menus on cards/arrows/lanes, arrow-key navigation, `#ID` URL hash deep-links, `?`
   shortcuts modal, an editable `## Next` Apply drawer, and a **Graph / Board** toggle that turns mobile
   screens (`< 640 px`) into a usable single-column state Kanban view ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)).
   Verify: `tests/test_design.py` passes (tokens-only CSS) and Playwright checks desktop + mobile Board view.
   Recommended: claude-code, opus, medium
-- [ ] TM-4: Dependency-aware runner & safe chain execution ("Queue up to here")
+- [ ] [GN-33] TM-4: Dependency-aware runner & safe chain execution ("Queue up to here")
   Connect `STATUS.md` `(after: …)` dependencies to `baton/runner.py` ([docs/task-map-roadmap.md](docs/task-map-roadmap.md)):
   store optional `status_project_id`/`status_task_id` on `Task`, hold queued tasks until predecessors are
   ticked, allow queueing an ancestor chain in topological order (always stopping before `(Owner)` actions),
   and pause downstream tasks if an upstream task fails or is cancelled.
   Verify: runner unit tests for auto-unblock on merge, stop-before-owner guard, and failure cascade pause.
   Recommended: codex, gpt-6.2-astra, high
-- [x] 2026-11-27 (Marco) Try `web_search` from `/chat` with a local model in **Internet + tools** mode (needs your sign-in)
-- [x] 2026-11-28 (Marco) Build `baton-agents-sandbox:latest` (`docker build -f docker/agents-sandbox.Dockerfile -t baton-agents-sandbox:latest .`) and run `baton sandbox-login <claude-code|codex|gemini>` for the CLIs you want to use in **All permissions** mode on `/chat`
-- [ ] (Marco) Decide remaining layout question from the UI review: local chat without models showing the same composer with a setup notice instead of the old "Agent" form
-- [ ] (Marco) Install Huo as a PWA on your phone over Tailscale ("Add to Home Screen") and verify standalone launch and icon
-- [ ] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
+- [x] [GN-34] 2026-11-27 (Marco) Try `web_search` from `/chat` with a local model in **Internet + tools** mode (needs your sign-in)
+- [x] [GN-35] 2026-11-28 (Marco) Build `baton-agents-sandbox:latest` (`docker build -f docker/agents-sandbox.Dockerfile -t baton-agents-sandbox:latest .`) and run `baton sandbox-login <claude-code|codex|gemini>` for the CLIs you want to use in **All permissions** mode on `/chat`
+- [ ] [GN-36] (Marco) Decide remaining layout question from the UI review: local chat without models showing the same composer with a setup notice instead of the old "Agent" form
+- [ ] [GN-37] (Marco) Install Huo as a PWA on your phone over Tailscale ("Add to Home Screen") and verify standalone launch and icon
+- [ ] [GN-38] (Marco) Live smoke check of Claude Code and Codex in `/chat` (Confirm approvals + resume)
   Open `/chat?agent=claude-code` and `/chat?agent=codex` in the scratch folder, verify
   Allow/Deny on a harmless command, restart Baton or start a new chat, and resume the saved session.
-- [ ] (Marco) Send a first real Gemini task from Baton
+- [ ] [GN-39] (Marco) Send a first real Gemini task from Baton
   New task → Gemini, model `gemini-3.8-flash` (low) on a small change in this
   repo; check auto-merge without review, readable log, summary, Quotas, and Telegram notice.
-- [ ] (Marco) Live smoke checks: queue two tasks on one repo and check a blocked card (hub: Cuantización → IA local)
+- [ ] [GN-40] (Marco) Live smoke checks: queue two tasks on one repo and check a blocked card (hub: Cuantización → IA local)
 
 ## Blockers
 - Confirm mode on the host runs approved commands as the host Windows user (Gemini Confirm covers commands only; Codex approved commands write even under `sandbox: "read-only"`).

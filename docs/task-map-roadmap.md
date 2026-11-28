@@ -97,7 +97,9 @@ require launching each stage manually once the previous PR merges.
 **Scope:**
 - **Bind Baton tasks to `STATUS.md` IDs:** store optional `status_project_id`
   and `status_task_id` on `Task` records (populated automatically when launched
-  from the Map tab).
+  from the Map tab), and update `task_map.match_running_tasks()` to match by
+  exact `status_task_id` before falling back to title/regex heuristics (see
+  [Town Hall audit §4](townhall-audit-2026-11-28.md#4-input-to-tm-4-gn-33-explicit-task-to-map-primary-keys)).
 - **Dependency-aware dispatch:** keep a queued task waiting while any task in
   its `STATUS.md` `(after: …)` list is still unchecked; automatically unblock
   and dispatch it once its predecessors finish and merge.
